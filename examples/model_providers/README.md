@@ -28,7 +28,7 @@ LiteLLM integration helps out switch between models easily and rapidly. This is 
 litellm --config examples/model_providers/litellm_config.yaml
 
 # then use the proxy via the SDK
-python3 examples/agent_patterns/litellm.py
+python3 examples/model_providers/litellm.py
 ```
 
 ### Testing the proxy server
