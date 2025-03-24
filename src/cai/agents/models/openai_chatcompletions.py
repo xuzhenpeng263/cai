@@ -54,7 +54,13 @@ from openai.types.responses import (
     ResponseUsage,
 )
 from openai.types.responses.response_input_param import FunctionCallOutput, ItemReference, Message
-from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails
+from openai.types.responses.response_usage import OutputTokensDetails
+
+# Create custom InputTokensDetails class since it's not available in current OpenAI version
+from openai._models import BaseModel
+class InputTokensDetails(BaseModel):
+    prompt_tokens: int
+    """The number of prompt tokens."""
 
 from .. import _debug
 from ..agent_output import AgentOutputSchema
