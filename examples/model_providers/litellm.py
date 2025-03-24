@@ -1,9 +1,9 @@
 import os
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
-from agents import OpenAIChatCompletionsModel,Agent,Runner
-from agents.model_settings import ModelSettings
-from agents import set_default_openai_client, set_tracing_disabled
+from cai.agents import OpenAIChatCompletionsModel,Agent,Runner
+from cai.agents.model_settings import ModelSettings
+from cai.agents import set_default_openai_client, set_tracing_disabled
 
 # Load environment variables from .env file
 load_dotenv()
