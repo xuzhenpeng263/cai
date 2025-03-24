@@ -180,7 +180,12 @@ We're committed to continuing to build the Agents SDK as an open source framewor
 
 ## LiteLLM Proxy Server integration
 
-Testing some basic models:
+```bash
+# launch proxy
+litellm --config config.yaml
+```
+
+Testing some basic models against proxy to verify it's operational:
 ```bash
 # qwen2.5:14b
 curl -s http://localhost:4000/v1/chat/completions -H "Content-Type: application/json" -d '{"model": "qwen2.5:14b", "messages": [{"role": "user", "content": "Say hi"}], "max_tokens": 10}' | jq
@@ -191,3 +196,11 @@ curl -s http://localhost:4000/v1/chat/completions -H "Content-Type: application/
 # gpt-4o
 curl -s http://localhost:4000/v1/chat/completions -H "Content-Type: application/json" -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Say hi"}], "max_tokens": 10}' | jq
 ```
+
+Launch the Agents SDK with the proxy server:
+```bash
+python3 examples/agent_patterns/litellm.py
+```
+
+Additional docs:
+- LiteLLM admin UI https://docs.litellm.ai/docs/proxy/ui
