@@ -138,6 +138,8 @@ validation:
   unrecognized_links: warn
   anchors: warn
 
+dev_addr: localhost:8088
+
 extra_css:
   - stylesheets/extra.css
 

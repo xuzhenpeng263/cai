@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from cai.agents import OpenAIChatCompletionsModel,Agent,Runner
 from cai.agents import set_default_openai_client, set_tracing_disabled
+from openai.types.responses import ResponseTextDeltaEvent
 
 # Load environment variables from .env file
 load_dotenv()
@@ -31,5 +32,23 @@ agent = Agent(
 )
 
 
-result = Runner.run_sync(agent, "Write a haiku about recursion in programming.")
-print(result.final_output)
+def run_sync_haiku():
+    result = Runner.run_sync(agent, "Write a haiku about recursion in programming.")
+    print(result.final_output)
+
+
+async def stream_jokes():
+    result = Runner.run_streamed(agent, input="Please tell me 5 jokes.")
+    async for event in result.stream_events():
+        if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+            print(event.data.delta, end="", flush=True)
+
+
+########################################################
+
+# async
+# import asyncio
+# asyncio.run(stream_jokes())
+
+# sync
+run_sync_haiku()
