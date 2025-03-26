@@ -1,6 +1,6 @@
 # Agents module
 
-::: agents
+::: cai.agents
 
     options:
         members:

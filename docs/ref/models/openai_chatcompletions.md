@@ -1,3 +1,3 @@
 # `OpenAI Chat Completions model`
 
-::: agents.models.openai_chatcompletions
+::: cai.agents.models.openai_chatcompletions

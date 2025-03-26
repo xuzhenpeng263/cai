@@ -1,3 +1,3 @@
 # `Usage`
 
-::: agents.usage
+::: cai.agents.usage

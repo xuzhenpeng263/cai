@@ -1,3 +1,3 @@
 # `Function schema`
 
-::: agents.function_schema
+::: cai.agents.function_schema

@@ -1,3 +1,3 @@
 # `Setup`
 
-::: agents.tracing.setup
+::: cai.agents.tracing.setup

@@ -1,3 +1,3 @@
 # `Items`
 
-::: agents.items
+::: cai.agents.items

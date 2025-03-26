@@ -1,3 +1,3 @@
 # `Input`
 
-::: agents.voice.input
+::: cai.agents.voice.input

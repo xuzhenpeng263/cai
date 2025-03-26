@@ -1,6 +1,6 @@
 # `Lifecycle`
 
-::: agents.lifecycle
+::: cai.agents.lifecycle
 
     options:
         show_source: false

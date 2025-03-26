@@ -1,3 +1,3 @@
 # `Agent output`
 
-::: agents.agent_output
+::: cai.agents.agent_output

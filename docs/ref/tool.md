@@ -1,3 +1,3 @@
 # `Tools`
 
-::: agents.tool
+::: cai.agents.tool

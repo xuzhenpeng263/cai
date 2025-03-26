@@ -1,3 +1,3 @@
 # `Pipeline Config`
 
-::: agents.voice.pipeline_config
+::: cai.agents.voice.pipeline_config

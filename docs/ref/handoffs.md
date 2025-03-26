@@ -1,3 +1,3 @@
 # `Handoffs`
 
-::: agents.handoffs
+::: cai.agents.handoffs

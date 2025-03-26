@@ -1,3 +1,3 @@
 # `Results`
 
-::: agents.result
+::: cai.agents.result

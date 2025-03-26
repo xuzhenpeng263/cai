@@ -11,7 +11,7 @@ The most common properties of an agent you'll configure are:
 -   `tools`: Tools that the agent can use to achieve its tasks.
 
 ```python
-from agents import Agent, ModelSettings, function_tool
+from cai.agents import Agent, ModelSettings, function_tool
 
 @function_tool
 def get_weather(city: str) -> str:
@@ -49,7 +49,7 @@ By default, agents produce plain text (i.e. `str`) outputs. If you want the agen
 
 ```python
 from pydantic import BaseModel
-from agents import Agent
+from cai.agents import Agent
 
 
 class CalendarEvent(BaseModel):
@@ -73,7 +73,7 @@ agent = Agent(
 Handoffs are sub-agents that the agent can delegate to. You provide a list of handoffs, and the agent can choose to delegate to them if relevant. This is a powerful pattern that allows orchestrating modular, specialized agents that excel at a single task. Read more in the [handoffs](handoffs.md) documentation.
 
 ```python
-from agents import Agent
+from cai.agents import Agent
 
 booking_agent = Agent(...)
 refund_agent = Agent(...)
@@ -108,7 +108,7 @@ agent = Agent[UserContext](
 
 ## Lifecycle events (hooks)
 
-Sometimes, you want to observe the lifecycle of an agent. For example, you may want to log events, or pre-fetch data when certain events occur. You can hook into the agent lifecycle with the `hooks` property. Subclass the [`AgentHooks`][agents.lifecycle.AgentHooks] class, and override the methods you're interested in.
+Sometimes, you want to observe the lifecycle of an agent. For example, you may want to log events, or pre-fetch data when certain events occur. You can hook into the agent lifecycle with the `hooks` property. Subclass the [`AgentHooks`][cai.agents.lifecycle.AgentHooks] class, and override the methods you're interested in.
 
 ## Guardrails
 
@@ -133,7 +133,7 @@ robot_agent = pirate_agent.clone(
 
 ## Forcing tool use
 
-Supplying a list of tools doesn't always mean the LLM will use a tool. You can force tool use by setting [`ModelSettings.tool_choice`][agents.model_settings.ModelSettings.tool_choice]. Valid values are:
+Supplying a list of tools doesn't always mean the LLM will use a tool. You can force tool use by setting [`ModelSettings.tool_choice`][cai.agents.model_settings.ModelSettings.tool_choice]. Valid values are:
 
 1. `auto`, which allows the LLM to decide whether or not to use a tool.
 2. `required`, which requires the LLM to use a tool (but it can intelligently decide which tool).

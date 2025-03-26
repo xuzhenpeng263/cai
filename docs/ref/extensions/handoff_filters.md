@@ -1,3 +1,3 @@
 # `Handoff filters`
 
-::: agents.extensions.handoff_filters
+::: cai.agents.extensions.handoff_filters

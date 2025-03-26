@@ -1,3 +1,3 @@
 # `Streaming events`
 
-::: agents.stream_events
+::: cai.agents.stream_events

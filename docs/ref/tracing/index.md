@@ -1,3 +1,3 @@
 # Tracing module
 
-::: agents.tracing
+::: cai.agents.tracing

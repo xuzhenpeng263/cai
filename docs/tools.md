@@ -8,14 +8,14 @@ Tools let agents take actions: things like fetching data, running code, calling 
 
 ## Hosted tools
 
-OpenAI offers a few built-in tools when using the [`OpenAIResponsesModel`][agents.models.openai_responses.OpenAIResponsesModel]:
+OpenAI offers a few built-in tools when using the [`OpenAIResponsesModel`][cai.agents.models.openai_responses.OpenAIResponsesModel]:
 
--   The [`WebSearchTool`][agents.tool.WebSearchTool] lets an agent search the web.
--   The [`FileSearchTool`][agents.tool.FileSearchTool] allows retrieving information from your OpenAI Vector Stores.
--   The [`ComputerTool`][agents.tool.ComputerTool] allows automating computer use tasks.
+-   The [`WebSearchTool`][cai.agents.tool.WebSearchTool] lets an agent search the web.
+-   The [`FileSearchTool`][cai.agents.tool.FileSearchTool] allows retrieving information from your OpenAI Vector Stores.
+-   The [`ComputerTool`][cai.agents.tool.ComputerTool] allows automating computer use tasks.
 
 ```python
-from agents import Agent, FileSearchTool, Runner, WebSearchTool
+from cai.agents import Agent, FileSearchTool, Runner, WebSearchTool
 
 agent = Agent(
     name="Assistant",
@@ -49,7 +49,7 @@ import json
 
 from typing_extensions import TypedDict, Any
 
-from agents import Agent, FunctionTool, RunContextWrapper, function_tool
+from cai.agents import Agent, FunctionTool, RunContextWrapper, function_tool
 
 
 class Location(TypedDict):
@@ -171,7 +171,7 @@ for tool in agent.tools:
 
 ### Custom function tools
 
-Sometimes, you don't want to use a Python function as a tool. You can directly create a [`FunctionTool`][agents.tool.FunctionTool] if you prefer. You'll need to provide:
+Sometimes, you don't want to use a Python function as a tool. You can directly create a [`FunctionTool`][cai.agents.tool.FunctionTool] if you prefer. You'll need to provide:
 
 -   `name`
 -   `description`
@@ -183,7 +183,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from agents import RunContextWrapper, FunctionTool
+from cai.agents import RunContextWrapper, FunctionTool
 
 
 
@@ -216,14 +216,14 @@ As mentioned before, we automatically parse the function signature to extract th
 1. The signature parsing is done via the `inspect` module. We use type annotations to understand the types for the arguments, and dynamically build a Pydantic model to represent the overall schema. It supports most types, including Python primitives, Pydantic models, TypedDicts, and more.
 2. We use `griffe` to parse docstrings. Supported docstring formats are `google`, `sphinx` and `numpy`. We attempt to automatically detect the docstring format, but this is best-effort and you can explicitly set it when calling `function_tool`. You can also disable docstring parsing by setting `use_docstring_info` to `False`.
 
-The code for the schema extraction lives in [`agents.function_schema`][].
+The code for the schema extraction lives in [`cai.agents.function_schema`][].
 
 ## Agents as tools
 
 In some workflows, you may want a central agent to orchestrate a network of specialized agents, instead of handing off control. You can do this by modeling agents as tools.
 
 ```python
-from agents import Agent, Runner
+from cai.agents import Agent, Runner
 import asyncio
 
 spanish_agent = Agent(

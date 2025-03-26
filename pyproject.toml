@@ -13,6 +13,7 @@ dependencies = [
     "typing-extensions>=4.12.2, <5",
     "requests>=2.0, <3",
     "types-requests>=2.0, <3",
+    "openinference-instrumentation-openai>=0.1.22",
 ]
 classifiers = [
     "Typing :: Typed",
@@ -55,6 +56,8 @@ dev = [
     "pynput",
     "textual",
     "websockets",
+    "litellm",
+    "prisma"
 ]
 [tool.uv.workspace]
 members = ["agents"]

@@ -1,3 +1,3 @@
 # `Utils`
 
-::: agents.voice.utils
+::: cai.agents.voice.utils

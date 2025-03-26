@@ -1,3 +1,3 @@
 # `Util`
 
-::: agents.tracing.util
+::: cai.agents.tracing.util

@@ -1,3 +1,3 @@
 # `Agents`
 
-::: agents.agent
+::: cai.agents.agent

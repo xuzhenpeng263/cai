@@ -1,3 +1,3 @@
 # `Processor interface`
 
-::: agents.tracing.processor_interface
+::: cai.agents.tracing.processor_interface

@@ -1,3 +1,3 @@
 # `Workflow`
 
-::: agents.voice.workflow
+::: cai.agents.voice.workflow

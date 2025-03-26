@@ -33,7 +33,7 @@ pip install openai-agents
 ## Hello world example
 
 ```python
-from agents import Agent, Runner
+from cai.agents import Agent, Runner
 
 agent = Agent(name="Assistant", instructions="You are a helpful assistant")
 

@@ -1,3 +1,3 @@
 # `Traces`
 
-::: agents.tracing.traces
+::: cai.agents.tracing.traces

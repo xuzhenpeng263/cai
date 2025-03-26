@@ -19,7 +19,7 @@ theme:
   logo: assets/logo.svg
   favicon: images/favicon-platform.svg
 nav:
-  - Intro: index.md
+  - Intro: cai.md
   - Agents SDK v0.0.6:
     - Intro: index.md
     - Quickstart: quickstart.md
@@ -92,10 +92,11 @@ nav:
 
 plugins:
   - search
+  - autorefs
   - mkdocstrings:
       handlers:
         python:
-          paths: ["src/cai/agents"]
+          paths: ["src"]
           selection:
             docstring_style: google
           options:
@@ -119,13 +120,12 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
+          format: pymdownx.superfences.fence_code_format
   - admonition
   - pymdownx.details
   - attr_list
   - md_in_html
   - pymdownx.highlight:
-      anchor_linenums: true
       line_spans: __span
       pygments_lang_class: true
   - pymdownx.inlinehilite

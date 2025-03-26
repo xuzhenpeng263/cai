@@ -1,3 +1,3 @@
 # `Result`
 
-::: agents.voice.result
+::: cai.agents.voice.result

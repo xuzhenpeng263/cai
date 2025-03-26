@@ -1,3 +1,3 @@
 # `Span data`
 
-::: agents.tracing.span_data
+::: cai.agents.tracing.span_data

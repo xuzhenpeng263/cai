@@ -1,3 +1,3 @@
 # `Pipeline`
 
-::: agents.voice.pipeline
+::: cai.agents.voice.pipeline

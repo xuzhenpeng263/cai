@@ -1,3 +1,3 @@
 # `Exceptions`
 
-::: agents.exceptions
+::: cai.agents.exceptions

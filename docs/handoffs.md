@@ -6,16 +6,16 @@ Handoffs are represented as tools to the LLM. So if there's a handoff to an agen
 
 ## Creating a handoff
 
-All agents have a [`handoffs`][agents.agent.Agent.handoffs] param, which can either take an `Agent` directly, or a `Handoff` object that customizes the Handoff.
+All agents have a [`handoffs`][cai.agents.agent.Agent.handoffs] param, which can either take an `Agent` directly, or a `Handoff` object that customizes the Handoff.
 
-You can create a handoff using the [`handoff()`][agents.handoffs.handoff] function provided by the Agents SDK. This function allows you to specify the agent to hand off to, along with optional overrides and input filters.
+You can create a handoff using the [`handoff()`][cai.agents.handoffs.handoff] function provided by the Agents SDK. This function allows you to specify the agent to hand off to, along with optional overrides and input filters.
 
 ### Basic Usage
 
 Here's how you can create a simple handoff:
 
 ```python
-from agents import Agent, handoff
+from cai.agents import Agent, handoff
 
 billing_agent = Agent(name="Billing agent")
 refund_agent = Agent(name="Refund agent")
@@ -28,7 +28,7 @@ triage_agent = Agent(name="Triage agent", handoffs=[billing_agent, handoff(refun
 
 ### Customizing handoffs via the `handoff()` function
 
-The [`handoff()`][agents.handoffs.handoff] function lets you customize things.
+The [`handoff()`][cai.agents.handoffs.handoff] function lets you customize things.
 
 -   `agent`: This is the agent to which things will be handed off.
 -   `tool_name_override`: By default, the `Handoff.default_tool_name()` function is used, which resolves to `transfer_to_<agent_name>`. You can override this.
@@ -38,7 +38,7 @@ The [`handoff()`][agents.handoffs.handoff] function lets you customize things.
 -   `input_filter`: This lets you filter the input received by the next agent. See below for more.
 
 ```python
-from agents import Agent, handoff, RunContextWrapper
+from cai.agents import Agent, handoff, RunContextWrapper
 
 def on_handoff(ctx: RunContextWrapper[None]):
     print("Handoff called")
@@ -60,7 +60,7 @@ In certain situations, you want the LLM to provide some data when it calls a han
 ```python
 from pydantic import BaseModel
 
-from agents import Agent, handoff, RunContextWrapper
+from cai.agents import Agent, handoff, RunContextWrapper
 
 class EscalationData(BaseModel):
     reason: str
@@ -79,12 +79,12 @@ handoff_obj = handoff(
 
 ## Input filters
 
-When a handoff occurs, it's as though the new agent takes over the conversation, and gets to see the entire previous conversation history. If you want to change this, you can set an [`input_filter`][agents.handoffs.Handoff.input_filter]. An input filter is a function that receives the existing input via a [`HandoffInputData`][agents.handoffs.HandoffInputData], and must return a new `HandoffInputData`.
+When a handoff occurs, it's as though the new agent takes over the conversation, and gets to see the entire previous conversation history. If you want to change this, you can set an [`input_filter`][cai.agents.handoffs.Handoff.input_filter]. An input filter is a function that receives the existing input via a [`HandoffInputData`][cai.agents.handoffs.HandoffInputData], and must return a new `HandoffInputData`.
 
-There are some common patterns (for example removing all tool calls from the history), which are implemented for you in [`agents.extensions.handoff_filters`][]
+There are some common patterns (for example removing all tool calls from the history), which are implemented for you in [`cai.agents.extensions.handoff_filters`][]
 
 ```python
-from agents import Agent, handoff
+from cai.agents import Agent, handoff
 from agents.extensions import handoff_filters
 
 agent = Agent(name="FAQ agent")
@@ -99,10 +99,10 @@ handoff_obj = handoff(
 
 ## Recommended prompts
 
-To make sure that LLMs understand handoffs properly, we recommend including information about handoffs in your agents. We have a suggested prefix in [`agents.extensions.handoff_prompt.RECOMMENDED_PROMPT_PREFIX`][], or you can call [`agents.extensions.handoff_prompt.prompt_with_handoff_instructions`][] to automatically add recommended data to your prompts.
+To make sure that LLMs understand handoffs properly, we recommend including information about handoffs in your agents. We have a suggested prefix in [`cai.agents.extensions.handoff_prompt.RECOMMENDED_PROMPT_PREFIX`][], or you can call [`cai.agents.extensions.handoff_prompt.prompt_with_handoff_instructions`][] to automatically add recommended data to your prompts.
 
 ```python
-from agents import Agent
+from cai.agents import Agent
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 
 billing_agent = Agent(

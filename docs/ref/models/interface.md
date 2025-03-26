@@ -1,3 +1,3 @@
 # `Model interface`
 
-::: agents.models.interface
+::: cai.agents.models.interface

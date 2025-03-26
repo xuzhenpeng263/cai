@@ -2,7 +2,6 @@ import os
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from cai.agents import OpenAIChatCompletionsModel,Agent,Runner
-from cai.agents.model_settings import ModelSettings
 from cai.agents import set_default_openai_client, set_tracing_disabled
 
 # Load environment variables from .env file
@@ -15,9 +14,9 @@ external_client = AsyncOpenAI(
 set_default_openai_client(external_client)
 set_tracing_disabled(True)
 
-llm_model=os.getenv('LLM_MODEL', 'gpt-4o')
+# llm_model=os.getenv('LLM_MODEL', 'gpt-4o')
 # llm_model=os.getenv('LLM_MODEL', 'claude-3-7')
-# llm_model=os.getenv('LLM_MODEL', 'qwen2.5:14b')
+llm_model=os.getenv('LLM_MODEL', 'qwen2.5:14b')
 
 # For Qwen models, we need to skip system instructions as they're not supported
 instructions = None if "qwen" in llm_model.lower() else "You are a helpful assistant"
