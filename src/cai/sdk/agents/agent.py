@@ -82,6 +82,9 @@ class Agent(Generic[TContext]):
     return a string.
     """
 
+    description: str | None = None
+    """A description of the agent. This is used in the CLI to show the agent's description."""
+
     handoff_description: str | None = None
     """A description of the agent. This is used when the agent is used as a handoff, so that an
     LLM knows what it does and when to invoke it.

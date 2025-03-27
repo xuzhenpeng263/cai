@@ -1,3 +1,101 @@
+"""
+This module provides a CLI interface for testing and
+interacting with CAI agents.
+
+Environment Variables
+---------------------
+    Required:
+        N/A
+
+    Optional:
+        CTF_NAME: Name of the CTF challenge to
+            run (e.g. "picoctf_static_flag")
+        CTF_CHALLENGE: Specific challenge name
+            within the CTF to test
+        CTF_SUBNET: Network subnet for the CTF
+            container (default: "192.168.2.0/24")
+        CTF_IP: IP address for the CTF
+            container (default: "192.168.2.100")
+        CTF_INSIDE: Whether to conquer the CTF from
+            within container (default: "true")
+
+        CAI_MODEL: Model to use for agents
+            (default: "qwen2.5:14b")
+        CAI_DEBUG: Set debug output level (default: "1")
+            - 0: Only tool outputs
+            - 1: Verbose debug output
+            - 2: CLI debug output
+        CAI_BRIEF: Enable/disable brief output mode (default: "false")
+        CAI_MAX_TURNS: Maximum number of turns for
+            agent interactions (default: "inf")
+        CAI_TRACING: Enable/disable OpenTelemetry tracing
+            (default: "true"). When enabled, traces execution
+            flow and agent interactions for debugging and analysis.
+        CAI_AGENT_TYPE: Specify the agents to use it could take
+            the value of (default: "one_tool_agent"). Use "/agent"
+            command in CLI to list all available agents.
+        CAI_STATE: Enable/disable stateful mode (default: "false").
+            When enabled, the agent will use a state agent to keep
+            track of the state of the network and the flags found.
+        CAI_MEMORY: Enable/disable memory mode (default: "false")
+            - episodic: use episodic memory
+            - semantic: use semantic memory
+            - all: use both episodic and semantic memorys
+        CAI_MEMORY_ONLINE: Enable/disable online memory mode
+            (default: "false")
+        CAI_MEMORY_OFFLINE: Enable/disable offline memory
+            (default: "false")
+        CAI_ENV_CONTEXT: Add enviroment context, dirs and
+            current env available (default: "true")
+        CAI_MEMORY_ONLINE_INTERVAL: Number of turns between
+            online memory updates (default: "5")
+        CAI_PRICE_LIMIT: Price limit for the conversation in dollars
+            (default: "1")
+        CAI_SUPPORT_MODEL: Model to use for the support agent
+            (default: "o3-mini")
+        CAI_SUPPORT_INTERVAL: Number of turns between support agent
+            executions (default: "5")
+
+    Extensions (only applicable if the right extension is installed):
+
+        "report"
+            CAI_REPORT: Enable/disable reporter mode. Possible values:
+                - ctf (default): do a report from a ctf resolution
+                - nis2: do a report for nis2
+                - pentesting: do a report from a pentesting
+
+Usage Examples:
+
+    # Run against a CTF
+    CTF_NAME="kiddoctf" CTF_CHALLENGE="02 linux ii" \
+        CAI_AGENT_TYPE="one_tool_agent" CAI_MODEL="qwen2.5:14b" \
+        CAI_TRACING="false" python3 cai/cli.py
+
+    # Run a harder CTF
+    CTF_NAME="hackableii" CAI_AGENT_TYPE="redteam_agent" \
+        CTF_INSIDE="False" CAI_MODEL="deepseek/deepseek-chat" \
+        CAI_TRACING="false" python3 cai/cli.py
+
+    # Run without a target in human-in-the-loop mode, generating a report
+    CAI_TRACING=False CAI_REPORT=pentesting CAI_MODEL="gpt-4o" \
+        python3 cai/cli.py
+
+    # Run with online episodic memory
+    #   registers memory every 5 turns:
+    #   limits the cost to 5 dollars
+    CTF_NAME="hackableII" CAI_MEMORY="episodic" \
+        CAI_MODEL="o3-mini" CAI_MEMORY_ONLINE="True" \
+        CTF_INSIDE="False" CTF_HINTS="False"  \
+        CAI_PRICE_LIMIT="5" python3 cai/cli.py
+
+    # Run with custom long_term_memory interval
+    # Executes memory long_term_memory every 3 turns:
+    CTF_NAME="hackableII" CAI_MEMORY="episodic" \
+        CAI_MODEL="o3-mini" CAI_MEMORY_ONLINE_INTERVAL="3" \
+        CAI_MEMORY_ONLINE="False" CTF_INSIDE="False" \
+        CTF_HINTS="False" python3 cai/cli.py
+"""
+
 import os
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -127,5 +225,8 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
             console.print(f"[bold red]Error: {str(e)}[/bold red]")
 
 
-if __name__ == "__main__":
+def main():    
     run_cai_cli(agent, stream=True)
+
+if __name__ == "__main__":
+    main()

@@ -18,7 +18,8 @@ dependencies = [
     "rich>=13.9.4",
     "prompt_toolkit>=3.0.39",
     "dotenv>=0.9.9",
-    "litellm>=1.63.7"
+    "litellm>=1.63.7",
+    "mako>=1.3.9"
 ]
 classifiers = [
     "Typing :: Typed",
@@ -77,6 +78,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/cai"]
 
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/cai/prompts" = "cai/prompts"
 
 [tool.ruff]
 line-length = 100
@@ -137,3 +143,6 @@ markers = [
 
 [tool.inline-snapshot]
 format-command = "ruff format --stdin-filename {filename}"
+
+[project.scripts]
+cai = "cai.cli:main"
