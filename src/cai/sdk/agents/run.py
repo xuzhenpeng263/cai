@@ -493,6 +493,8 @@ class Runner:
                 # agent changes, or if the agent loop ends.
                 if current_span is None:
                     handoff_names = [h.agent_name for h in cls._get_handoffs(current_agent)]
+                    # print("current_agent: ", current_agent)
+                    # print("current_agent.tools: ", current_agent.tools)
                     tool_names = [t.name for t in current_agent.tools]
                     if output_schema := cls._get_output_schema(current_agent):
                         output_type_name = output_schema.output_type_name()

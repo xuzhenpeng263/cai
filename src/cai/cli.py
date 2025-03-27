@@ -71,7 +71,7 @@ Usage Examples:
         CAI_AGENT_TYPE="one_tool_agent" CAI_MODEL="qwen2.5:14b" \
         CAI_TRACING="false" python3 cai/cli.py
 
-    # Run a harder CTF
+    # Run a harder CTF
     CTF_NAME="hackableii" CAI_AGENT_TYPE="redteam_agent" \
         CTF_INSIDE="False" CAI_MODEL="deepseek/deepseek-chat" \
         CAI_TRACING="false" python3 cai/cli.py
@@ -113,6 +113,9 @@ from cai.repl.ui.banner import display_banner
 from cai.repl.ui.prompt import get_user_input
 from cai.repl.ui.toolbar import get_toolbar_with_refresh
 
+# Import agents-related functions
+from cai.agents import get_agent_by_name
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -123,22 +126,22 @@ external_client = AsyncOpenAI(
 set_default_openai_client(external_client)
 set_tracing_disabled(True)
 
-# llm_model=os.getenv('LLM_MODEL', 'gpt-4o-mini')
-# llm_model=os.getenv('LLM_MODEL', 'claude-3-7')
-llm_model=os.getenv('LLM_MODEL', 'qwen2.5:14b')
+# # llm_model=os.getenv('LLM_MODEL', 'gpt-4o-mini')
+# # llm_model=os.getenv('LLM_MODEL', 'claude-3-7')
+# llm_model=os.getenv('LLM_MODEL', 'qwen2.5:14b')
 
 
-# For Qwen models, we need to skip system instructions as they're not supported
-instructions = None if "qwen" in llm_model.lower() else "You are a helpful assistant"
+# # For Qwen models, we need to skip system instructions as they're not supported
+# instructions = None if "qwen" in llm_model.lower() else "You are a helpful assistant"
 
-agent = Agent(
-    name="Assistant", 
-    instructions=instructions,
-    model=OpenAIChatCompletionsModel(
-        model=llm_model,
-        openai_client=external_client,
-    )
-)
+# agent = Agent(
+#     name="Assistant", 
+#     instructions=instructions,
+#     model=OpenAIChatCompletionsModel(
+#         model=llm_model,
+#         openai_client=external_client,
+#     )
+# )
 
 def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=float('inf')):
     """
@@ -209,7 +212,9 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                         return result
                     except Exception as e:
                         print()  # Add a newline after any partial output
-                        print(f"\n[Error occurred during streaming: {str(e)}]")
+                        import traceback
+                        tb = traceback.format_exc()
+                        print(f"\n[Error occurred during streaming: {str(e)}]\nLocation: {tb}")
                         return None
 
                 asyncio.run(process_streamed_response())
@@ -222,11 +227,42 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
         except KeyboardInterrupt:
             break
         except Exception as e:
+            import traceback
+            import sys
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            tb_info = traceback.extract_tb(exc_traceback)
+            filename, line, func, text = tb_info[-1]
             console.print(f"[bold red]Error: {str(e)}[/bold red]")
+            console.print(f"[bold red]Traceback: {tb_info}[/bold red]")
 
 
-def main():    
-    run_cai_cli(agent, stream=True)
+def main():
+    # Get agent type from environment variables or use default
+    agent_type = os.getenv('CAI_AGENT_TYPE', "one_tool_agent")
+
+    llm_model=os.getenv('LLM_MODEL', 'qwen2.5:14b')
+    # llm_model=os.getenv('LLM_MODEL', 'gpt-4o-mini')
+
+    # For Qwen models, we need to skip system instructions as they're not supported
+    instructions = None if "qwen" in llm_model.lower() else "You are a helpful assistant"
+
+    agent = Agent(
+        name="Assistant", 
+        instructions=instructions,
+        model=OpenAIChatCompletionsModel(
+            model=llm_model,
+            openai_client=external_client,
+        )
+    )
+
+    # Get the agent instance by name
+    agent = get_agent_by_name(agent_type)
+
+    # Enable streaming by default, unless specifically disabled
+    stream = os.getenv('CAI_STREAM', 'false').lower() != 'false'
+
+    # Run the CLI with the selected agent
+    run_cai_cli(agent, stream=stream)
 
 if __name__ == "__main__":
     main()

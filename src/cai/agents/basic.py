@@ -3,7 +3,7 @@ Collection of basic agents
 """
 
 import os
-from cai.util import Agent  # pylint: disable=import-error
+from cai.sdk.agents import Agent  # pylint: disable=import-error
 from cai.tools.reconnaissance.netcat import netcat  # pylint: disable=import-error # noqa: E501
 from cai.tools.reconnaissance.nmap import nmap  # pylint: disable=import-error # noqa: E501
 
@@ -46,10 +46,9 @@ ctf_agent = Agent(
                     6. YOU MUST USE THE flag_discriminator to check the flag
                     when you have it in DECODED 64-bit format
                     7. Do a initial recon (nmap, service enumeration)""",
-    functions=[
+    tools=[
         generic_linux_command,
     ],
-    parallel_tool_calls=False
 )
 
 
@@ -79,7 +78,7 @@ network_agent = Agent(
         5. Whenever you find a likely candidate flag, call
         the flag_discriminator agent.
         6. DO NOT SEND THE SAME COMMAND OVER AND OVER"""),
-    functions=[netcat, nmap],
+    tools=[netcat, nmap],
 )
 
 
@@ -106,7 +105,7 @@ crypto_agent = Agent(
         5. Do not generate a plan or verbose output.
         """
                   ),
-    functions=[decode64, strings_command, decode_hex_bytes],
+    tools=[decode64, strings_command, decode_hex_bytes],
 )
 
 
@@ -132,7 +131,7 @@ listing_agent = Agent(
         TO SOLVE THE CTF
         5. KEEP CALLING THE TOOLS OR THE CTF Leader AGENT
         UNTIL YOU FIND THE FLAG"""),
-    functions=[
+    tools=[
         list_dir,
         cat_file,
         find_file,

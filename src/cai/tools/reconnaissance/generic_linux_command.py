@@ -5,8 +5,10 @@ from cai.tools.common import (run_command,
                               list_shell_sessions,
                               get_session_output,
                               terminate_session)  # pylint: disable=import-error # noqa E501
+from cai.sdk.agents import function_tool
 
 
+@function_tool
 def generic_linux_command(command: str = "",
                           args: str = "", ctf=None,
                           async_mode: bool = False,

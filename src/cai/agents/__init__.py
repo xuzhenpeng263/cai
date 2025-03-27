@@ -49,6 +49,7 @@ import os
 import pkgutil
 import importlib
 from cai.sdk.agents import Agent
+from cai.sdk.agents.handoffs import handoff
 
 from typing import Dict
 
@@ -173,28 +174,58 @@ def get_agent_module(agent_name: str) -> str:
     return "unknown"
 
 
-
-load_dotenv()
-cai_agent = os.getenv('CAI_AGENT_TYPE', "one_tool_agent").lower()
-# Get all available agents
-available_agents = get_available_agents()
-
-if cai_agent not in available_agents:
-    # stop and raise error
-    raise ValueError(f"Invalid CAI agent type: {cai_agent}")
-
-# Set the initial agent based on the environment variable
-cai_initial_agent = available_agents[cai_agent]
-
-# Special handling for one_tool agent
-#
-# NOTE: maintained this for backwards compatibility
-#
-# NOTE 2: consider adding this if CTF_NAME defined
-#
-if cai_agent == "one_tool_agent":
-    from cai.agents.one_tool import transfer_to_one_tool_agent  # noqa
-    cai_initial_agent.tools.append(
-        transfer_to_flag_discriminator
-    )
-    flag_discriminator.tools.append(transfer_to_one_tool_agent)  # noqa
+def get_agent_by_name(agent_name: str) -> Agent:
+    """
+    Get an agent instance by name.
+    
+    Args:
+        agent_name: Name of the agent to retrieve
+        
+    Returns:
+        Agent instance corresponding to the given name
+        
+    Raises:
+        ValueError: If the agent name is not found
+    """
+    # Get all available agents from the agents module
+    available_agents = get_available_agents()
+    
+    # Convert agent_name to lowercase for case-insensitive comparison
+    agent_name = agent_name.lower()
+    
+    # Check if the agent exists in available_agents
+    if agent_name not in available_agents:
+        raise ValueError(f"Invalid agent type: {agent_name}. Available agents: {', '.join(available_agents.keys())}")
+    
+    # Get the agent instance
+    agent = available_agents[agent_name]
+    
+    # # Special handling for one_tool agent
+    # if agent_name == "one_tool_agent":
+    #     from cai.agents.one_tool import one_tool_agent
+        
+    #     # Create handoffs between agents
+    #     # Add a handoff from one_tool_agent to flag_discriminator
+    #     flag_discriminator_handoff = handoff(
+    #         flag_discriminator,
+    #         tool_name_override="transfer_to_flag_discriminator",
+    #         tool_description_override="Transfer control to the flag discriminator agent"
+    #     )
+        
+    #     # Add a handoff from flag_discriminator to one_tool_agent
+    #     one_tool_agent_handoff = handoff(
+    #         one_tool_agent,
+    #         tool_name_override="transfer_to_one_tool_agent",
+    #         tool_description_override="Transfer control back to the one tool agent"
+    #     )
+        
+    #     # Add handoffs to agent.handoffs lists
+    #     if not hasattr(agent, 'handoffs'):
+    #         agent.handoffs = []
+    #     if not hasattr(flag_discriminator, 'handoffs'):
+    #         flag_discriminator.handoffs = []
+            
+    #     agent.handoffs.append(flag_discriminator_handoff)
+    #     flag_discriminator.handoffs.append(one_tool_agent_handoff)
+    
+    return agent
