@@ -1,3 +1,3 @@
 # `Workflow`
 
-::: cai.agents.voice.workflow
+::: cai.sdk.agents.voice.workflow

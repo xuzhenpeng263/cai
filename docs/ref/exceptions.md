@@ -1,3 +1,3 @@
 # `Exceptions`
 
-::: cai.agents.exceptions
+::: cai.sdk.agents.exceptions

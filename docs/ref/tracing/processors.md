@@ -1,3 +1,3 @@
 # `Processors`
 
-::: cai.agents.tracing.processors
+::: cai.sdk.agents.tracing.processors

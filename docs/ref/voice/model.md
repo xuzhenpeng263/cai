@@ -1,3 +1,3 @@
 # `Model`
 
-::: cai.agents.voice.model
+::: cai.sdk.agents.voice.model

@@ -1,3 +1,3 @@
 # `Items`
 
-::: cai.agents.items
+::: cai.sdk.agents.items

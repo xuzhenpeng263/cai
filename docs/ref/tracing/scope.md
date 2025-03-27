@@ -1,3 +1,3 @@
 # `Scope`
 
-::: cai.agents.tracing.scope
+::: cai.sdk.agents.tracing.scope

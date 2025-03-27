@@ -1,6 +1,6 @@
 # `Spans`
 
-::: cai.agents.tracing.spans
+::: cai.sdk.agents.tracing.spans
 
     options:
         members:

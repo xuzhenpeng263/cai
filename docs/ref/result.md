@@ -1,3 +1,3 @@
 # `Results`
 
-::: cai.agents.result
+::: cai.sdk.agents.result

@@ -1,3 +1,3 @@
 # `Guardrails`
 
-::: cai.agents.guardrail
+::: cai.sdk.agents.guardrail

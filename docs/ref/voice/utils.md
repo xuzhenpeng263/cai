@@ -1,3 +1,3 @@
 # `Utils`
 
-::: cai.agents.voice.utils
+::: cai.sdk.agents.voice.utils

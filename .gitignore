@@ -142,3 +142,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# CAI files
+.cai/
+.vscode/

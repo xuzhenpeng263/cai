@@ -1,3 +1,3 @@
 # `OpenAI STT`
 
-::: cai.agents.voice.models.openai_stt
+::: cai.sdk.agents.voice.models.openai_stt

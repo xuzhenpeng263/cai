@@ -1,6 +1,6 @@
 # Agents module
 
-::: cai.agents
+::: cai.sdk.agents
 
     options:
         members:

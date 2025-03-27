@@ -1,3 +1,3 @@
 # `Model settings`
 
-::: cai.agents.model_settings
+::: cai.sdk.agents.model_settings

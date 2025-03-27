@@ -1,6 +1,6 @@
 # `Handoff prompt`
 
-::: cai.agents.extensions.handoff_prompt
+::: cai.sdk.agents.extensions.handoff_prompt
 
     options:
         members:

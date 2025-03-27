@@ -43,3 +43,8 @@ curl -s http://localhost:4000/v1/chat/completions -H "Content-Type: application/
 # gpt-4o
 curl -s http://localhost:4000/v1/chat/completions -H "Content-Type: application/json" -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Say hi"}], "max_tokens": 10}' | jq
 ```
+
+When using virtual keys:
+```bash
+curl -s http://localhost:4000/v1/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer sk-pNCn8ZA0SCtWMpkZNUWe5g" -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Say hi"}], "max_tokens": 10}' | jq
+```

@@ -4,6 +4,11 @@ model_list:
       model: gpt-4o
       api_key: "os.environ/OPENAI_API_KEY"
       api_base: https://api.openai.com/v1
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: gpt-4o-mini
+      api_key: "os.environ/OPENAI_API_KEY"
+      api_base: https://api.openai.com/v1
   - model_name: claude-3-7
     litellm_params: 
       model: claude-3-7-sonnet-20250219

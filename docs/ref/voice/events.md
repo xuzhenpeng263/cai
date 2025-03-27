@@ -1,3 +1,3 @@
 # `Events`
 
-::: cai.agents.voice.events
+::: cai.sdk.agents.voice.events

@@ -1,3 +1,3 @@
 # `Handoffs`
 
-::: cai.agents.handoffs
+::: cai.sdk.agents.handoffs

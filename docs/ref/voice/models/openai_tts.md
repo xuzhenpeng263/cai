@@ -1,3 +1,3 @@
 # `OpenAI TTS`
 
-::: cai.agents.voice.models.openai_tts
+::: cai.sdk.agents.voice.models.openai_tts

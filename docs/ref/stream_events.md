@@ -1,3 +1,3 @@
 # `Streaming events`
 
-::: cai.agents.stream_events
+::: cai.sdk.agents.stream_events

@@ -1,3 +1,3 @@
 # `OpenAI Responses model`
 
-::: cai.agents.models.openai_responses
+::: cai.sdk.agents.models.openai_responses

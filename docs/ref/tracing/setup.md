@@ -1,3 +1,3 @@
 # `Setup`
 
-::: cai.agents.tracing.setup
+::: cai.sdk.agents.tracing.setup

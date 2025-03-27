@@ -1,6 +1,6 @@
 # `Runner`
 
-::: cai.agents.run
+::: cai.sdk.agents.run
 
     options:
         members:

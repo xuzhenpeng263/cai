@@ -1,3 +1,3 @@
 # `Usage`
 
-::: cai.agents.usage
+::: cai.sdk.agents.usage

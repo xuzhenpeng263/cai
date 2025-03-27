@@ -144,4 +144,4 @@ extra_css:
   - stylesheets/extra.css
 
 watch:
-  - "src/cai/agents"
+  - "src/cai/sdk/agents"

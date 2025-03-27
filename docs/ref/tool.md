@@ -1,3 +1,3 @@
 # `Tools`
 
-::: cai.agents.tool
+::: cai.sdk.agents.tool

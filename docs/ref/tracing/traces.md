@@ -1,3 +1,3 @@
 # `Traces`
 
-::: cai.agents.tracing.traces
+::: cai.sdk.agents.tracing.traces
