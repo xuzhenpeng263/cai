@@ -15,7 +15,7 @@ OpenAI offers a few built-in tools when using the [`OpenAIResponsesModel`][cai.s
 -   The [`ComputerTool`][cai.sdk.agents.tool.ComputerTool] allows automating computer use tasks.
 
 ```python
-from cai.agents import Agent, FileSearchTool, Runner, WebSearchTool
+from cai.sdk.agents import Agent, FileSearchTool, Runner, WebSearchTool
 
 agent = Agent(
     name="Assistant",
@@ -49,7 +49,7 @@ import json
 
 from typing_extensions import TypedDict, Any
 
-from cai.agents import Agent, FunctionTool, RunContextWrapper, function_tool
+from cai.sdk.agents import Agent, FunctionTool, RunContextWrapper, function_tool
 
 
 class Location(TypedDict):
@@ -183,7 +183,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from cai.agents import RunContextWrapper, FunctionTool
+from cai.sdk.agents import RunContextWrapper, FunctionTool
 
 
 
@@ -223,7 +223,7 @@ The code for the schema extraction lives in [`cai.sdk.agents.function_schema`][]
 In some workflows, you may want a central agent to orchestrate a network of specialized agents, instead of handing off control. You can do this by modeling agents as tools.
 
 ```python
-from cai.agents import Agent, Runner
+from cai.sdk.agents import Agent, Runner
 import asyncio
 
 spanish_agent = Agent(

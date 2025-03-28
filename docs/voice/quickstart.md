@@ -50,7 +50,7 @@ First, let's set up some Agents. This should feel familiar to you if you've buil
 import asyncio
 import random
 
-from cai.agents import (
+from cai.sdk.agents import (
     Agent,
     function_tool,
 )
@@ -129,7 +129,7 @@ import random
 import numpy as np
 import sounddevice as sd
 
-from cai.agents import (
+from cai.sdk.agents import (
     Agent,
     function_tool,
     set_tracing_disabled,

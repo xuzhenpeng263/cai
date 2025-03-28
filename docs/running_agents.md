@@ -7,7 +7,7 @@ You can run agents via the [`Runner`][cai.sdk.agents.run.Runner] class. You have
 3. [`Runner.run_streamed()`][cai.sdk.agents.run.Runner.run_streamed], which runs async and returns a [`RunResultStreaming`][cai.sdk.agents.result.RunResultStreaming]. It calls the LLM in streaming mode, and streams those events to you as they are received.
 
 ```python
-from cai.agents import Agent, Runner
+from cai.sdk.agents import Agent, Runner
 
 async def main():
     agent = Agent(name="Assistant", instructions="You are a helpful assistant")

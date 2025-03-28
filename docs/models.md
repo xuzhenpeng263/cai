@@ -18,7 +18,7 @@ Within a single workflow, you may want to use different models for each agent. F
     While our SDK supports both the [`OpenAIResponsesModel`][cai.sdk.agents.models.openai_responses.OpenAIResponsesModel] and the [`OpenAIChatCompletionsModel`][cai.sdk.agents.models.openai_chatcompletions.OpenAIChatCompletionsModel] shapes, we recommend using a single model shape for each workflow because the two shapes support a different set of features and tools. If your workflow requires mixing and matching model shapes, make sure that all the features you're using are available on both.
 
 ```python
-from cai.agents import Agent, Runner, AsyncOpenAI, OpenAIChatCompletionsModel
+from cai.sdk.agents import Agent, Runner, AsyncOpenAI, OpenAIChatCompletionsModel
 import asyncio
 
 spanish_agent = Agent(

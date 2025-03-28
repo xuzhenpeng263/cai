@@ -41,7 +41,7 @@ You need to provide a function that receives input, and returns a [`GuardrailFun
 
 ```python
 from pydantic import BaseModel
-from cai.agents import (
+from cai.sdk.agents import (
     Agent,
     GuardrailFunctionOutput,
     InputGuardrailTripwireTriggered,
@@ -99,7 +99,7 @@ Output guardrails are similar.
 
 ```python
 from pydantic import BaseModel
-from cai.agents import (
+from cai.sdk.agents import (
     Agent,
     GuardrailFunctionOutput,
     OutputGuardrailTripwireTriggered,

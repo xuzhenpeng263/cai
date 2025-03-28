@@ -29,7 +29,7 @@ You can use the context for things like:
 import asyncio
 from dataclasses import dataclass
 
-from cai.agents import Agent, RunContextWrapper, Runner, function_tool
+from cai.sdk.agents import Agent, RunContextWrapper, Runner, function_tool
 
 @dataclass
 class UserInfo:  # (1)!

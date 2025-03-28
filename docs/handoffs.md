@@ -15,7 +15,7 @@ You can create a handoff using the [`handoff()`][cai.sdk.agents.handoffs.handoff
 Here's how you can create a simple handoff:
 
 ```python
-from cai.agents import Agent, handoff
+from cai.sdk.agents import Agent, handoff
 
 billing_agent = Agent(name="Billing agent")
 refund_agent = Agent(name="Refund agent")
@@ -38,7 +38,7 @@ The [`handoff()`][cai.sdk.agents.handoffs.handoff] function lets you customize t
 -   `input_filter`: This lets you filter the input received by the next agent. See below for more.
 
 ```python
-from cai.agents import Agent, handoff, RunContextWrapper
+from cai.sdk.agents import Agent, handoff, RunContextWrapper
 
 def on_handoff(ctx: RunContextWrapper[None]):
     print("Handoff called")
@@ -60,7 +60,7 @@ In certain situations, you want the LLM to provide some data when it calls a han
 ```python
 from pydantic import BaseModel
 
-from cai.agents import Agent, handoff, RunContextWrapper
+from cai.sdk.agents import Agent, handoff, RunContextWrapper
 
 class EscalationData(BaseModel):
     reason: str
@@ -84,7 +84,7 @@ When a handoff occurs, it's as though the new agent takes over the conversation,
 There are some common patterns (for example removing all tool calls from the history), which are implemented for you in [`cai.sdk.agents.extensions.handoff_filters`][]
 
 ```python
-from cai.agents import Agent, handoff
+from cai.sdk.agents import Agent, handoff
 from agents.extensions import handoff_filters
 
 agent = Agent(name="FAQ agent")
@@ -102,7 +102,7 @@ handoff_obj = handoff(
 To make sure that LLMs understand handoffs properly, we recommend including information about handoffs in your agents. We have a suggested prefix in [`cai.sdk.agents.extensions.handoff_prompt.RECOMMENDED_PROMPT_PREFIX`][], or you can call [`cai.sdk.agents.extensions.handoff_prompt.prompt_with_handoff_instructions`][] to automatically add recommended data to your prompts.
 
 ```python
-from cai.agents import Agent
+from cai.sdk.agents import Agent
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 
 billing_agent = Agent(

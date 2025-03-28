@@ -48,7 +48,7 @@ In addition, you can set up [custom trace processors](#custom-tracing-processors
 Sometimes, you might want multiple calls to `run()` to be part of a single trace. You can do this by wrapping the entire code in a `trace()`.
 
 ```python
-from cai.agents import Agent, Runner, trace
+from cai.sdk.agents import Agent, Runner, trace
 
 async def main():
     agent = Agent(name="Joke generator", instructions="Tell funny jokes.")
