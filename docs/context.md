@@ -7,7 +7,7 @@ Context is an overloaded term. There are two main classes of context you might c
 
 ## Local context
 
-This is represented via the [`RunContextWrapper`][cai.agents.run_context.RunContextWrapper] class and the [`context`][cai.agents.run_context.RunContextWrapper.context] property within it. The way this works is:
+This is represented via the [`RunContextWrapper`][cai.sdk.agents.run_context.RunContextWrapper] class and the [`context`][cai.sdk.agents.run_context.RunContextWrapper.context] property within it. The way this works is:
 
 1. You create any Python object you want. A common pattern is to use a dataclass or a Pydantic object.
 2. You pass that object to the various run methods (e.g. `Runner.run(..., **context=whatever**))`.

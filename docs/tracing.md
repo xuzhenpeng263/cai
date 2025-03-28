@@ -7,7 +7,7 @@ The Agents SDK includes built-in tracing, collecting a comprehensive record of e
     Tracing is enabled by default. There are two ways to disable tracing:
 
     1. You can globally disable tracing by setting the env var `OPENAI_AGENTS_DISABLE_TRACING=1`
-    2. You can disable tracing for a single run by setting [`cai.agents.run.RunConfig.tracing_disabled`][] to `True`
+    2. You can disable tracing for a single run by setting [`cai.sdk.agents.run.RunConfig.tracing_disabled`][] to `True`
 
 ***For organizations operating under a Zero Data Retention (ZDR) policy using OpenAI's APIs, tracing is unavailable.***
 
@@ -39,7 +39,7 @@ By default, the SDK traces the following:
 -   Audio outputs (text-to-speech) are wrapped in a `speech_span()`
 -   Related audio spans may be parented under a `speech_group_span()`
 
-By default, the trace is named "Agent trace". You can set this name if you use `trace`, or you can can configure the name and other properties with the [`RunConfig`][cai.agents.run.RunConfig].
+By default, the trace is named "Agent trace". You can set this name if you use `trace`, or you can can configure the name and other properties with the [`RunConfig`][cai.sdk.agents.run.RunConfig].
 
 In addition, you can set up [custom trace processors](#custom-tracing-processors) to push traces to other destinations (as a replacement, or secondary destination).
 
@@ -64,16 +64,16 @@ async def main():
 
 ## Creating traces
 
-You can use the [`trace()`][cai.agents.tracing.trace] function to create a trace. Traces need to be started and finished. You have two options to do so:
+You can use the [`trace()`][cai.sdk.agents.tracing.trace] function to create a trace. Traces need to be started and finished. You have two options to do so:
 
 1. **Recommended**: use the trace as a context manager, i.e. `with trace(...) as my_trace`. This will automatically start and end the trace at the right time.
-2. You can also manually call [`trace.start()`][cai.agents.tracing.Trace.start] and [`trace.finish()`][cai.agents.tracing.Trace.finish].
+2. You can also manually call [`trace.start()`][cai.sdk.agents.tracing.Trace.start] and [`trace.finish()`][cai.sdk.agents.tracing.Trace.finish].
 
 The current trace is tracked via a Python [`contextvar`](https://docs.python.org/3/library/contextvars.html). This means that it works with concurrency automatically. If you manually start/end a trace, you'll need to pass `mark_as_current` and `reset_current` to `start()`/`finish()` to update the current trace.
 
 ## Creating spans
 
-You can use the various [`*_span()`][cai.agents.tracing.create] methods to create a span. In general, you don't need to manually create spans. A [`custom_span()`][cai.agents.tracing.custom_span] function is available for tracking custom span information.
+You can use the various [`*_span()`][cai.sdk.agents.tracing.create] methods to create a span. In general, you don't need to manually create spans. A [`custom_span()`][cai.sdk.agents.tracing.custom_span] function is available for tracking custom span information.
 
 Spans are automatically part of the current trace, and are nested under the nearest current span, which is tracked via a Python [`contextvar`](https://docs.python.org/3/library/contextvars.html).
 
@@ -81,21 +81,21 @@ Spans are automatically part of the current trace, and are nested under the near
 
 Certain spans may capture potentially sensitive data.
 
-The `generation_span()` stores the inputs/outputs of the LLM generation, and `function_span()` stores the inputs/outputs of function calls. These may contain sensitive data, so you can disable capturing that data via [`RunConfig.trace_include_sensitive_data`][cai.agents.run.RunConfig.trace_include_sensitive_data].
+The `generation_span()` stores the inputs/outputs of the LLM generation, and `function_span()` stores the inputs/outputs of function calls. These may contain sensitive data, so you can disable capturing that data via [`RunConfig.trace_include_sensitive_data`][cai.sdk.agents.run.RunConfig.trace_include_sensitive_data].
 
-Similarly, Audio spans include base64-encoded PCM data for input and output audio by default. You can disable capturing this audio data by configuring [`VoicePipelineConfig.trace_include_sensitive_audio_data`][cai.agents.voice.pipeline_config.VoicePipelineConfig.trace_include_sensitive_audio_data].
+Similarly, Audio spans include base64-encoded PCM data for input and output audio by default. You can disable capturing this audio data by configuring [`VoicePipelineConfig.trace_include_sensitive_audio_data`][cai.sdk.agents.voice.pipeline_config.VoicePipelineConfig.trace_include_sensitive_audio_data].
 
 ## Custom tracing processors
 
 The high level architecture for tracing is:
 
--   At initialization, we create a global [`TraceProvider`][cai.agents.tracing.setup.TraceProvider], which is responsible for creating traces.
--   We configure the `TraceProvider` with a [`BatchTraceProcessor`][cai.agents.tracing.processors.BatchTraceProcessor] that sends traces/spans in batches to a [`BackendSpanExporter`][cai.agents.tracing.processors.BackendSpanExporter], which exports the spans and traces to the OpenAI backend in batches.
+-   At initialization, we create a global [`TraceProvider`][cai.sdk.agents.tracing.setup.TraceProvider], which is responsible for creating traces.
+-   We configure the `TraceProvider` with a [`BatchTraceProcessor`][cai.sdk.agents.tracing.processors.BatchTraceProcessor] that sends traces/spans in batches to a [`BackendSpanExporter`][cai.sdk.agents.tracing.processors.BackendSpanExporter], which exports the spans and traces to the OpenAI backend in batches.
 
 To customize this default setup, to send traces to alternative or additional backends or modifying exporter behavior, you have two options:
 
-1. [`add_trace_processor()`][cai.agents.tracing.add_trace_processor] lets you add an **additional** trace processor that will receive traces and spans as they are ready. This lets you do your own processing in addition to sending traces to OpenAI's backend.
-2. [`set_trace_processors()`][cai.agents.tracing.set_trace_processors] lets you **replace** the default processors with your own trace processors. This means traces will not be sent to the OpenAI backend unless you include a `TracingProcessor` that does so.
+1. [`add_trace_processor()`][cai.sdk.agents.tracing.add_trace_processor] lets you add an **additional** trace processor that will receive traces and spans as they are ready. This lets you do your own processing in addition to sending traces to OpenAI's backend.
+2. [`set_trace_processors()`][cai.sdk.agents.tracing.set_trace_processors] lets you **replace** the default processors with your own trace processors. This means traces will not be sent to the OpenAI backend unless you include a `TracingProcessor` that does so.
 
 ## External tracing processors list
 

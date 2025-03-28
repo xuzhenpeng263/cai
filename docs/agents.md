@@ -108,7 +108,7 @@ agent = Agent[UserContext](
 
 ## Lifecycle events (hooks)
 
-Sometimes, you want to observe the lifecycle of an agent. For example, you may want to log events, or pre-fetch data when certain events occur. You can hook into the agent lifecycle with the `hooks` property. Subclass the [`AgentHooks`][cai.agents.lifecycle.AgentHooks] class, and override the methods you're interested in.
+Sometimes, you want to observe the lifecycle of an agent. For example, you may want to log events, or pre-fetch data when certain events occur. You can hook into the agent lifecycle with the `hooks` property. Subclass the [`AgentHooks`][cai.sdk.agents.lifecycle.AgentHooks] class, and override the methods you're interested in.
 
 ## Guardrails
 
@@ -133,7 +133,7 @@ robot_agent = pirate_agent.clone(
 
 ## Forcing tool use
 
-Supplying a list of tools doesn't always mean the LLM will use a tool. You can force tool use by setting [`ModelSettings.tool_choice`][cai.agents.model_settings.ModelSettings.tool_choice]. Valid values are:
+Supplying a list of tools doesn't always mean the LLM will use a tool. You can force tool use by setting [`ModelSettings.tool_choice`][cai.sdk.agents.model_settings.ModelSettings.tool_choice]. Valid values are:
 
 1. `auto`, which allows the LLM to decide whether or not to use a tool.
 2. `required`, which requires the LLM to use a tool (but it can intelligently decide which tool).

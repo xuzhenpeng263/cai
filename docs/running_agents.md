@@ -1,10 +1,10 @@
 # Running agents
 
-You can run agents via the [`Runner`][cai.agents.run.Runner] class. You have 3 options:
+You can run agents via the [`Runner`][cai.sdk.agents.run.Runner] class. You have 3 options:
 
-1. [`Runner.run()`][cai.agents.run.Runner.run], which runs async and returns a [`RunResult`][cai.agents.result.RunResult].
-2. [`Runner.run_sync()`][cai.agents.run.Runner.run_sync], which is a sync method and just runs `.run()` under the hood.
-3. [`Runner.run_streamed()`][cai.agents.run.Runner.run_streamed], which runs async and returns a [`RunResultStreaming`][cai.agents.result.RunResultStreaming]. It calls the LLM in streaming mode, and streams those events to you as they are received.
+1. [`Runner.run()`][cai.sdk.agents.run.Runner.run], which runs async and returns a [`RunResult`][cai.sdk.agents.result.RunResult].
+2. [`Runner.run_sync()`][cai.sdk.agents.run.Runner.run_sync], which is a sync method and just runs `.run()` under the hood.
+3. [`Runner.run_streamed()`][cai.sdk.agents.run.Runner.run_streamed], which runs async and returns a [`RunResultStreaming`][cai.sdk.agents.result.RunResultStreaming]. It calls the LLM in streaming mode, and streams those events to you as they are received.
 
 ```python
 from cai.agents import Agent, Runner
@@ -32,7 +32,7 @@ The runner then runs a loop:
     1. If the LLM returns a `final_output`, the loop ends and we return the result.
     2. If the LLM does a handoff, we update the current agent and input, and re-run the loop.
     3. If the LLM produces tool calls, we run those tool calls, append the results, and re-run the loop.
-3. If we exceed the `max_turns` passed, we raise a [`MaxTurnsExceeded`][cai.agents.exceptions.MaxTurnsExceeded] exception.
+3. If we exceed the `max_turns` passed, we raise a [`MaxTurnsExceeded`][cai.sdk.agents.exceptions.MaxTurnsExceeded] exception.
 
 !!! note
 
@@ -40,21 +40,21 @@ The runner then runs a loop:
 
 ## Streaming
 
-Streaming allows you to additionally receive streaming events as the LLM runs. Once the stream is done, the [`RunResultStreaming`][cai.agents.result.RunResultStreaming] will contain the complete information about the run, including all the new outputs produces. You can call `.stream_events()` for the streaming events. Read more in the [streaming guide](streaming.md).
+Streaming allows you to additionally receive streaming events as the LLM runs. Once the stream is done, the [`RunResultStreaming`][cai.sdk.agents.result.RunResultStreaming] will contain the complete information about the run, including all the new outputs produces. You can call `.stream_events()` for the streaming events. Read more in the [streaming guide](streaming.md).
 
 ## Run config
 
 The `run_config` parameter lets you configure some global settings for the agent run:
 
--   [`model`][cai.agents.run.RunConfig.model]: Allows setting a global LLM model to use, irrespective of what `model` each Agent has.
--   [`model_provider`][cai.agents.run.RunConfig.model_provider]: A model provider for looking up model names, which defaults to OpenAI.
--   [`model_settings`][cai.agents.run.RunConfig.model_settings]: Overrides agent-specific settings. For example, you can set a global `temperature` or `top_p`.
--   [`input_guardrails`][cai.agents.run.RunConfig.input_guardrails], [`output_guardrails`][cai.agents.run.RunConfig.output_guardrails]: A list of input or output guardrails to include on all runs.
--   [`handoff_input_filter`][cai.agents.run.RunConfig.handoff_input_filter]: A global input filter to apply to all handoffs, if the handoff doesn't already have one. The input filter allows you to edit the inputs that are sent to the new agent. See the documentation in [`Handoff.input_filter`][cai.agents.handoffs.Handoff.input_filter] for more details.
--   [`tracing_disabled`][cai.agents.run.RunConfig.tracing_disabled]: Allows you to disable [tracing](tracing.md) for the entire run.
--   [`trace_include_sensitive_data`][cai.agents.run.RunConfig.trace_include_sensitive_data]: Configures whether traces will include potentially sensitive data, such as LLM and tool call inputs/outputs.
--   [`workflow_name`][cai.agents.run.RunConfig.workflow_name], [`trace_id`][cai.agents.run.RunConfig.trace_id], [`group_id`][cai.agents.run.RunConfig.group_id]: Sets the tracing workflow name, trace ID and trace group ID for the run. We recommend at least setting `workflow_name`. The session ID is an optional field that lets you link traces across multiple runs.
--   [`trace_metadata`][cai.agents.run.RunConfig.trace_metadata]: Metadata to include on all traces.
+-   [`model`][cai.sdk.agents.run.RunConfig.model]: Allows setting a global LLM model to use, irrespective of what `model` each Agent has.
+-   [`model_provider`][cai.sdk.agents.run.RunConfig.model_provider]: A model provider for looking up model names, which defaults to OpenAI.
+-   [`model_settings`][cai.sdk.agents.run.RunConfig.model_settings]: Overrides agent-specific settings. For example, you can set a global `temperature` or `top_p`.
+-   [`input_guardrails`][cai.sdk.agents.run.RunConfig.input_guardrails], [`output_guardrails`][cai.sdk.agents.run.RunConfig.output_guardrails]: A list of input or output guardrails to include on all runs.
+-   [`handoff_input_filter`][cai.sdk.agents.run.RunConfig.handoff_input_filter]: A global input filter to apply to all handoffs, if the handoff doesn't already have one. The input filter allows you to edit the inputs that are sent to the new agent. See the documentation in [`Handoff.input_filter`][cai.sdk.agents.handoffs.Handoff.input_filter] for more details.
+-   [`tracing_disabled`][cai.sdk.agents.run.RunConfig.tracing_disabled]: Allows you to disable [tracing](tracing.md) for the entire run.
+-   [`trace_include_sensitive_data`][cai.sdk.agents.run.RunConfig.trace_include_sensitive_data]: Configures whether traces will include potentially sensitive data, such as LLM and tool call inputs/outputs.
+-   [`workflow_name`][cai.sdk.agents.run.RunConfig.workflow_name], [`trace_id`][cai.sdk.agents.run.RunConfig.trace_id], [`group_id`][cai.sdk.agents.run.RunConfig.group_id]: Sets the tracing workflow name, trace ID and trace group ID for the run. We recommend at least setting `workflow_name`. The session ID is an optional field that lets you link traces across multiple runs.
+-   [`trace_metadata`][cai.sdk.agents.run.RunConfig.trace_metadata]: Metadata to include on all traces.
 
 ## Conversations/chat threads
 
@@ -65,7 +65,7 @@ Calling any of the run methods can result in one or more agents running (and hen
 
 At the end of the agent run, you can choose what to show to the user. For example, you might show the user every new item generated by the agents, or just the final output. Either way, the user might then ask a followup question, in which case you can call the run method again.
 
-You can use the base [`RunResultBase.to_input_list()`][cai.agents.result.RunResultBase.to_input_list] method to get the inputs for the next turn.
+You can use the base [`RunResultBase.to_input_list()`][cai.sdk.agents.result.RunResultBase.to_input_list] method to get the inputs for the next turn.
 
 ```python
 async def main():
@@ -86,10 +86,10 @@ async def main():
 
 ## Exceptions
 
-The SDK raises exceptions in certain cases. The full list is in [`cai.agents.exceptions`][]. As an overview:
+The SDK raises exceptions in certain cases. The full list is in [`cai.sdk.agents.exceptions`][]. As an overview:
 
--   [`AgentsException`][cai.agents.exceptions.AgentsException] is the base class for all exceptions raised in the SDK.
--   [`MaxTurnsExceeded`][cai.agents.exceptions.MaxTurnsExceeded] is raised when the run exceeds the `max_turns` passed to the run methods.
--   [`ModelBehaviorError`][cai.agents.exceptions.ModelBehaviorError] is raised when the model produces invalid outputs, e.g. malformed JSON or using non-existent tools.
--   [`UserError`][cai.agents.exceptions.UserError] is raised when you (the person writing code using the SDK) make an error using the SDK.
--   [`InputGuardrailTripwireTriggered`][cai.agents.exceptions.InputGuardrailTripwireTriggered], [`OutputGuardrailTripwireTriggered`][cai.agents.exceptions.OutputGuardrailTripwireTriggered] is raised when a [guardrail](guardrails.md) is tripped.
+-   [`AgentsException`][cai.sdk.agents.exceptions.AgentsException] is the base class for all exceptions raised in the SDK.
+-   [`MaxTurnsExceeded`][cai.sdk.agents.exceptions.MaxTurnsExceeded] is raised when the run exceeds the `max_turns` passed to the run methods.
+-   [`ModelBehaviorError`][cai.sdk.agents.exceptions.ModelBehaviorError] is raised when the model produces invalid outputs, e.g. malformed JSON or using non-existent tools.
+-   [`UserError`][cai.sdk.agents.exceptions.UserError] is raised when you (the person writing code using the SDK) make an error using the SDK.
+-   [`InputGuardrailTripwireTriggered`][cai.sdk.agents.exceptions.InputGuardrailTripwireTriggered], [`OutputGuardrailTripwireTriggered`][cai.sdk.agents.exceptions.OutputGuardrailTripwireTriggered] is raised when a [guardrail](guardrails.md) is tripped.

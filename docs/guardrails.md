@@ -12,8 +12,8 @@ There are two kinds of guardrails:
 Input guardrails run in 3 steps:
 
 1. First, the guardrail receives the same input passed to the agent.
-2. Next, the guardrail function runs to produce a [`GuardrailFunctionOutput`][cai.agents.guardrail.GuardrailFunctionOutput], which is then wrapped in an [`InputGuardrailResult`][cai.agents.guardrail.InputGuardrailResult]
-3. Finally, we check if [`.tripwire_triggered`][cai.agents.guardrail.GuardrailFunctionOutput.tripwire_triggered] is true. If true, an [`InputGuardrailTripwireTriggered`][cai.agents.exceptions.InputGuardrailTripwireTriggered] exception is raised, so you can appropriately respond to the user or handle the exception.
+2. Next, the guardrail function runs to produce a [`GuardrailFunctionOutput`][cai.sdk.agents.guardrail.GuardrailFunctionOutput], which is then wrapped in an [`InputGuardrailResult`][cai.sdk.agents.guardrail.InputGuardrailResult]
+3. Finally, we check if [`.tripwire_triggered`][cai.sdk.agents.guardrail.GuardrailFunctionOutput.tripwire_triggered] is true. If true, an [`InputGuardrailTripwireTriggered`][cai.sdk.agents.exceptions.InputGuardrailTripwireTriggered] exception is raised, so you can appropriately respond to the user or handle the exception.
 
 !!! Note
 
@@ -24,8 +24,8 @@ Input guardrails run in 3 steps:
 Output guardrails run in 3 steps:
 
 1. First, the guardrail receives the same input passed to the agent.
-2. Next, the guardrail function runs to produce a [`GuardrailFunctionOutput`][cai.agents.guardrail.GuardrailFunctionOutput], which is then wrapped in an [`OutputGuardrailResult`][cai.agents.guardrail.OutputGuardrailResult]
-3. Finally, we check if [`.tripwire_triggered`][cai.agents.guardrail.GuardrailFunctionOutput.tripwire_triggered] is true. If true, an [`OutputGuardrailTripwireTriggered`][cai.agents.exceptions.OutputGuardrailTripwireTriggered] exception is raised, so you can appropriately respond to the user or handle the exception.
+2. Next, the guardrail function runs to produce a [`GuardrailFunctionOutput`][cai.sdk.agents.guardrail.GuardrailFunctionOutput], which is then wrapped in an [`OutputGuardrailResult`][cai.sdk.agents.guardrail.OutputGuardrailResult]
+3. Finally, we check if [`.tripwire_triggered`][cai.sdk.agents.guardrail.GuardrailFunctionOutput.tripwire_triggered] is true. If true, an [`OutputGuardrailTripwireTriggered`][cai.sdk.agents.exceptions.OutputGuardrailTripwireTriggered] exception is raised, so you can appropriately respond to the user or handle the exception.
 
 !!! Note
 
@@ -37,7 +37,7 @@ If the input or output fails the guardrail, the Guardrail can signal this with a
 
 ## Implementing a guardrail
 
-You need to provide a function that receives input, and returns a [`GuardrailFunctionOutput`][cai.agents.guardrail.GuardrailFunctionOutput]. In this example, we'll do this by running an Agent under the hood.
+You need to provide a function that receives input, and returns a [`GuardrailFunctionOutput`][cai.sdk.agents.guardrail.GuardrailFunctionOutput]. In this example, we'll do this by running an Agent under the hood.
 
 ```python
 from pydantic import BaseModel

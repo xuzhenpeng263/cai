@@ -10,7 +10,7 @@ pip install 'openai-agents[voice]'
 
 ## Concepts
 
-The main concept to know about is a [`VoicePipeline`][cai.agents.voice.pipeline.VoicePipeline], which is a 3 step process:
+The main concept to know about is a [`VoicePipeline`][cai.sdk.agents.voice.pipeline.VoicePipeline], which is a 3 step process:
 
 1. Run a speech-to-text model to turn audio into text.
 2. Run your code, which is usually an agentic workflow, to produce a result.
@@ -88,7 +88,7 @@ agent = Agent(
 
 ## Voice pipeline
 
-We'll set up a simple voice pipeline, using [`SingleAgentVoiceWorkflow`][cai.agents.voice.workflow.SingleAgentVoiceWorkflow] as the workflow.
+We'll set up a simple voice pipeline, using [`SingleAgentVoiceWorkflow`][cai.sdk.agents.voice.workflow.SingleAgentVoiceWorkflow] as the workflow.
 
 ```python
 from agents.voice import SingleAgentVoiceWorkflow, VoicePipeline

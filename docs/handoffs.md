@@ -6,9 +6,9 @@ Handoffs are represented as tools to the LLM. So if there's a handoff to an agen
 
 ## Creating a handoff
 
-All agents have a [`handoffs`][cai.agents.agent.Agent.handoffs] param, which can either take an `Agent` directly, or a `Handoff` object that customizes the Handoff.
+All agents have a [`handoffs`][cai.sdk.agents.agent.Agent.handoffs] param, which can either take an `Agent` directly, or a `Handoff` object that customizes the Handoff.
 
-You can create a handoff using the [`handoff()`][cai.agents.handoffs.handoff] function provided by the Agents SDK. This function allows you to specify the agent to hand off to, along with optional overrides and input filters.
+You can create a handoff using the [`handoff()`][cai.sdk.agents.handoffs.handoff] function provided by the Agents SDK. This function allows you to specify the agent to hand off to, along with optional overrides and input filters.
 
 ### Basic Usage
 
@@ -28,7 +28,7 @@ triage_agent = Agent(name="Triage agent", handoffs=[billing_agent, handoff(refun
 
 ### Customizing handoffs via the `handoff()` function
 
-The [`handoff()`][cai.agents.handoffs.handoff] function lets you customize things.
+The [`handoff()`][cai.sdk.agents.handoffs.handoff] function lets you customize things.
 
 -   `agent`: This is the agent to which things will be handed off.
 -   `tool_name_override`: By default, the `Handoff.default_tool_name()` function is used, which resolves to `transfer_to_<agent_name>`. You can override this.
@@ -79,9 +79,9 @@ handoff_obj = handoff(
 
 ## Input filters
 
-When a handoff occurs, it's as though the new agent takes over the conversation, and gets to see the entire previous conversation history. If you want to change this, you can set an [`input_filter`][cai.agents.handoffs.Handoff.input_filter]. An input filter is a function that receives the existing input via a [`HandoffInputData`][cai.agents.handoffs.HandoffInputData], and must return a new `HandoffInputData`.
+When a handoff occurs, it's as though the new agent takes over the conversation, and gets to see the entire previous conversation history. If you want to change this, you can set an [`input_filter`][cai.sdk.agents.handoffs.Handoff.input_filter]. An input filter is a function that receives the existing input via a [`HandoffInputData`][cai.sdk.agents.handoffs.HandoffInputData], and must return a new `HandoffInputData`.
 
-There are some common patterns (for example removing all tool calls from the history), which are implemented for you in [`cai.agents.extensions.handoff_filters`][]
+There are some common patterns (for example removing all tool calls from the history), which are implemented for you in [`cai.sdk.agents.extensions.handoff_filters`][]
 
 ```python
 from cai.agents import Agent, handoff
@@ -99,7 +99,7 @@ handoff_obj = handoff(
 
 ## Recommended prompts
 
-To make sure that LLMs understand handoffs properly, we recommend including information about handoffs in your agents. We have a suggested prefix in [`cai.agents.extensions.handoff_prompt.RECOMMENDED_PROMPT_PREFIX`][], or you can call [`cai.agents.extensions.handoff_prompt.prompt_with_handoff_instructions`][] to automatically add recommended data to your prompts.
+To make sure that LLMs understand handoffs properly, we recommend including information about handoffs in your agents. We have a suggested prefix in [`cai.sdk.agents.extensions.handoff_prompt.RECOMMENDED_PROMPT_PREFIX`][], or you can call [`cai.sdk.agents.extensions.handoff_prompt.prompt_with_handoff_instructions`][] to automatically add recommended data to your prompts.
 
 ```python
 from cai.agents import Agent
