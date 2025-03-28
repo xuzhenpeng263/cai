@@ -61,6 +61,8 @@ from openai._models import BaseModel
 class InputTokensDetails(BaseModel):
     prompt_tokens: int
     """The number of prompt tokens."""
+    cached_tokens: int = 0
+    """The number of cached tokens."""
 
 from .. import _debug
 from ..agent_output import AgentOutputSchema
@@ -426,11 +428,12 @@ class OpenAIChatCompletionsModel(Model):
                         and usage.completion_tokens_details.reasoning_tokens
                         else 0
                     ),
-                    input_tokens_details=InputTokensDetails(
-                        cached_tokens=usage.prompt_tokens_details.cached_tokens
+                    input_tokens_details={
+                        "prompt_tokens": usage.prompt_tokens if usage.prompt_tokens else 0,
+                        "cached_tokens": usage.prompt_tokens_details.cached_tokens
                         if usage.prompt_tokens_details and usage.prompt_tokens_details.cached_tokens
                         else 0
-                    ),
+                    },
                 )
                 if usage
                 else None
