@@ -3,7 +3,7 @@ First prototype of a reasoner agent
 
 using reasoner as a tool call
 
-support meta agent may better @cai.agents.meta.reasoner_support
+support meta agent may better @cai.sdk.agents.meta.reasoner_support
 """
 from cai.tools.misc.reasoning import thought
 from cai.sdk.agents import Agent  # pylint: disable=import-error

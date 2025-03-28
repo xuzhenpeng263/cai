@@ -99,7 +99,7 @@ Usage Examples:
 import os
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
-from cai.sdk.agents import OpenAIChatCompletionsModel, Agent, Runner
+from cai.sdk.agents import OpenAIChatCompletionsModel, Agent, Runner, AsyncOpenAI
 from cai.sdk.agents import set_default_openai_client, set_tracing_disabled
 from openai.types.responses import ResponseTextDeltaEvent
 from rich.console import Console
@@ -126,22 +126,23 @@ external_client = AsyncOpenAI(
 set_default_openai_client(external_client)
 set_tracing_disabled(True)
 
-# # llm_model=os.getenv('LLM_MODEL', 'gpt-4o-mini')
+# llm_model=os.getenv('LLM_MODEL', 'gpt-4o-mini')
 # # llm_model=os.getenv('LLM_MODEL', 'claude-3-7')
-# llm_model=os.getenv('LLM_MODEL', 'qwen2.5:14b')
+llm_model=os.getenv('LLM_MODEL', 'qwen2.5:14b')
 
 
-# # For Qwen models, we need to skip system instructions as they're not supported
-# instructions = None if "qwen" in llm_model.lower() else "You are a helpful assistant"
+# For Qwen models, we need to skip system instructions as they're not supported
+instructions = None if "qwen" in llm_model.lower() else "You are a helpful assistant"
 
-# agent = Agent(
-#     name="Assistant", 
-#     instructions=instructions,
-#     model=OpenAIChatCompletionsModel(
-#         model=llm_model,
-#         openai_client=external_client,
-#     )
-# )
+agent = Agent(
+    name="Assistant", 
+    instructions=instructions,
+    model=OpenAIChatCompletionsModel(
+        model=llm_model,
+        # openai_client=AsyncOpenAI()  # original OpenAI servers
+        openai_client = external_client
+    )
+)
 
 def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=float('inf')):
     """
@@ -226,34 +227,19 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
             turn_count += 1
         except KeyboardInterrupt:
             break
-        except Exception as e:
-            import traceback
-            import sys
-            exc_type, exc_value, exc_traceback = sys.exc_info()
-            tb_info = traceback.extract_tb(exc_traceback)
-            filename, line, func, text = tb_info[-1]
-            console.print(f"[bold red]Error: {str(e)}[/bold red]")
-            console.print(f"[bold red]Traceback: {tb_info}[/bold red]")
+        # except Exception as e:
+        #     import traceback
+        #     import sys
+        #     exc_type, exc_value, exc_traceback = sys.exc_info()
+        #     tb_info = traceback.extract_tb(exc_traceback)
+        #     filename, line, func, text = tb_info[-1]
+        #     console.print(f"[bold red]Error: {str(e)}[/bold red]")
+        #     console.print(f"[bold red]Traceback: {tb_info}[/bold red]")
 
 
 def main():
     # Get agent type from environment variables or use default
     agent_type = os.getenv('CAI_AGENT_TYPE', "one_tool_agent")
-
-    llm_model=os.getenv('LLM_MODEL', 'qwen2.5:14b')
-    # llm_model=os.getenv('LLM_MODEL', 'gpt-4o-mini')
-
-    # For Qwen models, we need to skip system instructions as they're not supported
-    instructions = None if "qwen" in llm_model.lower() else "You are a helpful assistant"
-
-    agent = Agent(
-        name="Assistant", 
-        instructions=instructions,
-        model=OpenAIChatCompletionsModel(
-            model=llm_model,
-            openai_client=external_client,
-        )
-    )
 
     # Get the agent instance by name
     agent = get_agent_by_name(agent_type)

@@ -139,7 +139,7 @@ def get_agent_module(agent_name: str) -> str:
 
     Returns:
         The full module name where the agent
-        is defined (e.g., 'cai.agents.basic')
+        is defined (e.g., 'cai.sdk.agents.basic')
     """
     # Try to import all agents from the agents folder
     for _, name, _ in pkgutil.iter_modules(__path__,
@@ -202,7 +202,7 @@ def get_agent_by_name(agent_name: str) -> Agent:
     
     # # Special handling for one_tool agent
     # if agent_name == "one_tool_agent":
-    #     from cai.agents.one_tool import one_tool_agent
+    #     from cai.sdk.agents.one_tool import one_tool_agent
         
     #     # Create handoffs between agents
     #     # Add a handoff from one_tool_agent to flag_discriminator
