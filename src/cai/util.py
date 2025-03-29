@@ -8,12 +8,11 @@ import pathlib
 from rich.console import Console
 from rich.tree import Tree
 from mako.template import Template  # pylint: disable=import-error
+from wasabi import color
 
-def get_ollama_api_base() -> str:
-    """
-    Get the Ollama API base URL from the environment variable.
-    """
-    return os.getenv("OLLAMA_API_BASE", "http://host.docker.internal:8000/v1")
+def get_ollama_api_base():
+    """Get the Ollama API base URL from environment variable or default to localhost:8000."""
+    return os.environ.get("OLLAMA_API_BASE", "http://localhost:8000/v1")
 
 def load_prompt_template(template_path):
     """
@@ -129,3 +128,28 @@ def visualize_agent_graph(start_agent):
     # Start recursive traversal from root agent
     add_agent_node(start_agent)
     console.print(tree)
+
+def fix_litellm_transcription_annotations():
+    """
+    Apply a monkey patch to fix the TranscriptionCreateParams.__annotations__ issue in LiteLLM.
+    
+    This is a temporary fix until the issue is fixed in the LiteLLM library itself.
+    """
+    try:
+        import litellm.litellm_core_utils.model_param_helper as model_param_helper
+        
+        # Override the problematic method to avoid the error
+        original_get_transcription_kwargs = model_param_helper.ModelParamHelper._get_litellm_supported_transcription_kwargs
+        
+        def safe_get_transcription_kwargs():
+            """A safer version that doesn't rely on __annotations__."""
+            return set(["file", "model", "language", "prompt", "response_format", 
+                       "temperature", "api_base", "api_key", "api_version", 
+                       "timeout", "custom_llm_provider"])
+        
+        # Apply the monkey patch
+        model_param_helper.ModelParamHelper._get_litellm_supported_transcription_kwargs = safe_get_transcription_kwargs        
+        return True
+    except (ImportError, AttributeError):
+        # If the import fails or the attribute doesn't exist, the patch couldn't be applied
+        return False

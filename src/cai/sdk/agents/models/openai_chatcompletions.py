@@ -3,9 +3,13 @@ from __future__ import annotations
 import dataclasses
 import json
 import time
+import os
+import litellm
+
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
+from cai.util import get_ollama_api_base
 
 from openai import NOT_GIVEN, AsyncOpenAI, AsyncStream, NotGiven
 from openai.types import ChatModel
@@ -103,6 +107,8 @@ class OpenAIChatCompletionsModel(Model):
     ) -> None:
         self.model = model
         self._client = openai_client
+        # Check if we're using OLLAMA models
+        self.is_ollama = os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() != 'false'
 
     def _non_null_or_not_given(self, value: Any) -> Any:
         return value if value is not None else NOT_GIVEN
@@ -266,7 +272,7 @@ class OpenAIChatCompletionsModel(Model):
                     state.text_content_index_and_output[1].text += delta.content
 
                 # Handle refusals (model declines to answer)
-                if delta.refusal:
+                if hasattr(delta, 'refusal') and delta.refusal:
                     if not state.refusal_content_index_and_output:
                         # Initialize a content tracker for streaming refusal text
                         state.refusal_content_index_and_output = (
@@ -312,7 +318,7 @@ class OpenAIChatCompletionsModel(Model):
                 # Handle tool calls
                 # Because we don't know the name of the function until the end of the stream, we'll
                 # save everything and yield events at the end
-                if delta.tool_calls:
+                if hasattr(delta, 'tool_calls') and delta.tool_calls:
                     for tc_delta in delta.tool_calls:
                         if tc_delta.index not in state.function_calls:
                             state.function_calls[tc_delta.index] = ResponseFunctionToolCall(
@@ -424,14 +430,19 @@ class OpenAIChatCompletionsModel(Model):
                     total_tokens=usage.total_tokens,
                     output_tokens_details=OutputTokensDetails(
                         reasoning_tokens=usage.completion_tokens_details.reasoning_tokens
-                        if usage.completion_tokens_details
+                        if hasattr(usage, 'completion_tokens_details') 
+                        and usage.completion_tokens_details
+                        and hasattr(usage.completion_tokens_details, 'reasoning_tokens')
                         and usage.completion_tokens_details.reasoning_tokens
                         else 0
                     ),
                     input_tokens_details={
                         "prompt_tokens": usage.prompt_tokens if usage.prompt_tokens else 0,
                         "cached_tokens": usage.prompt_tokens_details.cached_tokens
-                        if usage.prompt_tokens_details and usage.prompt_tokens_details.cached_tokens
+                        if hasattr(usage, 'prompt_tokens_details')
+                        and usage.prompt_tokens_details
+                        and hasattr(usage.prompt_tokens_details, 'cached_tokens')
+                        and usage.prompt_tokens_details.cached_tokens
                         else 0
                     },
                 )
@@ -510,11 +521,13 @@ class OpenAIChatCompletionsModel(Model):
         )
         tool_choice = _Converter.convert_tool_choice(model_settings.tool_choice)
         response_format = _Converter.convert_response_format(output_schema)
-
         converted_tools = [ToolConverter.to_openai(tool) for tool in tools] if tools else []
 
         for handoff in handoffs:
             converted_tools.append(ToolConverter.convert_handoff_tool(handoff))
+
+        # if self.is_ollama:
+        #     converted_tools = []
 
         if _debug.DONT_LOG_MODEL_DATA:
             logger.debug("Calling LLM")
@@ -525,43 +538,76 @@ class OpenAIChatCompletionsModel(Model):
                 f"Stream: {stream}\n"
                 f"Tool choice: {tool_choice}\n"
                 f"Response format: {response_format}\n"
+                f"Using OLLAMA: {self.is_ollama}\n"
             )
 
-        ret = await self._get_client().chat.completions.create(
-            model=self.model,
-            messages=converted_messages,
-            tools=converted_tools or NOT_GIVEN,
-            temperature=self._non_null_or_not_given(model_settings.temperature),
-            top_p=self._non_null_or_not_given(model_settings.top_p),
-            frequency_penalty=self._non_null_or_not_given(model_settings.frequency_penalty),
-            presence_penalty=self._non_null_or_not_given(model_settings.presence_penalty),
-            max_tokens=self._non_null_or_not_given(model_settings.max_tokens),
-            tool_choice=tool_choice,
-            response_format=response_format,
-            parallel_tool_calls=parallel_tool_calls,
-            stream=stream,
-            stream_options={"include_usage": True} if stream else NOT_GIVEN,
-            extra_headers=_HEADERS,
-        )
+        # Prepare kwargs for the API call
+        kwargs = {
+            "model": self.model,
+            "messages": converted_messages,
+            "tools": converted_tools or NOT_GIVEN,
+            "temperature": self._non_null_or_not_given(model_settings.temperature),
+            "top_p": self._non_null_or_not_given(model_settings.top_p),
+            "frequency_penalty": self._non_null_or_not_given(model_settings.frequency_penalty),
+            "presence_penalty": self._non_null_or_not_given(model_settings.presence_penalty),
+            "max_tokens": self._non_null_or_not_given(model_settings.max_tokens),
+            "tool_choice": tool_choice,
+            "response_format": response_format,
+            "parallel_tool_calls": parallel_tool_calls,
+            "stream": stream,
+            "stream_options": {"include_usage": True} if stream else NOT_GIVEN,
+            "extra_headers": _HEADERS,
+        }
 
-        if isinstance(ret, ChatCompletion):
+        if self.is_ollama:
+            if stream:
+                # For streaming with Ollama, we need to create a Response object first
+                response = Response(
+                    id=FAKE_RESPONSES_ID,
+                    created_at=time.time(),
+                    model=self.model,
+                    object="response",
+                    output=[],
+                    tool_choice="auto" if tool_choice is None else cast(Literal["auto", "required", "none"], tool_choice)
+                    if tool_choice != NOT_GIVEN
+                    else "auto",
+                    top_p=model_settings.top_p,
+                    temperature=model_settings.temperature,
+                    tools=[],
+                    parallel_tool_calls=parallel_tool_calls or False,
+                    usage={
+                        "completion_tokens": 0,
+                        "prompt_tokens": 0,
+                        "total_tokens": 0,
+                        "input_tokens": 0,
+                        "input_tokens_details": {
+                            "cached_tokens": 0
+                        },
+                        "output_tokens": 0,
+                        "output_tokens_details": {
+                            "reasoning_tokens": 0
+                        }
+                    },
+                )
+                # Get the streaming object
+                stream_obj = await litellm.acompletion(
+                    **kwargs,
+                    api_base=get_ollama_api_base(),
+                    custom_llm_provider="openai"
+                )
+                return response, stream_obj
+            else:
+                # Non-streaming mode
+                ret = litellm.completion(
+                    **kwargs,
+                    api_base=get_ollama_api_base(),
+                    custom_llm_provider="openai"
+                )
+                return ret
+        else:
+            # Standard LiteLLM handling
+            ret = litellm.completion(**kwargs)
             return ret
-
-        response = Response(
-            id=FAKE_RESPONSES_ID,
-            created_at=time.time(),
-            model=self.model,
-            object="response",
-            output=[],
-            tool_choice=cast(Literal["auto", "required", "none"], tool_choice)
-            if tool_choice != NOT_GIVEN
-            else "auto",
-            top_p=model_settings.top_p,
-            temperature=model_settings.temperature,
-            tools=[],
-            parallel_tool_calls=parallel_tool_calls or False,
-        )
-        return response, ret
 
     def _get_client(self) -> AsyncOpenAI:
         if self._client is None:
@@ -575,7 +621,7 @@ class _Converter:
         cls, tool_choice: Literal["auto", "required", "none"] | str | None
     ) -> ChatCompletionToolChoiceOptionParam | NotGiven:
         if tool_choice is None:
-            return NOT_GIVEN
+            return None
         elif tool_choice == "auto":
             return "auto"
         elif tool_choice == "required":
@@ -595,7 +641,7 @@ class _Converter:
         cls, final_output_schema: AgentOutputSchema | None
     ) -> ResponseFormat | NotGiven:
         if not final_output_schema or final_output_schema.is_plain_text():
-            return NOT_GIVEN
+            return None
 
         return {
             "type": "json_schema",
@@ -621,17 +667,17 @@ class _Converter:
             message_item.content.append(
                 ResponseOutputText(text=message.content, type="output_text", annotations=[])
             )
-        if message.refusal:
+        if hasattr(message, 'refusal') and message.refusal:
             message_item.content.append(
                 ResponseOutputRefusal(refusal=message.refusal, type="refusal")
             )
-        if message.audio:
+        if hasattr(message, 'audio') and message.audio:
             raise AgentsException("Audio is not currently supported")
 
         if message_item.content:
             items.append(message_item)
 
-        if message.tool_calls:
+        if hasattr(message, 'tool_calls') and message.tool_calls:
             for tool_call in message.tool_calls:
                 items.append(
                     ResponseFunctionToolCall(

@@ -15,9 +15,11 @@ openai_client = AsyncOpenAI(
     api_key=os.getenv('LITELLM_API_KEY', 'key')
 )
 
+# # Check if we're using a Qwen model
+# is_qwen = "qwen" in model_name.lower()
+
 # For Qwen models, we need to skip system instructions as they're not supported
-is_qwen = "qwen" in model_name.lower()
-instructions = None if is_qwen else """You are a Cybersecurity expert Leader facing a CTF
+instructions = """You are a Cybersecurity expert Leader facing a CTF
                 challenge.
                 INSTRUCTIONS:
                 1. Execute the generic_linux_command tool without any

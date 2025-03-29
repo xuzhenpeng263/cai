@@ -104,6 +104,7 @@ from cai.sdk.agents import set_default_openai_client, set_tracing_disabled
 from openai.types.responses import ResponseTextDeltaEvent
 from rich.console import Console
 import asyncio
+from cai.util import fix_litellm_transcription_annotations, color
 
 # Import modules from cai.repl
 from cai.repl.commands import FuzzyCommandCompleter, handle_command as commands_handle_command
@@ -238,6 +239,11 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
 
 
 def main():
+    # Apply litellm patch to fix the __annotations__ error
+    patch_applied = fix_litellm_transcription_annotations()
+    if not patch_applied:
+        print(color("Something went wrong patching LiteLLM fix_litellm_transcription_annotations", color="red"))
+
     # Get agent type from environment variables or use default
     agent_type = os.getenv('CAI_AGENT_TYPE', "one_tool_agent")
 
