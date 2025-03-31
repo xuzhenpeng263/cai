@@ -19,7 +19,8 @@ dependencies = [
     "prompt_toolkit>=3.0.39",
     "dotenv>=0.9.9",
     "litellm>=1.63.7",
-    "mako>=1.3.9"
+    "mako>=1.3.9",
+    "mcp; python_version >= '3.10'",
 ]
 classifiers = [
     "Typing :: Typed",
@@ -41,6 +42,7 @@ Repository = "https://github.com/openai/openai-agents-python"
 
 [project.optional-dependencies]
 voice = ["numpy>=2.2.0, <3; python_version>='3.10'", "websockets>=15.0, <16"]
+viz = ["graphviz>=0.17"]
 
 [dependency-groups]
 dev = [
@@ -59,12 +61,13 @@ dev = [
     "pynput",
     "types-pynput",
     "sounddevice",
-    "pynput",
     "textual",
     "websockets",
     "litellm",
-    "prisma"
+    "prisma",
+    "graphviz",
 ]
+
 [tool.uv.workspace]
 members = ["agents"]
 
