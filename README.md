@@ -20,8 +20,8 @@ Notably, our SDK [is compatible](https://openai.github.io/openai-agents-python/m
 1. Set up your Python environment (note that within Cursor this is big issue :warning:, so probably set it up in another folder)
 
 ```
-python3 -m venv cai
-source cai/bin/activate
+python3 -m venv env
+source env/bin/activate
 ```
 
 2. Install Agents SDK
