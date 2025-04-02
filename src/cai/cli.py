@@ -120,11 +120,14 @@ from cai.agents import get_agent_by_name
 # Load environment variables from .env file
 load_dotenv()
 
-external_client = AsyncOpenAI(
-    base_url = os.getenv('LITELLM_BASE_URL', 'http://localhost:4000'),
-    api_key=os.getenv('LITELLM_API_KEY', 'key'))
+# NOTE: This is needed when using LiteLLM Proxy Server
+#
+# external_client = AsyncOpenAI(
+#     base_url = os.getenv('LITELLM_BASE_URL', 'http://localhost:4000'),
+#     api_key=os.getenv('LITELLM_API_KEY', 'key'))
+#
+# set_default_openai_client(external_client)
 
-set_default_openai_client(external_client)
 set_tracing_disabled(True)
 
 # llm_model=os.getenv('LLM_MODEL', 'gpt-4o-mini')
@@ -140,8 +143,8 @@ agent = Agent(
     instructions=instructions,
     model=OpenAIChatCompletionsModel(
         model=llm_model,
-        # openai_client=AsyncOpenAI()  # original OpenAI servers
-        openai_client = external_client
+        openai_client=AsyncOpenAI()  # original OpenAI servers
+        # openai_client = external_client  # LiteLLM Proxy Server
     )
 )
 

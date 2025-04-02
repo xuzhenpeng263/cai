@@ -9,11 +9,13 @@ from openai import AsyncOpenAI
 # Get model from environment or use default
 model_name = os.getenv('CAI_MODEL', "qwen2.5:14b")
 
-# Create OpenAI client for the agent
-openai_client = AsyncOpenAI(
-    base_url = os.getenv('LITELLM_BASE_URL', 'http://localhost:4000'),
-    api_key=os.getenv('LITELLM_API_KEY', 'key')
-)
+# NOTE: This is needed when using LiteLLM Proxy Server
+#
+# # Create OpenAI client for the agent
+# openai_client = AsyncOpenAI(
+#     base_url = os.getenv('LITELLM_BASE_URL', 'http://localhost:4000'),
+#     api_key=os.getenv('LITELLM_API_KEY', 'key')
+# )
 
 # # Check if we're using a Qwen model
 # is_qwen = "qwen" in model_name.lower()
@@ -58,7 +60,7 @@ one_tool_agent = Agent(
     ],
     model=OpenAIChatCompletionsModel(
         model=model_name,
-        openai_client=openai_client,
+        openai_client=AsyncOpenAI(),
     )
 )
 

@@ -14,17 +14,18 @@ from openai.types.responses import ResponseTextDeltaEvent
 from cai.sdk.agents import Runner, set_default_openai_client
 from cai.agents import get_agent_by_name
 from cai.util import fix_litellm_transcription_annotations, color
-
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI client
-external_client = AsyncOpenAI(
-    base_url=os.getenv('LITELLM_BASE_URL', 'http://localhost:4000'),
-    api_key=os.getenv('LITELLM_API_KEY', 'key')
-)
-set_default_openai_client(external_client)
+# NOTE: This is needed when using LiteLLM Proxy Server
+#
+# external_client = AsyncOpenAI(
+#     base_url=os.getenv('LITELLM_BASE_URL', 'http://localhost:4000'),
+#     api_key=os.getenv('LITELLM_API_KEY', 'key')
+# )
+# set_default_openai_client(external_client)
 
 async def main():
     # Apply litellm patch to fix the __annotations__ error
@@ -34,7 +35,7 @@ async def main():
         
     # Get the one_tool agent
     agent = get_agent_by_name("one_tool_agent")
-    
+
     print("Testing one_tool agent with a simple hello message (streaming mode)...")
     print(f"Using model: {os.getenv('CAI_MODEL', 'default')}")
     

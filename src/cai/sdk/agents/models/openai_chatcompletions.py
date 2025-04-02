@@ -9,7 +9,8 @@ import litellm
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
-from cai.util import get_ollama_api_base
+from cai.util import get_ollama_api_base, fix_message_list
+from wasabi import color
 
 from openai import NOT_GIVEN, AsyncOpenAI, AsyncStream, NotGiven
 from openai.types import ChatModel
@@ -86,6 +87,9 @@ from .interface import Model, ModelTracing
 if TYPE_CHECKING:
     from ..model_settings import ModelSettings
 
+
+# Suppress debug info from litellm
+litellm.suppress_debug_info = True
 
 _USER_AGENT = f"Agents/Python {__version__}"
 _HEADERS = {"User-Agent": _USER_AGENT}
@@ -238,9 +242,11 @@ class OpenAIChatCompletionsModel(Model):
                     continue
                 
                 # Get the delta content
-                delta = choices[0].get('delta', None)
-                if not delta and hasattr(choices[0], 'delta'):
+                delta = None
+                if hasattr(choices[0], 'delta'):
                     delta = choices[0].delta
+                elif isinstance(choices[0], dict) and 'delta' in choices[0]:
+                    delta = choices[0]['delta']
                 
                 if not delta:
                     continue
@@ -579,6 +585,10 @@ class OpenAIChatCompletionsModel(Model):
         tracing: ModelTracing,
         stream: bool = False,
     ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
+
+        # start by re-fetching self.is_ollama
+        self.is_ollama = os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() == 'true'
+
         converted_messages = _Converter.items_to_messages(input)
 
         if system_instructions:
@@ -602,9 +612,6 @@ class OpenAIChatCompletionsModel(Model):
         for handoff in handoffs:
             converted_tools.append(ToolConverter.convert_handoff_tool(handoff))
 
-        # if self.is_ollama:
-        #     converted_tools = []
-
         if _debug.DONT_LOG_MODEL_DATA:
             logger.debug("Calling LLM")
         else:
@@ -619,7 +626,7 @@ class OpenAIChatCompletionsModel(Model):
 
         # Match the behavior of Responses where store is True when not given
         store = model_settings.store if model_settings.store is not None else True
-        
+
         # Prepare kwargs for the API call
         kwargs = {
             "model": self.model,
@@ -639,87 +646,239 @@ class OpenAIChatCompletionsModel(Model):
             "extra_headers": _HEADERS,
         }
 
-        # Previously articulated as
-        # ret = await self._get_client().chat.completions.create(**kwargs)
-        # but now we're using litellm
+        # Model adjustments
+        if any(x in self.model for x in ["claude"]):
+            litellm.drop_params = True
 
-        if self.is_ollama:
-            # Filter out parameters not supported by Ollama
-            ollama_supported_params = {
-                "model": kwargs["model"],
-                "messages": kwargs["messages"],
-                "temperature": kwargs["temperature"] if kwargs["temperature"] is not NOT_GIVEN else None,
-                "top_p": kwargs["top_p"] if kwargs["top_p"] is not NOT_GIVEN else None,
-                "max_tokens": kwargs["max_tokens"] if kwargs["max_tokens"] is not NOT_GIVEN else None,
-                "stream": kwargs["stream"],
-                "extra_headers": kwargs["extra_headers"]
-            }
+            # Error encountered: Error code: 400 - {'error': {'code': 'invalid_request_error', 
+            #     'message': "'tool_choice' is only allowed when 'tools' are specified", 
+            #     'type': 'invalid_request_error', 'param': None}}
+            #
+            # if has no tools, remove tool_choice
+            if not converted_tools:
+                kwargs.pop("tool_choice", None)
+                        
+            # BadRequestError encountered: litellm.BadRequestError: AnthropicException - 
+            # b'{"type":"error","error":
+            #     {"type":"invalid_request_error","message":"store: Extra inputs are not permitted"}}'
+            #
+            kwargs.pop("store", None)
             
-            # Modify the messages to remove system message for Ollama
-            if ollama_supported_params["messages"] and ollama_supported_params["messages"][0].get("role") == "system":
-                # Extract the system message
-                system_content = ollama_supported_params["messages"][0].get("content", "")
-                # Remove it from the messages
-                ollama_supported_params["messages"] = ollama_supported_params["messages"][1:]
-                # If there are user messages, prepend system to first user
-                if ollama_supported_params["messages"] and ollama_supported_params["messages"][0].get("role") == "user":
-                    # Prepend the system instruction to the first user message, with a separator
-                    user_content = ollama_supported_params["messages"][0].get("content", "")
-                    if isinstance(user_content, str):
-                        ollama_supported_params["messages"][0]["content"] = f"System: {system_content}\n\nUser: {user_content}"
+            # Filter out NotGiven values to avoid JSON serialization issues
+            filtered_kwargs = {}
+            for key, value in kwargs.items():
+                if value is not NOT_GIVEN:
+                    filtered_kwargs[key] = value
+            kwargs = filtered_kwargs
 
-            # Remove None values
-            ollama_kwargs = {k: v for k, v in ollama_supported_params.items() if v is not None}
-            
-            if stream:
-                # For streaming with Ollama, we need to create a Response object first
-                response = Response(
-                    id=FAKE_RESPONSES_ID,
-                    created_at=time.time(),
-                    model=self.model,
-                    object="response",
-                    output=[],
-                    tool_choice="auto" if tool_choice is None else cast(Literal["auto", "required", "none"], tool_choice)
-                    if tool_choice != NOT_GIVEN
-                    else "auto",
-                    top_p=model_settings.top_p,
-                    temperature=model_settings.temperature,
-                    tools=[],
-                    parallel_tool_calls=parallel_tool_calls or False,
-                    usage={
-                        "completion_tokens": 0,
-                        "prompt_tokens": 0,
-                        "total_tokens": 0,
-                        "input_tokens": 0,
-                        "input_tokens_details": {
-                            "cached_tokens": 0
-                        },
-                        "output_tokens": 0,
-                        "output_tokens_details": {
-                            "reasoning_tokens": 0
-                        }
-                    },
-                )
-                # Get the streaming object
-                ollama_api_base = get_ollama_api_base().rstrip('/v1')  # Remove /v1 if present
-                stream_obj = await litellm.acompletion(
-                    **ollama_kwargs,
-                    api_base=ollama_api_base,
-                    custom_llm_provider="ollama"
-                )
-                return response, stream_obj
+        try:
+            if self.is_ollama:
+                return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
             else:
-                # Non-streaming mode
-                ollama_api_base = get_ollama_api_base().rstrip('/v1')  # Remove /v1 if present
-                ret = litellm.completion(
-                    **ollama_kwargs,
-                    api_base=ollama_api_base,
-                    custom_llm_provider="ollama"
+                return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+
+                # ret = await self._get_client().chat.completions.create(**kwargs)
+
+                # if isinstance(ret, ChatCompletion):
+                #     return ret
+
+                # response = Response(
+                #     id=FAKE_RESPONSES_ID,
+                #     created_at=time.time(),
+                #     model=self.model,
+                #     object="response",
+                #     output=[],
+                #     tool_choice=cast(Literal["auto", "required", "none"], tool_choice)
+                #     if tool_choice != NOT_GIVEN
+                #     else "auto",
+                #     top_p=model_settings.top_p,
+                #     temperature=model_settings.temperature,
+                #     tools=[],
+                #     parallel_tool_calls=parallel_tool_calls or False,
+                # )
+                # return response, ret
+                
+        except litellm.exceptions.BadRequestError as e:
+            print(color("BadRequestError encountered: " + str(e), fg="yellow"))
+            if "LLM Provider NOT provided" in str(e):
+                # Create a copy of params to avoid overwriting the original
+                # ones
+                try:
+                    return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                except litellm.exceptions.BadRequestError as e:  # pylint: disable=W0621,C0301 # noqa: E501
+                    #
+                    # CTRL-C handler for ollama models
+                    #
+                    if "invalid message content type" in str(e):
+                        kwargs["messages"] = fix_message_list(
+                            kwargs["messages"])
+                        return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                    else:
+                        raise e
+
+            elif ("An assistant message with 'tool_calls'" in str(e) or
+                "`tool_use` blocks must be followed by a user message with `tool_result`" in str(e)):  # noqa: E501 # pylint: disable=C0301
+                print(f"Error: {str(e)}")
+                # NOTE: EDGE CASE: Report Agent CTRL C error
+                #
+                # This fix CTRL-C error when message list is incomplete
+                # When a tool is not finished but the LLM generates a tool call
+                kwargs["messages"] = fix_message_list(kwargs["messages"])
+                return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+
+            # this captures an error related to the fact
+            # that the messages list contains an empty
+            # content position
+            elif "expected a string, got null" in str(e):
+                print(f"Error: {str(e)}")
+                # Fix for null content in messages
+                kwargs["messages"] = [
+                    msg if msg.get("content") is not None else
+                    {**msg, "content": ""} for msg in kwargs["messages"]
+                ]
+                return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+
+            # Handle Anthropic error for empty text content blocks
+            elif ("text content blocks must be non-empty" in str(e) or
+                "cache_control cannot be set for empty text blocks" in str(e)):  # noqa
+                print(f"Error: {str(e)}")
+                # Fix for empty content in messages for Anthropic models
+                kwargs["messages"] = [
+                    msg if msg.get("content") not in [None, ""] else
+                    {
+                        **msg,
+                        "content": "Empty content block"
+                    } for msg in kwargs["messages"]
+                ]
+                return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+            else:
+                raise e
+        except litellm.exceptions.RateLimitError as e:
+            print("Rate Limit Error:" + str(e))
+            # Try to extract retry delay from error response or use default
+            retry_delay = 60  # Default delay in seconds
+            try:
+                # Extract the JSON part from the error message
+                json_str = str(e.message).split('VertexAIException - ')[-1]
+                error_details = json.loads(json_str)
+
+                retry_info = next(
+                    (detail for detail in error_details.get('error', {}).get('details', [])
+                        if detail.get('@type') == 'type.googleapis.com/google.rpc.RetryInfo'),
+                    None
                 )
-                return ret
-        else:
-            # Standard LiteLLM handling
+                if retry_info and 'retryDelay' in retry_info:
+                    retry_delay = int(retry_info['retryDelay'].rstrip('s'))
+            except Exception as parse_error:
+                print(f"Could not parse retry delay, using default: {parse_error}")
+
+            print(f"Waiting {retry_delay} seconds before retrying...")
+            time.sleep(retry_delay)
+
+        # fall back to ollama if openai API fails
+        except Exception as e:  # pylint: disable=W0718
+            print(color("Error encountered: " + str(e), fg="yellow"))
+            try:
+                return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+            except Exception as execp:  # pylint: disable=W0718
+                print("Error: " + str(execp))
+                return None
+
+    async def _fetch_response_litellm_openai(
+        self,
+        kwargs: dict,
+        model_settings: ModelSettings,
+        tool_choice: ChatCompletionToolChoiceOptionParam | NotGiven,
+        stream: bool,
+        parallel_tool_calls: bool
+    ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
+        """Handle standard LiteLLM API calls for OpenAI and compatible models."""
+        if stream:
+            # Standard LiteLLM handling for streaming
             ret = litellm.completion(**kwargs)
+            stream_obj = await litellm.acompletion(**kwargs)
+
+            response = Response(
+                id=FAKE_RESPONSES_ID,
+                created_at=time.time(),
+                model=self.model,
+                object="response",
+                output=[],
+                tool_choice="auto" if tool_choice is None or tool_choice == NOT_GIVEN else cast(Literal["auto", "required", "none"], tool_choice),
+                top_p=model_settings.top_p,
+                temperature=model_settings.temperature,
+                tools=[],
+                parallel_tool_calls=parallel_tool_calls or False,
+            )
+            return response, stream_obj
+        else:
+            # Standard OpenAI handling for non-streaming
+            ret = litellm.completion(**kwargs)
+            return ret
+
+    async def _fetch_response_litellm_ollama(
+        self,
+        kwargs: dict,
+        model_settings: ModelSettings,
+        tool_choice: ChatCompletionToolChoiceOptionParam | NotGiven,
+        stream: bool,
+        parallel_tool_calls: bool
+    ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
+        # Filter out parameters not supported by Ollama
+        ollama_supported_params = {
+            "model": kwargs["model"],
+            "messages": kwargs["messages"],
+            "temperature": kwargs["temperature"] if kwargs["temperature"] is not NOT_GIVEN else None,
+            "top_p": kwargs["top_p"] if kwargs["top_p"] is not NOT_GIVEN else None,
+            "max_tokens": kwargs["max_tokens"] if kwargs["max_tokens"] is not NOT_GIVEN else None,
+            "stream": kwargs["stream"],
+            "extra_headers": kwargs["extra_headers"]
+        }
+
+        # Modify the messages to remove system message for Ollama
+        if ollama_supported_params["messages"] and ollama_supported_params["messages"][0].get("role") == "system":
+            # Extract the system message
+            system_content = ollama_supported_params["messages"][0].get("content", "")
+            # Remove it from the messages
+            ollama_supported_params["messages"] = ollama_supported_params["messages"][1:]
+            # If there are user messages, prepend system to first user
+            if ollama_supported_params["messages"] and ollama_supported_params["messages"][0].get("role") == "user":
+                # Prepend the system instruction to the first user message, with a separator
+                user_content = ollama_supported_params["messages"][0].get("content", "")
+                if isinstance(user_content, str):
+                    ollama_supported_params["messages"][0]["content"] = f"System: {system_content}\n\nUser: {user_content}"
+
+        # Remove None values
+        ollama_kwargs = {k: v for k, v in ollama_supported_params.items() if v is not None}
+
+        if stream:
+            # For streaming with Ollama, we need to create a Response object first
+            response = Response(
+                id=FAKE_RESPONSES_ID,
+                created_at=time.time(),
+                model=self.model,
+                object="response",
+                output=[],
+                tool_choice="auto" if tool_choice is None or tool_choice == NOT_GIVEN else cast(Literal["auto", "required", "none"], tool_choice),
+                top_p=model_settings.top_p,
+                temperature=model_settings.temperature,
+                tools=[],
+                parallel_tool_calls=parallel_tool_calls or False,
+            )
+            # Get the streaming object
+            stream_obj = await litellm.acompletion(
+                **ollama_kwargs,
+                api_base=get_ollama_api_base().rstrip('/v1'),
+                custom_llm_provider="ollama"
+            )
+            return response, stream_obj
+        else:
+            # Non-streaming mode
+            ret = litellm.completion(
+                **ollama_kwargs,
+                api_base=get_ollama_api_base().rstrip('/v1'),
+                custom_llm_provider="ollama"
+            )
             return ret
 
     def _get_client(self) -> AsyncOpenAI:
@@ -734,7 +893,7 @@ class _Converter:
         cls, tool_choice: Literal["auto", "required", "none"] | str | None
     ) -> ChatCompletionToolChoiceOptionParam | NotGiven:
         if tool_choice is None:
-            return None
+            return "auto"
         elif tool_choice == "auto":
             return "auto"
         elif tool_choice == "required":

@@ -5,6 +5,7 @@ Module for displaying the CAI banner and welcome message.
 import os
 import glob
 import logging
+import sys
 from configparser import ConfigParser
 
 # Third-party imports
@@ -13,16 +14,44 @@ from rich.console import Console  # pylint: disable=import-error
 from rich.panel import Panel  # pylint: disable=import-error
 from rich.table import Table  # pylint: disable=import-error
 
+# For reading TOML files
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        # If tomli is not available, we'll handle it in the get_version function
+        pass
+
 
 def get_version():
-    """Get the CAI version from setup.cfg."""
+    """Get the CAI version from pyproject.toml."""
     version = "unknown"
     try:
-        config = ConfigParser()
-        config.read('setup.cfg')
-        version = config.get('metadata', 'version')
-    except Exception:  # pylint: disable=broad-except
-        logging.warning("Could not read version from setup.cfg")
+        # Determine which TOML parser to use
+        if sys.version_info >= (3, 11):
+            toml_parser = tomllib
+        else:
+            try:
+                import tomli as toml_parser
+            except ImportError:
+                logging.warning("Could not import tomli. Falling back to manual parsing.")
+                # Simple manual parsing for version only
+                with open('pyproject.toml', 'r', encoding='utf-8') as f:
+                    for line in f:
+                        if line.strip().startswith('version = '):
+                            # Extract version from line like 'version = "0.4.0"'
+                            version = line.split('=')[1].strip().strip('"\'')
+                            return version
+                return version
+                
+        # Use proper TOML parser if available
+        with open('pyproject.toml', 'rb') as f:
+            config = toml_parser.load(f)
+        version = config.get('project', {}).get('version', 'unknown')
+    except Exception as e:  # pylint: disable=broad-except
+        logging.warning("Could not read version from pyproject.toml: %s", e)
     return version
 
 

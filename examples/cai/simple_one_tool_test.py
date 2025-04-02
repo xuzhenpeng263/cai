@@ -18,12 +18,13 @@ from cai.util import fix_litellm_transcription_annotations, color
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI client
-external_client = AsyncOpenAI(
-    base_url=os.getenv('LITELLM_BASE_URL', 'http://localhost:4000'),
-    api_key=os.getenv('LITELLM_API_KEY', 'key')
-)
-set_default_openai_client(external_client)
+# NOTE: This is needed when using LiteLLM Proxy Server
+#
+# external_client = AsyncOpenAI(
+#     base_url=os.getenv('LITELLM_BASE_URL', 'http://localhost:4000'),
+#     api_key=os.getenv('LITELLM_API_KEY', 'key')
+# )
+# set_default_openai_client(external_client)
 
 async def main():
     # Apply litellm patch to fix the __annotations__ error
