@@ -45,7 +45,7 @@ async def main():
     print("Agent: ", end="", flush=True)
     
     # Run the agent with a simple test message in streaming mode
-    result = Runner.run_streamed(agent, "Hello! Can you introduce yourself and explain what you can do?")
+    result = Runner.run_streamed(agent, "Hello! Can you list the files in the current directory?")
     
     # Process the streaming response
     async for event in result.stream_events():

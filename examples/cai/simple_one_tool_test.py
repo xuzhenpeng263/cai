@@ -39,7 +39,7 @@ async def main():
     print(f"Using model: {os.getenv('CAI_MODEL', 'default')}")
     
     # Run the agent with a simple test message
-    result = await Runner.run(agent, "Hello! Can you introduce yourself and explain what you can do?")
+    result = await Runner.run(agent, "Hello! Can you list the files in the current directory?")
     
     # Print the result
     print("\nAgent response:")

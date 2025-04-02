@@ -1,3 +1,3 @@
 # `MCP Util`
 
-::: agents.mcp.util
+::: cai.sdk.agents.mcp.util

@@ -113,7 +113,8 @@ class OpenAIChatCompletionsModel(Model):
         self._client = openai_client
         # Check if we're using OLLAMA models
         self.is_ollama = os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() != 'false'
-
+        self.empty_content_error_shown = False
+        
     def _non_null_or_not_given(self, value: Any) -> Any:
         return value if value is not None else NOT_GIVEN
 
@@ -741,7 +742,11 @@ class OpenAIChatCompletionsModel(Model):
             # Handle Anthropic error for empty text content blocks
             elif ("text content blocks must be non-empty" in str(e) or
                 "cache_control cannot be set for empty text blocks" in str(e)):  # noqa
-                print(f"Error: {str(e)}")
+
+                # Print the error message only once
+                print(f"Error: {str(e)}") if not self.empty_content_error_shown else None
+                self.empty_content_error_shown = True
+
                 # Fix for empty content in messages for Anthropic models
                 kwargs["messages"] = [
                     msg if msg.get("content") not in [None, ""] else
