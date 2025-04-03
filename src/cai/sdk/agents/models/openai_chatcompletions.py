@@ -5,11 +5,12 @@ import json
 import time
 import os
 import litellm
+import tiktoken
 
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
-from cai.util import get_ollama_api_base, fix_message_list
+from cai.util import get_ollama_api_base, fix_message_list, cli_print_agent_messages
 from wasabi import color
 
 from openai import NOT_GIVEN, AsyncOpenAI, AsyncStream, NotGiven
@@ -103,6 +104,77 @@ class _StreamingState:
     function_calls: dict[int, ResponseFunctionToolCall] = field(default_factory=dict)
 
 
+# Add a new function for consistent token counting using tiktoken
+def count_tokens_with_tiktoken(text_or_messages):
+    """
+    Count tokens consistently using tiktoken library.
+    Works with both strings and message lists.
+    Returns a tuple of (input_tokens, reasoning_tokens).
+    """
+    if not text_or_messages:
+        return 0, 0
+        
+    try:
+        # Try to use cl100k_base encoding (used by GPT-4 and GPT-3.5-turbo)
+        encoding = tiktoken.get_encoding("cl100k_base")
+    except:
+        # Fall back to GPT-2 encoding if cl100k is not available
+        try:
+            encoding = tiktoken.get_encoding("gpt2")
+        except:
+            # If tiktoken fails, fall back to character estimate
+            if isinstance(text_or_messages, str):
+                return len(text_or_messages) // 4, 0
+            elif isinstance(text_or_messages, list):
+                total_len = 0
+                for msg in text_or_messages:
+                    if isinstance(msg, dict) and 'content' in msg:
+                        if isinstance(msg['content'], str):
+                            total_len += len(msg['content'])
+                return total_len // 4, 0
+            else:
+                return 0, 0
+    
+    # Process different input types
+    if isinstance(text_or_messages, str):
+        token_count = len(encoding.encode(text_or_messages))
+        return token_count, 0
+    elif isinstance(text_or_messages, list):
+        total_tokens = 0
+        reasoning_tokens = 0
+        
+        # Add tokens for the messages format (ChatML format overhead)
+        # Each message has a base overhead (usually ~4 tokens)
+        total_tokens += len(text_or_messages) * 4
+        
+        for msg in text_or_messages:
+            if isinstance(msg, dict):
+                # Add tokens for role
+                if 'role' in msg:
+                    total_tokens += len(encoding.encode(msg['role']))
+                
+                # Count content tokens
+                if 'content' in msg and msg['content']:
+                    if isinstance(msg['content'], str):
+                        content_tokens = len(encoding.encode(msg['content']))
+                        total_tokens += content_tokens
+                        
+                        # Count tokens in assistant messages as reasoning tokens
+                        if msg.get('role') == 'assistant':
+                            reasoning_tokens += content_tokens
+                    elif isinstance(msg['content'], list):
+                        for content_part in msg['content']:
+                            if isinstance(content_part, dict) and 'text' in content_part:
+                                part_tokens = len(encoding.encode(content_part['text']))
+                                total_tokens += part_tokens
+                                if msg.get('role') == 'assistant':
+                                    reasoning_tokens += part_tokens
+        
+        return total_tokens, reasoning_tokens
+    else:
+        return 0, 0
+
+
 class OpenAIChatCompletionsModel(Model):
     def __init__(
         self,
@@ -114,6 +186,17 @@ class OpenAIChatCompletionsModel(Model):
         # Check if we're using OLLAMA models
         self.is_ollama = os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() != 'false'
         self.empty_content_error_shown = False
+        
+        # Track interaction counter and token totals for cli display
+        self.interaction_counter = 0
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        self.total_reasoning_tokens = 0
+        self.agent_name = "Agent"  # Default name
+        
+    def set_agent_name(self, name: str) -> None:
+        """Set the agent name for CLI display purposes."""
+        self.agent_name = name
         
     def _non_null_or_not_given(self, value: Any) -> Any:
         return value if value is not None else NOT_GIVEN
@@ -128,12 +211,29 @@ class OpenAIChatCompletionsModel(Model):
         handoffs: list[Handoff],
         tracing: ModelTracing,
     ) -> ModelResponse:
+        # Increment the interaction counter for CLI display
+        self.interaction_counter += 1
+        
         with generation_span(
             model=str(self.model),
             model_config=dataclasses.asdict(model_settings)
             | {"base_url": str(self._client.base_url)},
             disabled=tracing.is_disabled(),
         ) as span_generation:
+            # Prepare the messages for consistent token counting
+            converted_messages = _Converter.items_to_messages(input)
+            if system_instructions:
+                converted_messages.insert(
+                    0,
+                    {
+                        "content": system_instructions,
+                        "role": "system",
+                    },
+                )
+                
+            # Get token count estimate before API call for consistent counting
+            estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
+            
             response = await self._fetch_response(
                 system_instructions,
                 input,
@@ -153,14 +253,68 @@ class OpenAIChatCompletionsModel(Model):
                     f"LLM resp:\n{json.dumps(response.choices[0].message.model_dump(), indent=2)}\n"
                 )
 
+            # Ensure we have reasonable token counts
+            if response.usage:
+                input_tokens = response.usage.prompt_tokens
+                output_tokens = response.usage.completion_tokens
+                total_tokens = response.usage.total_tokens
+                
+                # Use estimated tokens if API returns zeroes or implausible values
+                if input_tokens == 0 or input_tokens < (len(str(input)) // 10):  # Sanity check
+                    input_tokens = estimated_input_tokens
+                    total_tokens = input_tokens + output_tokens
+                
+                # # Debug information
+                # print(f"\nDEBUG CONSISTENT TOKEN COUNTS - API tokens: input={input_tokens}, output={output_tokens}, total={total_tokens}")
+                # print(f"Estimated tokens were: input={estimated_input_tokens}")
+            else:
+                # If no usage info, use our estimates
+                input_tokens = estimated_input_tokens
+                output_tokens = 0
+                total_tokens = input_tokens
+                # print(f"\nDEBUG CONSISTENT TOKEN COUNTS - No API tokens, using estimates: input={input_tokens}, output={output_tokens}")
+
+            
+            # Update token totals for CLI display
+            self.total_input_tokens += input_tokens
+            self.total_output_tokens += output_tokens
+            if (response.usage and 
+                hasattr(response.usage, 'completion_tokens_details') and 
+                response.usage.completion_tokens_details and 
+                hasattr(response.usage.completion_tokens_details, 'reasoning_tokens')):
+                self.total_reasoning_tokens += response.usage.completion_tokens_details.reasoning_tokens
+
+            # Print the agent message for CLI display
+            cli_print_agent_messages(
+                agent_name=getattr(self, 'agent_name', 'Agent'),  # Default to 'Agent' if not available
+                message=response.choices[0].message,
+                counter=getattr(self, 'interaction_counter', 0),  # Default to 0 if not available
+                model=str(self.model),
+                debug=False,
+                interaction_input_tokens=input_tokens,
+                interaction_output_tokens=output_tokens,
+                interaction_reasoning_tokens=(
+                    response.usage.completion_tokens_details.reasoning_tokens 
+                    if response.usage and hasattr(response.usage, 'completion_tokens_details') 
+                    and response.usage.completion_tokens_details 
+                    and hasattr(response.usage.completion_tokens_details, 'reasoning_tokens')
+                    else 0
+                ),
+                total_input_tokens=getattr(self, 'total_input_tokens', 0),  # Will need to be tracked elsewhere
+                total_output_tokens=getattr(self, 'total_output_tokens', 0),  # Will need to be tracked elsewhere
+                total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),  # Will need to be tracked elsewhere
+                interaction_cost=None,  # Would need cost calculation logic
+                total_cost=None,  # Would need cost calculation logic
+            )
+
             usage = (
                 Usage(
                     requests=1,
-                    input_tokens=response.usage.prompt_tokens,
-                    output_tokens=response.usage.completion_tokens,
-                    total_tokens=response.usage.total_tokens,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    total_tokens=input_tokens + output_tokens,
                 )
-                if response.usage
+                if response.usage or input_tokens > 0
                 else Usage()
             )
             if tracing.include_data():
@@ -191,12 +345,29 @@ class OpenAIChatCompletionsModel(Model):
         """
         Yields a partial message as it is generated, as well as the usage information.
         """
+        # Increment the interaction counter for CLI display
+        self.interaction_counter += 1
+        
         with generation_span(
             model=str(self.model),
             model_config=dataclasses.asdict(model_settings)
             | {"base_url": str(self._client.base_url)},
             disabled=tracing.is_disabled(),
         ) as span_generation:
+            # Prepare messages for consistent token counting
+            converted_messages = _Converter.items_to_messages(input)
+            if system_instructions:
+                converted_messages.insert(
+                    0,
+                    {
+                        "content": system_instructions,
+                        "role": "system",
+                    },
+                )
+                
+            # Get token count estimate before API call for consistent counting
+            estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
+            
             response, stream = await self._fetch_response(
                 system_instructions,
                 input,
@@ -211,7 +382,11 @@ class OpenAIChatCompletionsModel(Model):
 
             usage: CompletionUsage | None = None
             state = _StreamingState()
-
+            
+            # Manual token counting (when API doesn't provide it)
+            output_text = ""
+            estimated_output_tokens = 0
+            
             async for chunk in stream:
                 if not state.started:
                     state.started = True
@@ -260,6 +435,11 @@ class OpenAIChatCompletionsModel(Model):
                     content = delta['content']
                 
                 if content:
+                    # More accurate token counting for text content
+                    output_text += content
+                    token_count, _ = count_tokens_with_tiktoken(output_text)
+                    estimated_output_tokens = token_count
+                    
                     if not state.text_content_index_and_output:
                         # Initialize a content tracker for streaming text
                         state.text_content_index_and_output = (
@@ -495,56 +675,91 @@ class OpenAIChatCompletionsModel(Model):
             final_response = response.model_copy()
             final_response.output = outputs
 
-            final_response.usage = (
-                ResponseUsage(
-                    input_tokens=usage.prompt_tokens if usage and hasattr(usage, 'prompt_tokens') else 0,
-                    output_tokens=usage.completion_tokens if usage and hasattr(usage, 'completion_tokens') else 0,
-                    total_tokens=usage.total_tokens if usage and hasattr(usage, 'total_tokens') else 0,
-                    output_tokens_details=OutputTokensDetails(
-                        reasoning_tokens=usage.completion_tokens_details.reasoning_tokens
-                        if usage and hasattr(usage, 'completion_tokens_details') 
-                        and usage.completion_tokens_details
-                        and hasattr(usage.completion_tokens_details, 'reasoning_tokens')
-                        and usage.completion_tokens_details.reasoning_tokens
-                        else 0
-                    ),
-                    input_tokens_details={
-                        "prompt_tokens": usage.prompt_tokens if usage and hasattr(usage, 'prompt_tokens') else 0,
-                        "cached_tokens": usage.prompt_tokens_details.cached_tokens
-                        if usage and hasattr(usage, 'prompt_tokens_details')
-                        and usage.prompt_tokens_details
-                        and hasattr(usage.prompt_tokens_details, 'cached_tokens')
-                        and usage.prompt_tokens_details.cached_tokens
-                        else 0
-                    },
-                )
-                if usage is not None
-                else ResponseUsage(
-                    input_tokens=0,
-                    output_tokens=0,
-                    total_tokens=0,
-                    output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                    input_tokens_details={"prompt_tokens": 0, "cached_tokens": 0}
-                )
+            # Get final token counts using consistent method
+            input_tokens = estimated_input_tokens
+            output_tokens = estimated_output_tokens
+            
+            # Use API token counts if available and reasonable
+            if usage and hasattr(usage, 'prompt_tokens') and usage.prompt_tokens > 0:
+                input_tokens = usage.prompt_tokens
+            if usage and hasattr(usage, 'completion_tokens') and usage.completion_tokens > 0:
+                output_tokens = usage.completion_tokens
+                
+            # # Debug information
+            # print(f"\nDEBUG CONSISTENT TOKEN COUNTS - Streaming final tokens: input={input_tokens}, output={output_tokens}, total={input_tokens + output_tokens}")
+
+            # Create a proper usage object with our token counts
+            final_response.usage = ResponseUsage(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=input_tokens + output_tokens,
+                output_tokens_details=OutputTokensDetails(
+                    reasoning_tokens=usage.completion_tokens_details.reasoning_tokens
+                    if usage and hasattr(usage, 'completion_tokens_details') 
+                    and usage.completion_tokens_details
+                    and hasattr(usage.completion_tokens_details, 'reasoning_tokens')
+                    and usage.completion_tokens_details.reasoning_tokens
+                    else 0
+                ),
+                input_tokens_details={
+                    "prompt_tokens": input_tokens,
+                    "cached_tokens": usage.prompt_tokens_details.cached_tokens
+                    if usage and hasattr(usage, 'prompt_tokens_details')
+                    and usage.prompt_tokens_details
+                    and hasattr(usage.prompt_tokens_details, 'cached_tokens')
+                    and usage.prompt_tokens_details.cached_tokens
+                    else 0
+                },
             )
 
             yield ResponseCompletedEvent(
                 response=final_response,
                 type="response.completed",
             )
+            
+            # Update token totals for CLI display
+            if final_response.usage:
+                # Always update the total counters with the best available counts
+                self.total_input_tokens += final_response.usage.input_tokens
+                self.total_output_tokens += final_response.usage.output_tokens
+                if (final_response.usage.output_tokens_details and 
+                    hasattr(final_response.usage.output_tokens_details, 'reasoning_tokens')):
+                    self.total_reasoning_tokens += final_response.usage.output_tokens_details.reasoning_tokens
+            
+            # At the end of streaming, print the finalized agent message
+            if final_response.output and any(isinstance(item, ResponseOutputMessage) for item in final_response.output):
+                # Find the assistant message to print
+                for item in final_response.output:
+                    if isinstance(item, ResponseOutputMessage) and item.role == 'assistant':
+                        cli_print_agent_messages(
+                            agent_name=getattr(self, 'agent_name', 'Agent'),  # Default to 'Agent' if not available
+                            message=item,
+                            counter=getattr(self, 'interaction_counter', 0),  # Default to 0 if not available
+                            model=str(self.model),
+                            debug=False,
+                            interaction_input_tokens=final_response.usage.input_tokens if final_response.usage else 0,
+                            interaction_output_tokens=final_response.usage.output_tokens if final_response.usage else 0,
+                            interaction_reasoning_tokens=(
+                                final_response.usage.output_tokens_details.reasoning_tokens 
+                                if final_response.usage and final_response.usage.output_tokens_details
+                                and hasattr(final_response.usage.output_tokens_details, 'reasoning_tokens')
+                                else 0
+                            ),
+                            total_input_tokens=getattr(self, 'total_input_tokens', 0),
+                            total_output_tokens=getattr(self, 'total_output_tokens', 0),
+                            total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
+                            interaction_cost=None,
+                            total_cost=None,
+                        )
+                        break
+            
             if tracing.include_data():
                 span_generation.span_data.output = [final_response.model_dump()]
 
-            if usage:
-                span_generation.span_data.usage = {
-                    "input_tokens": usage.prompt_tokens,
-                    "output_tokens": usage.completion_tokens,
-                }
-            else:
-                span_generation.span_data.usage = {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                }
+            span_generation.span_data.usage = {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
 
     @overload
     async def _fetch_response(
@@ -677,30 +892,9 @@ class OpenAIChatCompletionsModel(Model):
                 return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
             else:
                 return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
-
-                # ret = await self._get_client().chat.completions.create(**kwargs)
-
-                # if isinstance(ret, ChatCompletion):
-                #     return ret
-
-                # response = Response(
-                #     id=FAKE_RESPONSES_ID,
-                #     created_at=time.time(),
-                #     model=self.model,
-                #     object="response",
-                #     output=[],
-                #     tool_choice=cast(Literal["auto", "required", "none"], tool_choice)
-                #     if tool_choice != NOT_GIVEN
-                #     else "auto",
-                #     top_p=model_settings.top_p,
-                #     temperature=model_settings.temperature,
-                #     tools=[],
-                #     parallel_tool_calls=parallel_tool_calls or False,
-                # )
-                # return response, ret
                 
         except litellm.exceptions.BadRequestError as e:
-            print(color("BadRequestError encountered: " + str(e), fg="yellow"))
+            # print(color("BadRequestError encountered: " + str(e), fg="yellow"))
             if "LLM Provider NOT provided" in str(e):
                 # Create a copy of params to avoid overwriting the original
                 # ones

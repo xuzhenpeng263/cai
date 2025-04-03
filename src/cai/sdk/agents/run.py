@@ -932,11 +932,18 @@ class Runner:
 
     @classmethod
     def _get_model(cls, agent: Agent[Any], run_config: RunConfig) -> Model:
+        model = None
         if isinstance(run_config.model, Model):
-            return run_config.model
+            model = run_config.model
         elif isinstance(run_config.model, str):
-            return run_config.model_provider.get_model(run_config.model)
+            model = run_config.model_provider.get_model(run_config.model)
         elif isinstance(agent.model, Model):
-            return agent.model
-
-        return run_config.model_provider.get_model(agent.model)
+            model = agent.model
+        else:
+            model = run_config.model_provider.get_model(agent.model)
+            
+        # Set agent name if the model supports it (for CLI display)
+        if hasattr(model, 'set_agent_name'):
+            model.set_agent_name(agent.name)
+            
+        return model

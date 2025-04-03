@@ -213,7 +213,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                         async for event in result.stream_events():
                             if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
                                 print(event.data.delta, end="", flush=True)
-                        print()  # Add a newline at the end
+                        print("\n")  # Add a newline at the end
                         return result
                     except Exception as e:
                         print()  # Add a newline after any partial output

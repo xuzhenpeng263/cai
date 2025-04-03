@@ -8,6 +8,7 @@ is working correctly, with streaming output.
 
 import os
 import asyncio
+import json
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseTextDeltaEvent
@@ -15,6 +16,7 @@ from cai.sdk.agents import Runner, set_default_openai_client
 from cai.agents import get_agent_by_name
 from cai.util import fix_litellm_transcription_annotations, color
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
+from cai.sdk.agents.models._openai_shared import set_use_responses_by_default
 
 # Load environment variables
 load_dotenv()
@@ -33,10 +35,12 @@ async def main():
     if not patch_applied:
         print(color("Something went wrong patching LiteLLM fix_litellm_transcription_annotations", color="red"))
         
+    # Force the use of OpenAIChatCompletionsModel instead of OpenAIResponsesModel
+    set_use_responses_by_default(False)
+        
     # Get the one_tool agent
     agent = get_agent_by_name("one_tool_agent")
 
-    print("Testing one_tool agent with a simple hello message (streaming mode)...")
     print(f"Using model: {os.getenv('CAI_MODEL', 'default')}")
     
     # Stream indicator

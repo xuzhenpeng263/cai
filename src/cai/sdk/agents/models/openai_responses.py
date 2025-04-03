@@ -54,8 +54,20 @@ class OpenAIResponsesModel(Model):
         model: str | ChatModel,
         openai_client: AsyncOpenAI,
     ) -> None:
+        print(f"\nDEBUG: OpenAIResponsesModel initialized with model: {model}\n")
         self.model = model
         self._client = openai_client
+        
+        # Track interaction counter and token totals for cli display
+        self.interaction_counter = 0
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        self.total_reasoning_tokens = 0
+        self.agent_name = "Agent"  # Default name
+        
+    def set_agent_name(self, name: str) -> None:
+        """Set the agent name for CLI display purposes."""
+        self.agent_name = name
 
     def _non_null_or_not_given(self, value: Any) -> Any:
         return value if value is not None else NOT_GIVEN
@@ -70,6 +82,9 @@ class OpenAIResponsesModel(Model):
         handoffs: list[Handoff],
         tracing: ModelTracing,
     ) -> ModelResponse:
+        # Increment the interaction counter for CLI display
+        self.interaction_counter += 1
+        
         with response_span(disabled=tracing.is_disabled()) as span_response:
             try:
                 response = await self._fetch_response(
@@ -104,6 +119,50 @@ class OpenAIResponsesModel(Model):
                 if tracing.include_data():
                     span_response.span_data.response = response
                     span_response.span_data.input = input
+                    
+                # Print the agent message for CLI display
+                from cai.util import cli_print_agent_messages
+                try:
+                    # Create a message-like object to display
+                    message_obj = type('ResponseWrapper', (), {
+                        'content': '\n'.join([
+                            str(item.get('content', '')) if hasattr(item, 'get') 
+                            else str(getattr(item, 'text', '')) 
+                            for item in response.output 
+                            if hasattr(item, 'get') or hasattr(item, 'text')
+                        ]),
+                        'tool_calls': [
+                            type('ToolCallWrapper', (), {
+                                'name': item.name,
+                                'arguments': item.arguments
+                            }) 
+                            for item in response.output 
+                            if hasattr(item, 'name') and hasattr(item, 'arguments')
+                        ]
+                    })
+                    
+                    cli_print_agent_messages(
+                        agent_name=getattr(self, 'agent_name', 'Agent'),
+                        message=message_obj,
+                        counter=getattr(self, 'interaction_counter', 0),
+                        model=str(self.model),
+                        debug=False,
+                        interaction_input_tokens=usage.input_tokens,
+                        interaction_output_tokens=usage.output_tokens,
+                        interaction_reasoning_tokens=0,  # Not available in Responses API
+                        total_input_tokens=getattr(self, 'total_input_tokens', 0),
+                        total_output_tokens=getattr(self, 'total_output_tokens', 0),
+                        total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
+                        interaction_cost=None,
+                        total_cost=None,
+                    )
+                    
+                    # Update token totals
+                    self.total_input_tokens += usage.input_tokens
+                    self.total_output_tokens += usage.output_tokens
+                except Exception as e:
+                    logger.error(f"Error printing agent message: {e}")
+                
             except Exception as e:
                 span_response.set_error(
                     SpanError(
@@ -136,6 +195,9 @@ class OpenAIResponsesModel(Model):
         """
         Yields a partial message as it is generated, as well as the usage information.
         """
+        # Increment the interaction counter for CLI display
+        self.interaction_counter += 1
+        
         with response_span(disabled=tracing.is_disabled()) as span_response:
             try:
                 stream = await self._fetch_response(
@@ -159,6 +221,49 @@ class OpenAIResponsesModel(Model):
                     span_response.span_data.response = final_response
                     span_response.span_data.input = input
 
+                # Print the agent message for CLI display
+                from cai.util import cli_print_agent_messages
+                try:
+                    # Create a message-like object to display
+                    message_obj = type('ResponseWrapper', (), {
+                        'content': '\n'.join([
+                            str(item.get('content', '')) if hasattr(item, 'get') 
+                            else str(getattr(item, 'text', '')) 
+                            for item in final_response.output 
+                            if hasattr(item, 'get') or hasattr(item, 'text')
+                        ]),
+                        'tool_calls': [
+                            type('ToolCallWrapper', (), {
+                                'name': item.name,
+                                'arguments': item.arguments
+                            }) 
+                            for item in final_response.output 
+                            if hasattr(item, 'name') and hasattr(item, 'arguments')
+                        ]
+                    })
+                    
+                    cli_print_agent_messages(
+                        agent_name=getattr(self, 'agent_name', 'Agent'),
+                        message=message_obj,
+                        counter=getattr(self, 'interaction_counter', 0),
+                        model=str(self.model),
+                        debug=False,
+                        interaction_input_tokens=final_response.usage.input_tokens,
+                        interaction_output_tokens=final_response.usage.output_tokens,
+                        interaction_reasoning_tokens=0,  # Not available in Responses API
+                        total_input_tokens=getattr(self, 'total_input_tokens', 0),
+                        total_output_tokens=getattr(self, 'total_output_tokens', 0),
+                        total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
+                        interaction_cost=None,
+                        total_cost=None,
+                    )
+                    
+                    # Update token totals
+                    self.total_input_tokens += final_response.usage.input_tokens
+                    self.total_output_tokens += final_response.usage.output_tokens
+                except Exception as e:
+                    logger.error(f"Error printing agent message: {e}")
+                
             except Exception as e:
                 span_response.set_error(
                     SpanError(
