@@ -473,3 +473,146 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
     )
     console.print("\n")
     console.print(panel)
+
+def create_agent_streaming_context(agent_name, counter, model):
+    """Create a streaming context object that maintains state for streaming agent output."""
+    from rich.live import Live
+    import shutil
+    
+    # Use the model from environment variable if available
+    model_override = os.getenv('CAI_MODEL')
+    if model_override:
+        model = model_override
+        
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    
+    # Determine terminal size for best display
+    terminal_width, _ = shutil.get_terminal_size((100, 24))
+    panel_width = min(terminal_width - 4, 120)  # Keep some margin
+    
+    # Create base header for the panel
+    header = Text()
+    header.append(f"[{counter}] ", style="bold cyan")
+    header.append(f"Agent: {agent_name} ", style="bold green")
+    header.append(f">> ", style="yellow")
+    
+    # Create the content area for streaming text
+    content = Text("")
+    
+    # Add timestamp and model info
+    footer = Text()
+    footer.append(f"\n[{timestamp}", style="dim")
+    if model:
+        footer.append(f" ({model})", style="bold magenta")
+    footer.append("]", style="dim")
+    
+    # Create the panel (initial state)
+    panel = Panel(
+        Text.assemble(header, content, footer),
+        border_style="blue",
+        box=ROUNDED,
+        padding=(1, 2),  # Add more padding for better readability
+        title="[bold]Agent Streaming Response[/bold]",
+        title_align="left",
+        width=panel_width,
+        expand=True  # Allow panel to expand to terminal width
+    )
+    
+    # Start the live display with a higher refresh rate
+    live = Live(panel, refresh_per_second=20, console=console)
+    live.start()
+    
+    # Return context object with all the elements needed for updating
+    return {
+        "live": live,
+        "panel": panel,
+        "header": header,
+        "content": content,
+        "footer": footer,
+        "timestamp": timestamp,
+        "model": model,
+        "agent_name": agent_name,
+        "panel_width": panel_width
+    }
+
+def update_agent_streaming_content(context, text_delta):
+    """Update the streaming content with new text."""
+    # Add the new text to the content
+    context["content"].append(text_delta)
+    
+    # Update the live display with the latest content
+    updated_panel = Panel(
+        Text.assemble(context["header"], context["content"], context["footer"]),
+        border_style="blue",
+        box=ROUNDED,
+        padding=(1, 2),  # Match padding from creation
+        title="[bold]Agent Streaming Response[/bold]",
+        title_align="left",
+        width=context.get("panel_width", 100),
+        expand=True  # Allow panel to expand to terminal width
+    )
+    
+    # Force an update with the new panel
+    context["live"].update(updated_panel)
+    context["panel"] = updated_panel
+
+def finish_agent_streaming(context, final_stats=None):
+    """Finish the streaming session and display final stats if available."""
+    # If we have token stats, add them
+    tokens_text = None
+    if final_stats:
+        interaction_input_tokens = final_stats.get("interaction_input_tokens")
+        interaction_output_tokens = final_stats.get("interaction_output_tokens")
+        interaction_reasoning_tokens = final_stats.get("interaction_reasoning_tokens")
+        total_input_tokens = final_stats.get("total_input_tokens")
+        total_output_tokens = final_stats.get("total_output_tokens")
+        total_reasoning_tokens = final_stats.get("total_reasoning_tokens")
+        interaction_cost = final_stats.get("interaction_cost")
+        total_cost = final_stats.get("total_cost")
+        
+        if (interaction_input_tokens is not None and
+                interaction_output_tokens is not None and
+                interaction_reasoning_tokens is not None and
+                total_input_tokens is not None and
+                total_output_tokens is not None and
+                total_reasoning_tokens is not None):
+            
+            tokens_text = _create_token_display(
+                interaction_input_tokens,
+                interaction_output_tokens,
+                interaction_reasoning_tokens,
+                total_input_tokens,
+                total_output_tokens,
+                total_reasoning_tokens,
+                context["model"],
+                interaction_cost,
+                total_cost
+            )
+    
+    # Create the final panel with stats
+    final_panel = Panel(
+        Text.assemble(
+            context["header"], 
+            context["content"], 
+            Text("\n\n"), 
+            tokens_text if tokens_text else Text(""),
+            context["footer"]
+        ),
+        border_style="blue",
+        box=ROUNDED,
+        padding=(1, 2),  # Match padding from creation
+        title="[bold]Agent Streaming Response[/bold]",
+        title_align="left",
+        width=context.get("panel_width", 100),
+        expand=True
+    )
+    
+    # Update one last time
+    context["live"].update(final_panel)
+    
+    # Ensure updates are displayed before stopping
+    import time
+    time.sleep(0.5)
+    
+    # Stop the live display
+    context["live"].stop()

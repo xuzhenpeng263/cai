@@ -10,7 +10,7 @@ import tiktoken
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
-from cai.util import get_ollama_api_base, fix_message_list, cli_print_agent_messages
+from cai.util import get_ollama_api_base, fix_message_list, cli_print_agent_messages, create_agent_streaming_context, update_agent_streaming_content, finish_agent_streaming
 from wasabi import color
 
 from openai import NOT_GIVEN, AsyncOpenAI, AsyncStream, NotGiven
@@ -194,6 +194,10 @@ class OpenAIChatCompletionsModel(Model):
         self.total_reasoning_tokens = 0
         self.agent_name = "Agent"  # Default name
         
+        # Flags for CLI integration
+        self.disable_rich_streaming = False    # Prevents creating a rich panel in the model
+        self.suppress_final_output = False     # Prevents duplicate output at end of streaming
+        
     def set_agent_name(self, name: str) -> None:
         """Set the agent name for CLI display purposes."""
         self.agent_name = name
@@ -296,7 +300,7 @@ class OpenAIChatCompletionsModel(Model):
                 interaction_reasoning_tokens=(
                     response.usage.completion_tokens_details.reasoning_tokens 
                     if response.usage and hasattr(response.usage, 'completion_tokens_details') 
-                    and response.usage.completion_tokens_details 
+                    and response.usage.completion_tokens_details
                     and hasattr(response.usage.completion_tokens_details, 'reasoning_tokens')
                     else 0
                 ),
@@ -348,6 +352,18 @@ class OpenAIChatCompletionsModel(Model):
         # Increment the interaction counter for CLI display
         self.interaction_counter += 1
         
+        # Check if streaming should be shown in rich panel
+        should_show_rich_stream = os.getenv('CAI_STREAM', 'false').lower() == 'true' and not self.disable_rich_streaming
+        
+        # Create streaming context if needed
+        streaming_context = None
+        if should_show_rich_stream:
+            streaming_context = create_agent_streaming_context(
+                agent_name=self.agent_name,
+                counter=self.interaction_counter,
+                model=str(self.model)
+            )
+        
         with generation_span(
             model=str(self.model),
             model_config=dataclasses.asdict(model_settings)
@@ -386,6 +402,9 @@ class OpenAIChatCompletionsModel(Model):
             # Manual token counting (when API doesn't provide it)
             output_text = ""
             estimated_output_tokens = 0
+            
+            # Initialize a streaming text accumulator for rich display
+            streaming_text_buffer = ""
             
             async for chunk in stream:
                 if not state.started:
@@ -435,6 +454,13 @@ class OpenAIChatCompletionsModel(Model):
                     content = delta['content']
                 
                 if content:
+                    # Add to the streaming text buffer
+                    streaming_text_buffer += content
+                    
+                    # Update streaming display if enabled - always do this for text content
+                    if streaming_context:
+                        update_agent_streaming_content(streaming_context, content)
+                    
                     # More accurate token counting for text content
                     output_text += content
                     token_count, _ = count_tokens_with_tiktoken(output_text)
@@ -726,8 +752,28 @@ class OpenAIChatCompletionsModel(Model):
                     hasattr(final_response.usage.output_tokens_details, 'reasoning_tokens')):
                     self.total_reasoning_tokens += final_response.usage.output_tokens_details.reasoning_tokens
             
-            # At the end of streaming, print the finalized agent message
-            if final_response.output and any(isinstance(item, ResponseOutputMessage) for item in final_response.output):
+            # Prepare final statistics for display
+            final_stats = {
+                "interaction_input_tokens": final_response.usage.input_tokens if final_response.usage else 0,
+                "interaction_output_tokens": final_response.usage.output_tokens if final_response.usage else 0,
+                "interaction_reasoning_tokens": (
+                    final_response.usage.output_tokens_details.reasoning_tokens 
+                    if final_response.usage and final_response.usage.output_tokens_details
+                    and hasattr(final_response.usage.output_tokens_details, 'reasoning_tokens')
+                    else 0
+                ),
+                "total_input_tokens": getattr(self, 'total_input_tokens', 0),
+                "total_output_tokens": getattr(self, 'total_output_tokens', 0),
+                "total_reasoning_tokens": getattr(self, 'total_reasoning_tokens', 0),
+                "interaction_cost": None,
+                "total_cost": None,
+            }
+            
+            # At the end of streaming, finish the streaming context if we were using it
+            if streaming_context:
+                finish_agent_streaming(streaming_context, final_stats)
+            # If we're not using rich streaming and not suppressing output, use old method
+            elif not self.suppress_final_output and final_response.output and any(isinstance(item, ResponseOutputMessage) for item in final_response.output):
                 # Find the assistant message to print
                 for item in final_response.output:
                     if isinstance(item, ResponseOutputMessage) and item.role == 'assistant':

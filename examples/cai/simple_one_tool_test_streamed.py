@@ -8,7 +8,9 @@ is working correctly, with streaming output.
 
 import os
 import asyncio
+import time
 import json
+import sys
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from openai.types.responses import ResponseTextDeltaEvent
@@ -50,14 +52,27 @@ async def main():
     
     # Run the agent with a simple test message in streaming mode
     result = Runner.run_streamed(agent, "Hello! Can you list the files in the current directory?")
-    
+
+    # Process the streaming response events
+    event_count = 0
+    start_time = time.time()
+
     # Process the streaming response
     async for event in result.stream_events():
-        if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
-            # Print the delta with a visible marker for each token
-            # print(f"{event.data.delta}|", end="", flush=True)
-
-            print(f"{event.data.delta}", end="", flush=True)
+        event_count += 1
+        # Add a small delay to allow the streaming panel to update properly
+        await asyncio.sleep(0.01)
+        
+        # # Print a progress indicator
+        # if event_count % 10 == 0:
+        #     elapsed = time.time() - start_time
+        #     sys.stdout.write(f"\rProcessed {event_count} events in {elapsed:.1f} seconds...")
+        #     sys.stdout.flush()
+    
+    # Clear the progress line
+    sys.stdout.write("\r" + " " * 60 + "\r")
+    sys.stdout.flush()
+    
     
     print("\n" + "-" * 40)
     print("\nTest completed successfully!")

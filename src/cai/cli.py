@@ -55,6 +55,8 @@ Environment Variables
             (default: "o3-mini")
         CAI_SUPPORT_INTERVAL: Number of turns between support agent
             executions (default: "5")
+        CAI_STREAM: Enable/disable streaming output in rich panel
+            (default: "true")
 
     Extensions (only applicable if the right extension is installed):
 
@@ -97,6 +99,7 @@ Usage Examples:
 """
 
 import os
+import sys
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from cai.sdk.agents import OpenAIChatCompletionsModel, Agent, Runner, AsyncOpenAI
@@ -105,6 +108,7 @@ from openai.types.responses import ResponseTextDeltaEvent
 from rich.console import Console
 import asyncio
 from cai.util import fix_litellm_transcription_annotations, color
+from cai.util import create_agent_streaming_context, update_agent_streaming_content, finish_agent_streaming
 
 # Import modules from cai.repl
 from cai.repl.commands import FuzzyCommandCompleter, handle_command as commands_handle_command
@@ -177,6 +181,24 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
     # Display banner
     display_banner(console)
 
+    # Function to get the short name of the agent for display
+    def get_agent_short_name(agent):
+        if hasattr(agent, 'name'):
+            # Split by spaces and take first word to get shortened name
+            return agent.name.split()[0]
+        return "Agent"
+    
+    # Prevent the model from using its own rich streaming to avoid conflicts
+    # and suppress final output message to avoid duplicates
+    if hasattr(agent, 'model'):
+        if hasattr(agent.model, 'disable_rich_streaming'):
+            agent.model.disable_rich_streaming = True
+        if hasattr(agent.model, 'suppress_final_output'):
+            agent.model.suppress_final_output = True
+
+    # Track streaming context to ensure proper cleanup
+    current_streaming_context = None
+
     while turn_count < max_turns:
         try:
             # Get user input with command completion and history
@@ -204,19 +226,125 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
 
             # Process the conversation with the agent
             if stream:
-                # Use streamed response
-                print("Agent: ", end="", flush=True)
-
+                # For classic fallback when streaming fails
+                print_fallback = False
+                
                 async def process_streamed_response():
+                    nonlocal current_streaming_context, print_fallback
+                    
                     try:
+                        # Get the model from the agent for display purposes
+                        model_name = None
+                        if hasattr(agent, 'model') and hasattr(agent.model, 'model'):
+                            model_name = str(agent.model.model)
+                        
+                        # Set the agent name in the model if available (for proper display in streaming panel)
+                        if hasattr(agent, 'model'):
+                            agent.model.agent_name = get_agent_short_name(agent)
+                        
+                        # Make sure any previous streaming context is cleaned up
+                        if current_streaming_context is not None:
+                            try:
+                                current_streaming_context["live"].stop()
+                            except Exception:
+                                pass  # Ignore errors on cleanup
+                            current_streaming_context = None
+                        
+                        try:
+                            # Create a new streaming context
+                            current_streaming_context = create_agent_streaming_context(
+                                agent_name=get_agent_short_name(agent),
+                                counter=turn_count + 1,  # 1-indexed for display
+                                model=model_name
+                            )
+                        except Exception as e:
+                            # If rich display fails, fall back to classic print mode
+                            print(f"Agent: ", end="", flush=True)
+                            print_fallback = True
+                            import traceback
+                            print(f"[Warning: Falling back to simple streaming: {str(e)}]", file=sys.stderr)
+                        
+                        # Run the agent with streaming
                         result = Runner.run_streamed(agent, user_input)
+                        
+                        # List to collect all deltas for computing final token counts
+                        collected_text = []
+                        
+                        # Process stream events
                         async for event in result.stream_events():
                             if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
-                                print(event.data.delta, end="", flush=True)
-                        print("\n")  # Add a newline at the end
+                                collected_text.append(event.data.delta)
+                                # If using streaming context, update the panel
+                                if current_streaming_context is not None:
+                                    update_agent_streaming_content(current_streaming_context, event.data.delta)
+                                # Otherwise, print to console directly
+                                elif print_fallback:
+                                    print(event.data.delta, end="", flush=True)
+                        
+                        # Finish the streaming context if it exists
+                        if current_streaming_context is not None:
+                            # Get token stats for the final display
+                            token_stats = None
+                            
+                            # Try to get token stats from the model
+                            if hasattr(agent, 'model'):
+                                # Get the actual input/output token counts from the model when available
+                                model = agent.model
+                                
+                                # Calculate a more accurate output token estimate using tiktoken if available
+                                output_text = "".join(collected_text)
+                                output_tokens = len(output_text) // 4  # Fallback rough estimate
+                                
+                                try:
+                                    import tiktoken
+                                    encoding = tiktoken.get_encoding("cl100k_base")
+                                    output_tokens = len(encoding.encode(output_text))
+                                except Exception:
+                                    # Fallback to rough estimate if tiktoken fails
+                                    pass
+                                
+                                # Store current input tokens to calculate difference next time
+                                if not hasattr(model, 'previous_input_tokens'):
+                                    model.previous_input_tokens = 0
+                                
+                                # Get the available token counts from the model, or use reasonable defaults
+                                interaction_input = getattr(model, 'total_input_tokens', 0) - model.previous_input_tokens
+                                if interaction_input <= 0:
+                                    interaction_input = output_tokens * 2  # Rough estimate based on output
+                                
+                                # Update previous tokens for next calculation
+                                model.previous_input_tokens = getattr(model, 'total_input_tokens', 0)
+                                
+                                token_stats = {
+                                    "interaction_input_tokens": interaction_input,
+                                    "interaction_output_tokens": output_tokens,
+                                    "interaction_reasoning_tokens": 0,
+                                    "total_input_tokens": getattr(model, 'total_input_tokens', interaction_input),
+                                    "total_output_tokens": getattr(model, 'total_output_tokens', output_tokens),
+                                    "total_reasoning_tokens": getattr(model, 'total_reasoning_tokens', 0),
+                                    "interaction_cost": None,
+                                    "total_cost": None
+                                }
+                            
+                            finish_agent_streaming(current_streaming_context, token_stats)
+                            current_streaming_context = None
+                        elif print_fallback:
+                            # Add a newline at the end of classic streaming
+                            print("\n")
+                            
                         return result
                     except Exception as e:
-                        print()  # Add a newline after any partial output
+                        # In case of errors, ensure streaming context is cleaned up
+                        if current_streaming_context is not None:
+                            try:
+                                current_streaming_context["live"].stop()
+                            except Exception:
+                                pass
+                            current_streaming_context = None
+                        
+                        if print_fallback:
+                            print()  # Add a newline after any partial output
+                            
                         import traceback
                         tb = traceback.format_exc()
                         print(f"\n[Error occurred during streaming: {str(e)}]\nLocation: {tb}")
@@ -230,16 +358,30 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 console.print(f"Agent: {response.final_output}")
             turn_count += 1
         except KeyboardInterrupt:
+            # Ensure streaming context is cleaned up on keyboard interrupt
+            if current_streaming_context is not None:
+                try:
+                    current_streaming_context["live"].stop()
+                except Exception:
+                    pass
+                current_streaming_context = None
             break
-        # except Exception as e:
-        #     import traceback
-        #     import sys
-        #     exc_type, exc_value, exc_traceback = sys.exc_info()
-        #     tb_info = traceback.extract_tb(exc_traceback)
-        #     filename, line, func, text = tb_info[-1]
-        #     console.print(f"[bold red]Error: {str(e)}[/bold red]")
-        #     console.print(f"[bold red]Traceback: {tb_info}[/bold red]")
-
+        except Exception as e:
+            # Ensure streaming context is cleaned up on any exception
+            if current_streaming_context is not None:
+                try:
+                    current_streaming_context["live"].stop()
+                except Exception:
+                    pass
+                current_streaming_context = None
+            
+            import traceback
+            import sys
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            tb_info = traceback.extract_tb(exc_traceback)
+            filename, line, func, text = tb_info[-1]
+            console.print(f"[bold red]Error: {str(e)}[/bold red]")
+            console.print(f"[bold red]Traceback: {tb_info}[/bold red]")
 
 def main():
     # Apply litellm patch to fix the __annotations__ error
@@ -252,9 +394,18 @@ def main():
 
     # Get the agent instance by name
     agent = get_agent_by_name(agent_type)
+    
+    # Configure model flags to work well with CLI
+    if hasattr(agent, 'model'):
+        # Disable rich streaming in the model to avoid conflicts
+        if hasattr(agent.model, 'disable_rich_streaming'):
+            agent.model.disable_rich_streaming = True
+        # Suppress final output to avoid duplicates
+        if hasattr(agent.model, 'suppress_final_output'):
+            agent.model.suppress_final_output = True
 
     # Enable streaming by default, unless specifically disabled
-    stream = os.getenv('CAI_STREAM', 'false').lower() != 'false'
+    stream = os.getenv('CAI_STREAM', 'true').lower() != 'false'
 
     # Run the CLI with the selected agent
     run_cai_cli(agent, stream=stream)
