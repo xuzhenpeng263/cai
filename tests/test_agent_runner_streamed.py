@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from typing_extensions import TypedDict
 
-from agents import (
+from cai.sdk.agents import (
     Agent,
     GuardrailFunctionOutput,
     Handoff,
@@ -20,9 +20,9 @@ from agents import (
     UserError,
     handoff,
 )
-from agents.items import RunItem
-from agents.run import RunConfig
-from agents.stream_events import AgentUpdatedStreamEvent
+from cai.sdk.agents.items import RunItem
+from cai.sdk.agents.run import RunConfig
+from cai.sdk.agents.stream_events import AgentUpdatedStreamEvent
 
 from .fake_model import FakeModel
 from .test_responses import (
