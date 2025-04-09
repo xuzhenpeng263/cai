@@ -107,7 +107,7 @@ from cai.sdk.agents import set_default_openai_client, set_tracing_disabled
 from openai.types.responses import ResponseTextDeltaEvent
 from rich.console import Console
 import asyncio
-from cai.util import fix_litellm_transcription_annotations, color
+from cai.util import fix_litellm_transcription_annotations, color, calculate_model_cost
 from cai.util import create_agent_streaming_context, update_agent_streaming_content, finish_agent_streaming
 
 # Import modules from cai.repl
@@ -322,8 +322,8 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                                     "total_input_tokens": getattr(model, 'total_input_tokens', interaction_input),
                                     "total_output_tokens": getattr(model, 'total_output_tokens', output_tokens),
                                     "total_reasoning_tokens": getattr(model, 'total_reasoning_tokens', 0),
-                                    "interaction_cost": None,
-                                    "total_cost": None
+                                    "interaction_cost": calculate_model_cost(str(model), interaction_input, output_tokens),
+                                    "total_cost": calculate_model_cost(str(model), getattr(model, 'total_input_tokens', interaction_input), getattr(model, 'total_output_tokens', output_tokens))
                                 }
                             
                             finish_agent_streaming(current_streaming_context, token_stats)
