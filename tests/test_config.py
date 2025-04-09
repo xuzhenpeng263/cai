@@ -3,10 +3,10 @@ import os
 import openai
 import pytest
 
-from agents import set_default_openai_api, set_default_openai_client, set_default_openai_key
-from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-from agents.models.openai_provider import OpenAIProvider
-from agents.models.openai_responses import OpenAIResponsesModel
+from cai.sdk.agents import set_default_openai_api, set_default_openai_client, set_default_openai_key
+from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+from cai.sdk.agents.models.openai_provider import OpenAIProvider
+from cai.sdk.agents.models.openai_responses import OpenAIResponsesModel
 
 
 def test_cc_no_default_key_errors(monkeypatch):
