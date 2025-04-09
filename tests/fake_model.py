@@ -5,19 +5,19 @@ from typing import Any
 
 from openai.types.responses import Response, ResponseCompletedEvent
 
-from agents.agent_output import AgentOutputSchema
-from agents.handoffs import Handoff
-from agents.items import (
+from cai.sdk.agents.agent_output import AgentOutputSchema
+from cai.sdk.agents.handoffs import Handoff
+from cai.sdk.agents.items import (
     ModelResponse,
     TResponseInputItem,
     TResponseOutputItem,
     TResponseStreamEvent,
 )
-from agents.model_settings import ModelSettings
-from agents.models.interface import Model, ModelTracing
-from agents.tool import Tool
-from agents.tracing import SpanError, generation_span
-from agents.usage import Usage
+from cai.sdk.agents.model_settings import ModelSettings
+from cai.sdk.agents.models.interface import Model, ModelTracing
+from cai.sdk.agents.tool import Tool
+from cai.sdk.agents.tracing import SpanError, generation_span
+from cai.sdk.agents.usage import Usage
 
 
 class FakeModel(Model):

@@ -9,7 +9,7 @@ from openai.types.responses import (
     ResponseOutputText,
 )
 
-from agents import (
+from cai.sdk.agents import (
     Agent,
     FunctionTool,
     Handoff,
