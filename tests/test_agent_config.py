@@ -1,7 +1,7 @@
 import pytest
 from pydantic import BaseModel
 
-from agents import Agent, Handoff, RunContextWrapper, Runner, handoff
+from cai.sdk.agents import Agent, Handoff, RunContextWrapper, Runner, handoff
 
 
 @pytest.mark.asyncio
