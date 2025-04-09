@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from inline_snapshot import snapshot
 
-from agents.tracing import (
+from cai.sdk.agents.tracing import (
     Span,
     Trace,
     agent_span,
@@ -16,7 +16,7 @@ from agents.tracing import (
     handoff_span,
     trace,
 )
-from agents.tracing.spans import SpanError
+from cai.sdk.agents.tracing.spans import SpanError
 
 from .testing_processor import (
     SPAN_PROCESSOR_TESTING,

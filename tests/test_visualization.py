@@ -3,14 +3,14 @@ from unittest.mock import Mock
 import graphviz  # type: ignore
 import pytest
 
-from agents import Agent
-from agents.extensions.visualization import (
+from cai.sdk.agents import Agent
+from cai.sdk.agents.extensions.visualization import (
     draw_graph,
     get_all_edges,
     get_all_nodes,
     get_main_graph,
 )
-from agents.handoffs import Handoff
+from cai.sdk.agents.handoffs import Handoff
 
 
 @pytest.fixture

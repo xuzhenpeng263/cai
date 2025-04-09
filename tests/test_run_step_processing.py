@@ -10,7 +10,7 @@ from openai.types.responses.response_computer_tool_call import ActionClick
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem, Summary
 from pydantic import BaseModel
 
-from agents import (
+from cai.sdk.agents import (
     Agent,
     Computer,
     ComputerTool,
@@ -23,7 +23,7 @@ from agents import (
     ToolCallItem,
     Usage,
 )
-from agents._run_impl import RunImpl
+from cai.sdk.agents._run_impl import RunImpl
 
 from .test_responses import (
     get_final_output_message,

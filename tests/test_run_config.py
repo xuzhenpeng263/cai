@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from agents import Agent, RunConfig, Runner
-from agents.models.interface import Model, ModelProvider
+from cai.sdk.agents import Agent, RunConfig, Runner
+from cai.sdk.agents.models.interface import Model, ModelProvider
 
 from .fake_model import FakeModel
 from .test_responses import get_text_message

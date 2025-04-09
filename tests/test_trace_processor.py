@@ -5,11 +5,11 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from agents.tracing.processor_interface import TracingProcessor
-from agents.tracing.processors import BackendSpanExporter, BatchTraceProcessor
-from agents.tracing.span_data import AgentSpanData
-from agents.tracing.spans import SpanImpl
-from agents.tracing.traces import TraceImpl
+from cai.sdk.agents.tracing.processor_interface import TracingProcessor
+from cai.sdk.agents.tracing.processors import BackendSpanExporter, BatchTraceProcessor
+from cai.sdk.agents.tracing.span_data import AgentSpanData
+from cai.sdk.agents.tracing.spans import SpanImpl
+from cai.sdk.agents.tracing.traces import TraceImpl
 
 
 def get_span(processor: TracingProcessor) -> SpanImpl[AgentSpanData]:

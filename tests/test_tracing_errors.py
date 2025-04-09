@@ -7,7 +7,7 @@ import pytest
 from inline_snapshot import snapshot
 from typing_extensions import TypedDict
 
-from agents import (
+from cai.sdk.agents import (
     Agent,
     GuardrailFunctionOutput,
     InputGuardrail,

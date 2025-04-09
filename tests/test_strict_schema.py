@@ -1,7 +1,7 @@
 import pytest
 
-from agents.exceptions import UserError
-from agents.strict_schema import ensure_strict_json_schema
+from cai.sdk.agents.exceptions import UserError
+from cai.sdk.agents.strict_schema import ensure_strict_json_schema
 
 
 def test_empty_schema_has_additional_properties_false():
