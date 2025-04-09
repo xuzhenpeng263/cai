@@ -5,7 +5,7 @@ import json
 import pytest
 from typing_extensions import TypedDict
 
-from agents import Agent, MaxTurnsExceeded, Runner
+from cai.sdk.agents import Agent, MaxTurnsExceeded, Runner
 
 from .fake_model import FakeModel
 from .test_responses import get_function_tool, get_function_tool_call, get_text_message

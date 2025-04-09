@@ -38,11 +38,11 @@ from openai.types.responses import (
 )
 from openai.types.responses.response_input_item_param import FunctionCallOutput
 
-from agents.agent_output import AgentOutputSchema
-from agents.exceptions import UserError
-from agents.items import TResponseInputItem
-from agents.models.fake_id import FAKE_RESPONSES_ID
-from agents.models.openai_chatcompletions import _Converter
+from cai.sdk.agents.agent_output import AgentOutputSchema
+from cai.sdk.agents.exceptions import UserError
+from cai.sdk.agents.items import TResponseInputItem
+from cai.sdk.agents.models.fake_id import FAKE_RESPONSES_ID
+from cai.sdk.agents.models.openai_chatcompletions import _Converter
 
 
 def test_message_to_output_items_with_text_only():

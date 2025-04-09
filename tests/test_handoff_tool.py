@@ -4,7 +4,7 @@ import pytest
 from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 from pydantic import BaseModel
 
-from agents import (
+from cai.sdk.agents import (
     Agent,
     Handoff,
     HandoffInputData,

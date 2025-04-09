@@ -22,7 +22,7 @@ from openai.types.responses import (
     ResponseOutputText,
 )
 
-from agents import (
+from cai.sdk.agents import (
     ModelResponse,
     ModelSettings,
     ModelTracing,
@@ -30,7 +30,7 @@ from agents import (
     OpenAIProvider,
     generation_span,
 )
-from agents.models.fake_id import FAKE_RESPONSES_ID
+from cai.sdk.agents.models.fake_id import FAKE_RESPONSES_ID
 
 
 @pytest.mark.allow_call_model_methods

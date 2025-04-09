@@ -17,10 +17,10 @@ from openai.types.responses import (
     ResponseOutputText,
 )
 
-from agents.model_settings import ModelSettings
-from agents.models.interface import ModelTracing
-from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-from agents.models.openai_provider import OpenAIProvider
+from cai.sdk.agents.model_settings import ModelSettings
+from cai.sdk.agents.models.interface import ModelTracing
+from cai.sdk.agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+from cai.sdk.agents.models.openai_provider import OpenAIProvider
 
 
 @pytest.mark.allow_call_model_methods

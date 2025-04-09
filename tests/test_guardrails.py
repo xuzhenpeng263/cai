@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from agents import (
+from cai.sdk.agents import (
     Agent,
     GuardrailFunctionOutput,
     InputGuardrail,
@@ -13,7 +13,7 @@ from agents import (
     TResponseInputItem,
     UserError,
 )
-from agents.guardrail import input_guardrail, output_guardrail
+from cai.sdk.agents.guardrail import input_guardrail, output_guardrail
 
 
 def get_sync_guardrail(triggers: bool, output_info: Any | None = None):

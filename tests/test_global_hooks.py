@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from typing_extensions import TypedDict
 
-from agents import Agent, RunContextWrapper, RunHooks, Runner, TContext, Tool
+from cai.sdk.agents import Agent, RunContextWrapper, RunHooks, Runner, TContext, Tool
 
 from .fake_model import FakeModel
 from .test_responses import (
