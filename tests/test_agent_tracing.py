@@ -5,7 +5,7 @@ import asyncio
 import pytest
 from inline_snapshot import snapshot
 
-from agents import Agent, RunConfig, Runner, trace
+from cai.sdk.agents import Agent, RunConfig, Runner, trace
 
 from .fake_model import FakeModel
 from .test_responses import get_text_message
