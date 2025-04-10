@@ -3,8 +3,8 @@ import pytest
 from cai.sdk.agents import Agent, ModelSettings, Runner
 from cai.sdk.agents._run_impl import AgentToolUseTracker, RunImpl
 
-from .fake_model import FakeModel
-from .test_responses import get_function_tool, get_function_tool_call, get_text_message
+from tests.fake_model import FakeModel
+from tests.test_responses import get_function_tool, get_function_tool_call, get_text_message
 
 
 class TestToolChoiceReset:

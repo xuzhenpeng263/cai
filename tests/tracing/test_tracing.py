@@ -18,7 +18,7 @@ from cai.sdk.agents.tracing import (
 )
 from cai.sdk.agents.tracing.spans import SpanError
 
-from .testing_processor import (
+from tests.testing_processor import (
     SPAN_PROCESSOR_TESTING,
     assert_no_traces,
     fetch_events,

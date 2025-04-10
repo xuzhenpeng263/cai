@@ -18,7 +18,7 @@ from cai.sdk.agents import (
 )
 from cai.sdk.agents._run_impl import RunImpl
 
-from .test_responses import get_function_tool
+from tests.test_responses import get_function_tool
 
 
 def _make_function_tool_result(

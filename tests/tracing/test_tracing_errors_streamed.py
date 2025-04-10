@@ -22,15 +22,15 @@ from cai.sdk.agents import (
     TResponseInputItem,
 )
 
-from .fake_model import FakeModel
-from .test_responses import (
+from tests.fake_model import FakeModel
+from tests.test_responses import (
     get_final_output_message,
     get_function_tool,
     get_function_tool_call,
     get_handoff_tool_call,
     get_text_message,
 )
-from .testing_processor import fetch_normalized_spans
+from tests.testing_processor import fetch_normalized_spans
 
 
 @pytest.mark.asyncio
