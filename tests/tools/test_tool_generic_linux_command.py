@@ -1,18 +1,51 @@
+"""
+This module contains tests for the generic Linux command tool functionality.
+It includes tests for executing regular commands and handling invalid commands.
+"""
+
 import pytest
 import json
-import asyncio
 from unittest.mock import MagicMock
-from unittest.mock import patch
 from cai.tools.reconnaissance.generic_linux_command import generic_linux_command  
 
-
 async def test_generic_linux_command_regular_commands():
-    mock_ctx = MagicMock()  
+    """Test the execution of a regular command using the generic Linux command tool."""
+    mock_ctx = MagicMock()  # Create a mock context for the command execution
     params = {
-        "command": "echo",
-        "args": "'hello'"
+        "command": "echo",  # Command to be executed
+        "args": "'hello'"   # Arguments for the command
     }
 
+    # Invoke the tool with the specified parameters and await the result
     result = await generic_linux_command.on_invoke_tool(mock_ctx, json.dumps(params))
 
+    # Assert that the result matches the expected output
     assert result.replace("\n", "") == 'hello'  
+
+async def test_generic_linux_command_ls():
+    """Test the execution of the 'ls' command using the generic Linux command tool."""
+    mock_ctx = MagicMock()  # Create a mock context for the command execution
+    params = {
+        "command": "ls",  # Command to be executed
+        "args": "-l"      # Arguments for the command
+    }
+
+    # Invoke the tool with the specified parameters and await the result
+    result = await generic_linux_command.on_invoke_tool(mock_ctx, json.dumps(params))
+
+    # Assert that the output contains 'total', which is typical for 'ls -l'
+    assert "total" in result  
+
+async def test_generic_linux_command_invalid_command():
+    """Test the handling of an invalid command using the generic Linux command tool."""
+    mock_ctx = MagicMock()  # Create a mock context for the command execution
+    params = {
+        "command": "invalid_command",  # Invalid command to be executed
+        "args": ""                      # No arguments for the command
+    }
+
+    # Invoke the tool with the specified parameters and await the result
+    result = await generic_linux_command.on_invoke_tool(mock_ctx, json.dumps(params))
+
+    # Assert that the result indicates the command was not found
+    assert "command not found" in result  
