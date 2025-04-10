@@ -24,7 +24,10 @@
 
     import os
     from cai.util import cli_print_tool_call
-    from cai.rag.vector_db import get_previous_memory
+    try:
+        from cai.rag.vector_db import get_previous_memory
+    except Exception as e:
+        print(e)
     from cai import is_caiextensions_memory_available
 
     # Get system prompt from agent if provided
@@ -101,9 +104,14 @@ ${reasoning_content}
         netifaces = None
 
     # Gather system info
-    os_name = platform.system()
-    hostname = socket.gethostname()
-    ip_addr = socket.gethostbyname(hostname)
+    try:
+        hostname = socket.gethostname()
+        ip_addr = socket.gethostbyname(hostname)
+        os_name = platform.system()
+    except:
+        hostname = "local0"
+        ip_addr = "127.0.0.1"
+        os_name = "Linux"   
 
     # Retrieve tun0 address if netifaces is installed and tun0 exists
     tun0_addr = None

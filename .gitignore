@@ -146,3 +146,4 @@ cython_debug/
 # CAI files
 .cai/
 .vscode/
+cai_env/
