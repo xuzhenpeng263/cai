@@ -26,8 +26,8 @@ from cai.sdk.agents import (
 from cai.sdk.agents.agent import ToolsToFinalOutputResult
 from cai.sdk.agents.tool import FunctionToolResult, function_tool
 
-from .fake_model import FakeModel
-from .test_responses import (
+from tests.fake_model import FakeModel
+from tests.test_responses import (
     get_final_output_message,
     get_function_tool,
     get_function_tool_call,

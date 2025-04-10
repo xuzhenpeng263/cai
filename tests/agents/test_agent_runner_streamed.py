@@ -24,8 +24,8 @@ from cai.sdk.agents.items import RunItem
 from cai.sdk.agents.run import RunConfig
 from cai.sdk.agents.stream_events import AgentUpdatedStreamEvent
 
-from .fake_model import FakeModel
-from .test_responses import (
+from tests.fake_model import FakeModel
+from tests.test_responses import (
     get_final_output_message,
     get_function_tool,
     get_function_tool_call,
