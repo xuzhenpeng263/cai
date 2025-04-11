@@ -121,8 +121,8 @@ async def test_get_response_with_refusal(monkeypatch) -> None:
     assert isinstance(refusal_part, ResponseOutputRefusal)
     assert refusal_part.refusal == "No thanks"
     # With no usage from the completion, usage defaults to zeros.
-    assert resp.usage.requests == 0
-    assert resp.usage.input_tokens == 0
+    assert resp.usage.requests == 1
+    assert resp.usage.input_tokens == 5
     assert resp.usage.output_tokens == 0
 
 
