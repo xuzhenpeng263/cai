@@ -346,7 +346,7 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
     Create a Text object displaying token usage information
     with enhanced formatting.
     """
-    print(f"\nDEBUG _create_token_display: Received costs - Interaction: {interaction_cost}, Total: {total_cost}")
+    # print(f"\nDEBUG _create_token_display: Received costs - Interaction: {interaction_cost}, Total: {total_cost}")
     
     tokens_text = Text(justify="left")
 
@@ -367,7 +367,7 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
         current_cost = float(interaction_cost) if interaction_cost is not None else 0.0
     except (ValueError, TypeError):
         current_cost = 0.0
-    print(f"DEBUG _create_token_display: Current cost after conversion: {current_cost}")
+   # print(f"DEBUG _create_token_display: Current cost after conversion: {current_cost}")
     tokens_text.append(f"(${current_cost:.4f}) ", style="bold")
     
     # Separator
@@ -387,7 +387,7 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
         total_cost_value = float(total_cost) if total_cost is not None else 0.0
     except (ValueError, TypeError):
         total_cost_value = 0.0
-    print(f"DEBUG _create_token_display: Total cost after conversion: {total_cost_value}")
+    # print(f"DEBUG _create_token_display: Total cost after conversion: {total_cost_value}")
     tokens_text.append(f"(${total_cost_value:.4f}) ", style="bold")
     
     # Separator
