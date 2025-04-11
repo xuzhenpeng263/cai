@@ -25,7 +25,7 @@ from cai.sdk.agents import (
 )
 from cai.sdk.agents._run_impl import RunImpl
 
-from .test_responses import (
+from tests.core.test_responses import (
     get_final_output_message,
     get_function_tool,
     get_function_tool_call,

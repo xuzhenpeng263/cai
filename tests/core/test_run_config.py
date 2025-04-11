@@ -5,8 +5,8 @@ import pytest
 from cai.sdk.agents import Agent, RunConfig, Runner
 from cai.sdk.agents.models.interface import Model, ModelProvider
 
-from .fake_model import FakeModel
-from .test_responses import get_text_message
+from tests.fake_model import FakeModel
+from tests.core.test_responses import get_text_message
 
 
 class DummyProvider(ModelProvider):
