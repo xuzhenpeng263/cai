@@ -28,7 +28,6 @@ from ..tracing import SpanError, response_span
 from ..usage import Usage
 from ..version import __version__
 from .interface import Model, ModelTracing
-from cai.util import calculate_model_cost
 
 if TYPE_CHECKING:
     from ..model_settings import ModelSettings
@@ -154,8 +153,8 @@ class OpenAIResponsesModel(Model):
                         total_input_tokens=getattr(self, 'total_input_tokens', 0),
                         total_output_tokens=getattr(self, 'total_output_tokens', 0),
                         total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
-                        interaction_cost=calculate_model_cost(str(self.model), usage.input_tokens, usage.output_tokens),
-                        total_cost=calculate_model_cost(str(self.model), getattr(self, 'total_input_tokens', 0), getattr(self, 'total_output_tokens', 0)),
+                        interaction_cost=None,
+                        total_cost=None,
                     )
                     
                     # Update token totals
@@ -255,8 +254,8 @@ class OpenAIResponsesModel(Model):
                         total_input_tokens=getattr(self, 'total_input_tokens', 0),
                         total_output_tokens=getattr(self, 'total_output_tokens', 0),
                         total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
-                        interaction_cost=calculate_model_cost(str(self.model), final_response.usage.input_tokens, final_response.usage.output_tokens),
-                        total_cost=calculate_model_cost(str(self.model), getattr(self, 'total_input_tokens', 0), getattr(self, 'total_output_tokens', 0)),
+                        interaction_cost=None,
+                        total_cost=None,
                     )
                     
                     # Update token totals
