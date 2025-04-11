@@ -339,13 +339,15 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
     total_output_tokens,
     total_reasoning_tokens,
     model,
-    interaction_cost=None, # before 0.0
+    interaction_cost=None,
     total_cost=None
 ) -> Text:  # noqa: E501
     """
     Create a Text object displaying token usage information
     with enhanced formatting.
     """
+    print(f"\nDEBUG _create_token_display: Received costs - Interaction: {interaction_cost}, Total: {total_cost}")
+    
     tokens_text = Text(justify="left")
 
     # Create a more compact, horizontal display
@@ -357,10 +359,15 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
     tokens_text.append(f"O:{interaction_output_tokens} ", style="red")
     tokens_text.append(f"R:{interaction_reasoning_tokens} ", style="yellow")
     
-    # Current cost - calculate if None
+    # Current cost - only calculate if not provided
     if interaction_cost is None:
         interaction_cost = calculate_model_cost(model, interaction_input_tokens, interaction_output_tokens)
-    current_cost = float(interaction_cost) if interaction_cost is not None else 0.0
+    # Ensure interaction_cost is a float
+    try:
+        current_cost = float(interaction_cost) if interaction_cost is not None else 0.0
+    except (ValueError, TypeError):
+        current_cost = 0.0
+    print(f"DEBUG _create_token_display: Current cost after conversion: {current_cost}")
     tokens_text.append(f"(${current_cost:.4f}) ", style="bold")
     
     # Separator
@@ -372,10 +379,15 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
     tokens_text.append(f"O:{total_output_tokens} ", style="red")
     tokens_text.append(f"R:{total_reasoning_tokens} ", style="yellow")
     
-    # Total cost - calculate if None
+    # Total cost - only calculate if not provided
     if total_cost is None:
         total_cost = calculate_model_cost(model, total_input_tokens, total_output_tokens)
-    total_cost_value = float(total_cost) if total_cost is not None else 0.0
+    # Ensure total_cost is a float
+    try:
+        total_cost_value = float(total_cost) if total_cost is not None else 0.0
+    except (ValueError, TypeError):
+        total_cost_value = 0.0
+    print(f"DEBUG _create_token_display: Total cost after conversion: {total_cost_value}")
     tokens_text.append(f"(${total_cost_value:.4f}) ", style="bold")
     
     # Separator
@@ -565,14 +577,21 @@ def finish_agent_streaming(context, final_stats=None):
     # If we have token stats, add them
     tokens_text = None
     if final_stats:
+        print(f"\nDEBUG finish_agent_streaming: Received final_stats: {final_stats}")
+        
         interaction_input_tokens = final_stats.get("interaction_input_tokens")
         interaction_output_tokens = final_stats.get("interaction_output_tokens")
         interaction_reasoning_tokens = final_stats.get("interaction_reasoning_tokens")
         total_input_tokens = final_stats.get("total_input_tokens")
         total_output_tokens = final_stats.get("total_output_tokens")
         total_reasoning_tokens = final_stats.get("total_reasoning_tokens")
-        interaction_cost = final_stats.get("interaction_cost")
-        total_cost = final_stats.get("total_cost")
+        
+        # CRITICAL FIX: Ensure costs are properly extracted and preserved as floats
+        interaction_cost = float(final_stats.get("interaction_cost", 0.0))
+        total_cost = float(final_stats.get("total_cost", 0.0))
+        
+        print(f"\nDEBUG finish_agent_streaming: Received costs from final_stats - Interaction: {interaction_cost}, Total: {total_cost}")
+        print(f"DEBUG finish_agent_streaming: Type of interaction_cost: {type(interaction_cost)}, Type of total_cost: {type(total_cost)}")
         
         if (interaction_input_tokens is not None and
                 interaction_output_tokens is not None and
@@ -580,6 +599,15 @@ def finish_agent_streaming(context, final_stats=None):
                 total_input_tokens is not None and
                 total_output_tokens is not None and
                 total_reasoning_tokens is not None):
+            
+            # Only calculate costs if they weren't provided or are zero
+            if interaction_cost is None or interaction_cost == 0.0:
+                interaction_cost = calculate_model_cost(context["model"], interaction_input_tokens, interaction_output_tokens)
+            if total_cost is None or total_cost == 0.0:
+                total_cost = calculate_model_cost(context["model"], total_input_tokens, total_output_tokens)
+            
+            print(f"DEBUG finish_agent_streaming: Costs before passing to _create_token_display - Interaction: {interaction_cost}, Total: {total_cost}")
+            print(f"DEBUG finish_agent_streaming: Type of costs before passing - Interaction: {type(interaction_cost)}, Total: {type(total_cost)}")
             
             tokens_text = _create_token_display(
                 interaction_input_tokens,
