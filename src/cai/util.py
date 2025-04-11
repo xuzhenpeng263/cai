@@ -577,7 +577,7 @@ def finish_agent_streaming(context, final_stats=None):
     # If we have token stats, add them
     tokens_text = None
     if final_stats:
-        print(f"\nDEBUG finish_agent_streaming: Received final_stats: {final_stats}")
+        #print(f"\nDEBUG finish_agent_streaming: Received final_stats: {final_stats}")
         
         interaction_input_tokens = final_stats.get("interaction_input_tokens")
         interaction_output_tokens = final_stats.get("interaction_output_tokens")
@@ -590,8 +590,8 @@ def finish_agent_streaming(context, final_stats=None):
         interaction_cost = float(final_stats.get("interaction_cost", 0.0))
         total_cost = float(final_stats.get("total_cost", 0.0))
         
-        print(f"\nDEBUG finish_agent_streaming: Received costs from final_stats - Interaction: {interaction_cost}, Total: {total_cost}")
-        print(f"DEBUG finish_agent_streaming: Type of interaction_cost: {type(interaction_cost)}, Type of total_cost: {type(total_cost)}")
+        #print(f"\nDEBUG finish_agent_streaming: Received costs from final_stats - Interaction: {interaction_cost}, Total: {total_cost}")
+        #print(f"DEBUG finish_agent_streaming: Type of interaction_cost: {type(interaction_cost)}, Type of total_cost: {type(total_cost)}")
         
         if (interaction_input_tokens is not None and
                 interaction_output_tokens is not None and
@@ -606,8 +606,8 @@ def finish_agent_streaming(context, final_stats=None):
             if total_cost is None or total_cost == 0.0:
                 total_cost = calculate_model_cost(context["model"], total_input_tokens, total_output_tokens)
             
-            print(f"DEBUG finish_agent_streaming: Costs before passing to _create_token_display - Interaction: {interaction_cost}, Total: {total_cost}")
-            print(f"DEBUG finish_agent_streaming: Type of costs before passing - Interaction: {type(interaction_cost)}, Total: {type(total_cost)}")
+            #print(f"DEBUG finish_agent_streaming: Costs before passing to _create_token_display - Interaction: {interaction_cost}, Total: {total_cost}")
+            #print(f"DEBUG finish_agent_streaming: Type of costs before passing - Interaction: {type(interaction_cost)}, Total: {type(total_cost)}")
             
             tokens_text = _create_token_display(
                 interaction_input_tokens,

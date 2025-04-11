@@ -358,10 +358,10 @@ class OpenAIChatCompletionsModel(Model):
         # Create streaming context if needed
         streaming_context = None
         if should_show_rich_stream:
-            print(f"\nDEBUG: Creating streaming context with initial stats:")
-            print(f"DEBUG: Model: {str(self.model)}")
-            print(f"DEBUG: Agent name: {self.agent_name}")
-            print(f"DEBUG: Counter: {self.interaction_counter}")
+            #print(f"\nDEBUG: Creating streaming context with initial stats:")
+            #print(f"DEBUG: Model: {str(self.model)}")
+            #print(f"DEBUG: Agent name: {self.agent_name}")
+            #print(f"DEBUG: Counter: {self.interaction_counter}")
             streaming_context = create_agent_streaming_context(
                 agent_name=self.agent_name,
                 counter=self.interaction_counter,
@@ -772,7 +772,7 @@ class OpenAIChatCompletionsModel(Model):
             interaction_cost = max(float(interaction_cost if interaction_cost is not None else 0.0), 0.00001)
             total_cost = max(float(total_cost if total_cost is not None else 0.0), 0.00001)
             
-            print(f"DEBUG: Final direct cost calculations - Interaction: ${interaction_cost:.6f}, Total: ${total_cost:.6f}")
+            #print(f"DEBUG: Final direct cost calculations - Interaction: ${interaction_cost:.6f}, Total: ${total_cost:.6f}")
             
             # Create final stats with explicit type conversion for all values
             final_stats = {
@@ -791,8 +791,8 @@ class OpenAIChatCompletionsModel(Model):
                 "total_cost": float(total_cost),
             }
             
-            print(f"DEBUG: Final stats costs (from dictionary) - Interaction: ${final_stats['interaction_cost']:.6f}, Total: ${final_stats['total_cost']:.6f}")
-            print(f"DEBUG: Cost types in dictionary - Interaction: {type(final_stats['interaction_cost'])}, Total: {type(final_stats['total_cost'])}")
+            #print(f"DEBUG: Final stats costs (from dictionary) - Interaction: ${final_stats['interaction_cost']:.6f}, Total: ${final_stats['total_cost']:.6f}")
+            #print(f"DEBUG: Cost types in dictionary - Interaction: {type(final_stats['interaction_cost'])}, Total: {type(final_stats['total_cost'])}")
             
             # At the end of streaming, finish the streaming context if we were using it
             if streaming_context:
