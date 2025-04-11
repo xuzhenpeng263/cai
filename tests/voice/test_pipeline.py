@@ -7,8 +7,8 @@ import pytest
 try:
     from cai.sdk.agents.voice import AudioInput, TTSModelSettings, VoicePipeline, VoicePipelineConfig
 
-    from tests.fake_models import FakeStreamedAudioInput, FakeSTT, FakeTTS, FakeWorkflow
-    from tests.helpers import extract_events
+    from tests.voice.fake_models import FakeStreamedAudioInput, FakeSTT, FakeTTS, FakeWorkflow
+    from tests.mcp.helpers import extract_events
 except ImportError:
     pass
 

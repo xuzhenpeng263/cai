@@ -7,7 +7,7 @@ import numpy as np
 import numpy.typing as npt
 
 try:
-    from agents.voice import (
+    from cai.sdk.agents.voice import (
         AudioInput,
         StreamedAudioInput,
         StreamedTranscriptionSession,

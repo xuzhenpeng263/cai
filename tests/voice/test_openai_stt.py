@@ -13,7 +13,7 @@ try:
     from cai.sdk.agents.voice.exceptions import STTWebsocketConnectionError
     from cai.sdk.agents.voice.models.openai_stt import EVENT_INACTIVITY_TIMEOUT
 
-    from tests.fake_models import FakeStreamedAudioInput
+    from tests.voice.fake_models import FakeStreamedAudioInput
 except ImportError:
     pass
 

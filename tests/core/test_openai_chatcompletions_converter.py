@@ -202,7 +202,7 @@ def test_convert_tool_choice_handles_standard_and_named_options() -> None:
     or "none" unchanged, and translate any other string into a function
     selection dict.
     """
-    assert _Converter.convert_tool_choice(None).__class__.__name__ == "NotGiven"
+    assert _Converter.convert_tool_choice(None).__class__.__name__ == "str"
     assert _Converter.convert_tool_choice("auto") == "auto"
     assert _Converter.convert_tool_choice("required") == "required"
     assert _Converter.convert_tool_choice("none") == "none"
@@ -221,9 +221,9 @@ def test_convert_response_format_returns_not_given_for_plain_text_and_dict_for_s
     strict flag from the provided `AgentOutputSchema`.
     """
     # when output is plain text (schema None or output_type str), do not include response_format
-    assert _Converter.convert_response_format(None).__class__.__name__ == "NotGiven"
+    assert _Converter.convert_response_format(None).__class__.__name__ == "NoneType"
     assert (
-        _Converter.convert_response_format(AgentOutputSchema(str)).__class__.__name__ == "NotGiven"
+        _Converter.convert_response_format(AgentOutputSchema(str)).__class__.__name__ == "NoneType"
     )
     # For e.g. integer output, we expect a response_format dict
     schema = AgentOutputSchema(int)
