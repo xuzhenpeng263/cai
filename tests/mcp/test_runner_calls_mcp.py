@@ -7,7 +7,7 @@ from cai.sdk.agents import Agent, ModelBehaviorError, Runner, UserError
 
 from tests.fake_model import FakeModel
 from tests.core.test_responses import get_function_tool_call, get_text_message
-from .helpers import FakeMCPServer
+from tests.helpers import FakeMCPServer
 
 
 @pytest.mark.asyncio

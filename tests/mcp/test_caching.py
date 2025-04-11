@@ -5,7 +5,7 @@ from mcp.types import ListToolsResult, Tool as MCPTool
 
 from cai.sdk.agents.mcp import MCPServerStdio
 
-from tests.mcp.helpers import DummyStreamsContextManager, tee
+from tests.helpers import DummyStreamsContextManager, tee
 
 
 @pytest.mark.asyncio
