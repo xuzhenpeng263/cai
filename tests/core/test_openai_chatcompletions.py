@@ -31,7 +31,8 @@ from cai.sdk.agents import (
     generation_span,
 )
 from cai.sdk.agents.models.fake_id import FAKE_RESPONSES_ID
-
+import os
+cai_model = os.getenv('CAI_MODEL', "qwen2.5:14b")
 
 @pytest.mark.allow_call_model_methods
 @pytest.mark.asyncio
@@ -57,7 +58,7 @@ async def test_get_response_with_text_message(monkeypatch) -> None:
         return chat
 
     monkeypatch.setattr(OpenAIChatCompletionsModel, "_fetch_response", patched_fetch_response)
-    model = OpenAIProvider(use_responses=False).get_model("gpt-4")
+    model = OpenAIProvider(use_responses=False).get_model(cai_model)
     resp: ModelResponse = await model.get_response(
         system_instructions=None,
         input="",
@@ -105,7 +106,7 @@ async def test_get_response_with_refusal(monkeypatch) -> None:
         return chat
 
     monkeypatch.setattr(OpenAIChatCompletionsModel, "_fetch_response", patched_fetch_response)
-    model = OpenAIProvider(use_responses=False).get_model("gpt-4")
+    model = OpenAIProvider(use_responses=False).get_model(cai_model)
     resp: ModelResponse = await model.get_response(
         system_instructions=None,
         input="",
@@ -154,7 +155,7 @@ async def test_get_response_with_tool_call(monkeypatch) -> None:
         return chat
 
     monkeypatch.setattr(OpenAIChatCompletionsModel, "_fetch_response", patched_fetch_response)
-    model = OpenAIProvider(use_responses=False).get_model("gpt-4")
+    model = OpenAIProvider(use_responses=False).get_model(cai_model)
     resp: ModelResponse = await model.get_response(
         system_instructions=None,
         input="",
@@ -208,7 +209,7 @@ async def test_fetch_response_non_stream(monkeypatch) -> None:
     )
     completions = DummyCompletions()
     dummy_client = DummyClient(completions)
-    model = OpenAIChatCompletionsModel(model="gpt-4", openai_client=dummy_client)  # type: ignore
+    model = OpenAIChatCompletionsModel(model=cai_model, openai_client=dummy_client)  # type: ignore
     # Execute the private fetch with a system instruction and simple string input.
     with generation_span(disabled=True) as span:
         result = await model._fetch_response(
@@ -227,7 +228,7 @@ async def test_fetch_response_non_stream(monkeypatch) -> None:
     kwargs = completions.kwargs
     assert kwargs["stream"] is False
     assert kwargs["store"] is True
-    assert kwargs["model"] == "gpt-4"
+    assert kwargs["model"] == cai_model
     assert kwargs["messages"][0]["role"] == "system"
     assert kwargs["messages"][0]["content"] == "sys"
     assert kwargs["messages"][1]["role"] == "user"
@@ -265,7 +266,7 @@ async def test_fetch_response_stream(monkeypatch) -> None:
 
     completions = DummyCompletions()
     dummy_client = DummyClient(completions)
-    model = OpenAIChatCompletionsModel(model="gpt-4", openai_client=dummy_client)  # type: ignore
+    model = OpenAIChatCompletionsModel(model=cai_model, openai_client=dummy_client)  # type: ignore
     with generation_span(disabled=True) as span:
         response, stream = await model._fetch_response(
             system_instructions=None,
@@ -285,7 +286,7 @@ async def test_fetch_response_stream(monkeypatch) -> None:
     # Response is a proper openai Response
     assert isinstance(response, Response)
     assert response.id == FAKE_RESPONSES_ID
-    assert response.model == "gpt-4"
+    assert response.model == cai_model
     assert response.object == "response"
     assert response.output == []
     # We returned the async iterator produced by our dummy.

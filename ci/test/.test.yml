@@ -9,6 +9,7 @@
   <<: *use_base_container
   script:
     - pip3 install -e .
+    - pip install inline-snapshot pytest-asyncio graphviz pytest-mock
     - pytest -s $TEST_PATH
   tags:
     - p40
