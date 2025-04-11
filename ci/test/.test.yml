@@ -22,7 +22,262 @@
   variables:
     TEST_PATH: tests/tools/test_function_tool_decorator.py
 
+🛠️ tools test_function_tool:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/tools/test_function_tool.py
+
+🛠️ tools test_handoff_tool:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/tools/test_handoff_tool.py  
+
+🛠️ tools test_output_tool:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/tools/test_output_tool.py
+
+🛠️ tools test_tool_choice_reset:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/tools/test_tool_choice_reset.py
+
+
+🛠️ tools test_tool_converter:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/tools/test_tool_converter.py
+
+🛠️ tools test_tool_generic_linux_command:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/tools/test_tool_generic_linux_command.py
+
+🛠️ tools test_tool_use_behavior:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/tools/test_tool_use_behavior.py
+
+
 🤖 agents test_agent_config:
   <<: *run_test
   variables:
     TEST_PATH: tests/agents/test_agent_config.py
+
+🤖 agents test_agent_hooks:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/agents/test_agent_hooks.py
+
+🤖 agents test_agent_one_tool:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/agents/test_agent_one_tool.py
+
+🤖 agents test_agent_prompt_system_master_template:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/agents/test_agent_prompt_system_master_template.py
+
+🤖 agents test_agent_runner:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/agents/test_agent_runner.py
+
+🤖 agents test_agent_runner_streamed:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/agents/test_agent_runner_streamed.py
+
+🤖 agents test_global_hooks:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/agents/test_global_hooks.py
+
+🤖 agents test_guardrails:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/agents/test_guardrails.py
+
+🤖 agents test_items_helpers:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/agents/test_items_helpers.py
+
+🤖 agents test_max_turns:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/agents/test_max_turns.py
+⚙️ core test_openai_chatcompletions:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/core/test_openai_chatcompletions.py
+
+⚙️ core test_openai_chatcompletions_converter:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/core/test_openai_chatcompletions_converter.py
+
+⚙️ core test_openai_chatcompletions_stream:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/core/test_openai_chatcompletions_stream.py
+
+⚙️ core test_openai_responses_converter:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/core/test_openai_responses_converter.py
+
+⚙️ core test_responses:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/core/test_responses.py
+
+⚙️ core test_run_config:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/core/test_run_config.py
+
+⚙️ core test_run_step_execution:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/core/test_run_step_execution.py
+
+⚙️ core test_run_step_processing:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/core/test_run_step_processing.py
+
+✏️ tracing test_agent_tracing:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/tracing/test_agent_tracing.py    
+
+✏️ tracing test_processor_api_key:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/tracing/test_processor_api_key.py   
+
+✏️ tracing test_responses_tracing:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/tracing/test_responses_tracing.py    
+
+✏️ tracing test_tracing_errors_streamed:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/tracing/test_tracing_errors_streamed.py    
+
+✏️ tracing test_tracing_errors:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/tracing/test_tracing_errors.py   
+
+✏️ tracing test_tracing:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/tracing/test_tracing.py    
+
+🎤 voice test_input.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/voice/test_input.py
+
+🎤 voice test_openai_stt.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/voice/test_openai_stt.py
+
+🎤 voice test_openai_tts.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/voice/test_openai_tts.py   
+
+🎤 voice test_pipeline.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/voice/test_pipeline.py
+
+🎤 voice test_workflow.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/voice/test_workflow.py   
+
+📀 mcp test_caching.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/mcp/test_caching.py 
+
+📀 mcp test_connect_disconnect.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/mcp/test_connect_disconnect.py 
+
+📀 mcp test_mcp_tracing.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/mcp/test_mcp_tracing.py 
+
+📀 mcp test_mcp_util.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/mcp/test_mcp_util.py     
+📀 mcp test_mcp_tracing.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/mcp/test_mcp_tracing.py 
+
+📀 mcp test_server_errors.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/mcp/test_server_errors.py     
+
+▪️ others test_computer_action.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/others/test_computer_action.py   
+
+▪️ others test_pretty_print.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/others/test_pretty_print.py
+
+▪️ others test_result_cast.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/others/test_result_cast.py
+
+▪️ others test_config.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/others/test_config.py
+
+▪️ others test_strict_schema.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/others/test_strict_schema.py
+
+▪️ others test_doc_parsing.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/others/test_doc_parsing.py
+
+▪️ others test_trace_processor.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/others/test_trace_processor.py
+
+▪️ others test_extension_filters.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/others/test_extension_filters.py
+
+▪️ others test_visualization.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/others/test_visualization.py
+
+▪️ others test_function_schema.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/others/test_function_schema.py    
