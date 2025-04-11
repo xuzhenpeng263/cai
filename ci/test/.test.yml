@@ -9,7 +9,6 @@
   <<: *use_base_container
   script:
     - pip3 install -e .
-    - cp .env.example .env
     - pytest -s $TEST_PATH
   tags:
     - p40
