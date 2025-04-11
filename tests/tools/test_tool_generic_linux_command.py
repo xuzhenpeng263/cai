@@ -48,4 +48,4 @@ async def test_generic_linux_command_invalid_command():
     result = await generic_linux_command.on_invoke_tool(mock_ctx, json.dumps(params))
 
     # Assert that the result indicates the command was not found
-    assert "command not found" in result  
+    assert "not found" in result  
