@@ -7,7 +7,7 @@ generic_linux_command tool.
 
 import pytest
 from tests.fake_model import FakeModel
-from tests.test_responses import (
+from tests.core.test_responses import (
     get_text_message,
     get_function_tool_call,
     get_function_tool,

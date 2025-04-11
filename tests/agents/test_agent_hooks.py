@@ -13,8 +13,8 @@ from cai.sdk.agents.run import Runner
 from cai.sdk.agents.run_context import RunContextWrapper, TContext
 from cai.sdk.agents.tool import Tool
 
-from .fake_model import FakeModel
-from .test_responses import (
+from tests.fake_model import FakeModel
+from tests.core.test_responses import (
     get_final_output_message,
     get_function_tool,
     get_function_tool_call,

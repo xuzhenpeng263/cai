@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from mcp.types import ListToolsResult, Tool as MCPTool
 
-from agents.mcp import MCPServerStdio
+from cai.sdk.agents.mcp import MCPServerStdio
 
 from .helpers import DummyStreamsContextManager, tee
 

@@ -8,7 +8,7 @@ from inline_snapshot import snapshot
 from cai.sdk.agents import Agent, RunConfig, Runner, trace
 
 from tests.fake_model import FakeModel
-from tests.test_responses import get_text_message
+from tests.core.test_responses import get_text_message
 from tests.testing_processor import assert_no_traces, fetch_normalized_spans
 
 

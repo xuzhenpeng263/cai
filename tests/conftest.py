@@ -8,7 +8,7 @@ from cai.sdk.agents.models.openai_responses import OpenAIResponsesModel
 from cai.sdk.agents.tracing import set_trace_processors
 from cai.sdk.agents.tracing.setup import GLOBAL_TRACE_PROVIDER
 
-from .testing_processor import SPAN_PROCESSOR_TESTING
+from tests.testing_processor import SPAN_PROCESSOR_TESTING
 
 
 # This fixture will run once before any tests are executed

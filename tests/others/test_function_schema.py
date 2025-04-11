@@ -6,9 +6,9 @@ import pytest
 from pydantic import BaseModel, ValidationError
 from typing_extensions import TypedDict
 
-from agents import RunContextWrapper
-from agents.exceptions import UserError
-from agents.function_schema import function_schema
+from cai.sdk.agents import RunContextWrapper
+from cai.sdk.agents.exceptions import UserError
+from cai.sdk.agents.function_schema import function_schema
 
 
 def no_args_function():

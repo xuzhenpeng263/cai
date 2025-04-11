@@ -7,7 +7,7 @@ from cai.sdk.agents import ModelSettings, ModelTracing, OpenAIResponsesModel, tr
 from cai.sdk.agents.tracing.span_data import ResponseSpanData
 from tests import fake_model
 
-from .testing_processor import assert_no_spans, fetch_normalized_spans, fetch_ordered_spans
+from tests.testing_processor import assert_no_spans, fetch_normalized_spans, fetch_ordered_spans
 
 
 class DummyTracing:

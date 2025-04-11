@@ -5,9 +5,9 @@ import numpy as np
 import pytest
 
 try:
-    from agents import UserError
-    from agents.voice import AudioInput, StreamedAudioInput
-    from agents.voice.input import DEFAULT_SAMPLE_RATE, _buffer_to_audio_file
+    from cai.sdk.agents import UserError
+    from cai.sdk.agents.voice import AudioInput, StreamedAudioInput
+    from cai.sdk.agents.voice.input import DEFAULT_SAMPLE_RATE, _buffer_to_audio_file
 except ImportError:
     pass
 

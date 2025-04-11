@@ -5,9 +5,9 @@ import pytest
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel
 
-from agents import FunctionTool, RunContextWrapper
-from agents.exceptions import AgentsException, ModelBehaviorError
-from agents.mcp import MCPServer, MCPUtil
+from cai.sdk.agents import FunctionTool, RunContextWrapper
+from cai.sdk.agents.exceptions import AgentsException, ModelBehaviorError
+from cai.sdk.agents.mcp import MCPServer, MCPUtil
 
 from .helpers import FakeMCPServer
 
