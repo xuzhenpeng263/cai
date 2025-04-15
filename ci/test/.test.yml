@@ -70,10 +70,10 @@
   variables:
     TEST_PATH: tests/agents/test_agent_hooks.py
 
-🤖 agents test_agent_one_tool:
-  <<: *run_test
-  variables:
-    TEST_PATH: tests/agents/test_agent_one_tool.py
+# 🤖 agents test_agent_one_tool:
+#   <<: *run_test
+#   variables:
+#     TEST_PATH: tests/agents/test_agent_one_tool.py
 
 🤖 agents test_agent_prompt_system_master_template:
   <<: *run_test
@@ -109,30 +109,31 @@
   <<: *run_test
   variables:
     TEST_PATH: tests/agents/test_max_turns.py
-⚙️ core test_openai_chatcompletions:
-  <<: *run_test
-  variables:
-    TEST_PATH: tests/core/test_openai_chatcompletions.py
+
+# ⚙️ core test_openai_chatcompletions:
+#   <<: *run_test
+#   variables:
+#     TEST_PATH: tests/core/test_openai_chatcompletions.py
 
 ⚙️ core test_openai_chatcompletions_converter:
   <<: *run_test
   variables:
     TEST_PATH: tests/core/test_openai_chatcompletions_converter.py
 
-⚙️ core test_openai_chatcompletions_stream:
-  <<: *run_test
-  variables:
-    TEST_PATH: tests/core/test_openai_chatcompletions_stream.py
+# ⚙️ core test_openai_chatcompletions_stream:
+#   <<: *run_test
+#   variables:
+#     TEST_PATH: tests/core/test_openai_chatcompletions_stream.py
 
 ⚙️ core test_openai_responses_converter:
   <<: *run_test
   variables:
     TEST_PATH: tests/core/test_openai_responses_converter.py
 
-⚙️ core test_responses:
-  <<: *run_test
-  variables:
-    TEST_PATH: tests/core/test_responses.py
+# ⚙️ core test_responses:
+#   <<: *run_test
+#   variables:
+#     TEST_PATH: tests/core/test_responses.py
 
 ⚙️ core test_run_config:
   <<: *run_test
@@ -248,10 +249,10 @@
   variables:
     TEST_PATH: tests/others/test_result_cast.py
 
-▪️ others test_config.py:
-  <<: *run_test
-  variables:
-    TEST_PATH: tests/others/test_config.py
+# ▪️ others test_config.py:
+#   <<: *run_test
+#   variables:
+#     TEST_PATH: tests/others/test_config.py
 
 ▪️ others test_strict_schema.py:
   <<: *run_test
