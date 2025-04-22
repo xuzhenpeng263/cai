@@ -61,7 +61,7 @@ from openai.types.responses import (
 )
 from openai.types.responses.response_input_param import FunctionCallOutput, ItemReference, Message
 from openai.types.responses.response_usage import OutputTokensDetails
-
+from cai.util import calculate_model_cost
 # Create custom InputTokensDetails class since it's not available in current OpenAI version
 from openai._models import BaseModel
 class InputTokensDetails(BaseModel):
@@ -753,49 +753,65 @@ class OpenAIChatCompletionsModel(Model):
                     self.total_reasoning_tokens += final_response.usage.output_tokens_details.reasoning_tokens
             
             # Prepare final statistics for display
+            interaction_input = final_response.usage.input_tokens if final_response.usage else 0
+            interaction_output = final_response.usage.output_tokens if final_response.usage else 0
+            total_input = getattr(self, 'total_input_tokens', 0)
+            total_output = getattr(self, 'total_output_tokens', 0)
+            
+            # Calculate costs using the same token counts - ensure model is a string
+            model_name = str(self.model)
+            interaction_cost = calculate_model_cost(model_name, interaction_input, interaction_output)
+            total_cost = calculate_model_cost(model_name, total_input, total_output)
+            
+            # Explicit conversion to float with fallback to ensure they're never None or 0
+            interaction_cost = max(float(interaction_cost if interaction_cost is not None else 0.0), 0.00001)
+            total_cost = max(float(total_cost if total_cost is not None else 0.0), 0.00001)
+            
+            
+            # Create final stats with explicit type conversion for all values
             final_stats = {
-                "interaction_input_tokens": final_response.usage.input_tokens if final_response.usage else 0,
-                "interaction_output_tokens": final_response.usage.output_tokens if final_response.usage else 0,
-                "interaction_reasoning_tokens": (
+                "interaction_input_tokens": int(interaction_input),
+                "interaction_output_tokens": int(interaction_output),
+                "interaction_reasoning_tokens": int(
                     final_response.usage.output_tokens_details.reasoning_tokens 
                     if final_response.usage and final_response.usage.output_tokens_details
                     and hasattr(final_response.usage.output_tokens_details, 'reasoning_tokens')
                     else 0
                 ),
-                "total_input_tokens": getattr(self, 'total_input_tokens', 0),
-                "total_output_tokens": getattr(self, 'total_output_tokens', 0),
-                "total_reasoning_tokens": getattr(self, 'total_reasoning_tokens', 0),
-                "interaction_cost": None,
-                "total_cost": None,
+                "total_input_tokens": int(total_input),
+                "total_output_tokens": int(total_output),
+                "total_reasoning_tokens": int(getattr(self, 'total_reasoning_tokens', 0)),
+                "interaction_cost": float(interaction_cost),
+                "total_cost": float(total_cost),
             }
             
             # At the end of streaming, finish the streaming context if we were using it
             if streaming_context:
-                finish_agent_streaming(streaming_context, final_stats)
+                # Create a direct copy of the costs to ensure they remain as floats
+                direct_stats = final_stats.copy()
+                direct_stats["interaction_cost"] = float(interaction_cost)
+                direct_stats["total_cost"] = float(total_cost)
+                # Use the direct copy with guaranteed float costs
+                finish_agent_streaming(streaming_context, direct_stats)
             # If we're not using rich streaming and not suppressing output, use old method
             elif not self.suppress_final_output and final_response.output and any(isinstance(item, ResponseOutputMessage) for item in final_response.output):
                 # Find the assistant message to print
                 for item in final_response.output:
                     if isinstance(item, ResponseOutputMessage) and item.role == 'assistant':
                         cli_print_agent_messages(
-                            agent_name=getattr(self, 'agent_name', 'Agent'),  # Default to 'Agent' if not available
+                            agent_name=getattr(self, 'agent_name', 'Agent'),
                             message=item,
-                            counter=getattr(self, 'interaction_counter', 0),  # Default to 0 if not available
+                            counter=getattr(self, 'interaction_counter', 0),
                             model=str(self.model),
                             debug=False,
-                            interaction_input_tokens=final_response.usage.input_tokens if final_response.usage else 0,
-                            interaction_output_tokens=final_response.usage.output_tokens if final_response.usage else 0,
-                            interaction_reasoning_tokens=(
-                                final_response.usage.output_tokens_details.reasoning_tokens 
-                                if final_response.usage and final_response.usage.output_tokens_details
-                                and hasattr(final_response.usage.output_tokens_details, 'reasoning_tokens')
-                                else 0
-                            ),
-                            total_input_tokens=getattr(self, 'total_input_tokens', 0),
-                            total_output_tokens=getattr(self, 'total_output_tokens', 0),
-                            total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
-                            interaction_cost=None,
-                            total_cost=None,
+                            interaction_input_tokens=interaction_input,
+                            interaction_output_tokens=interaction_output,
+                            interaction_reasoning_tokens=final_stats["interaction_reasoning_tokens"],
+                            total_input_tokens=total_input,
+                            total_output_tokens=total_output,
+                            total_reasoning_tokens=final_stats["total_reasoning_tokens"],
+                            interaction_cost=interaction_cost,
+                            total_cost=total_cost,
                         )
                         break
             

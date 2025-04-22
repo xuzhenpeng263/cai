@@ -339,13 +339,15 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
     total_output_tokens,
     total_reasoning_tokens,
     model,
-    interaction_cost=0.0,
+    interaction_cost=None,
     total_cost=None
 ) -> Text:  # noqa: E501
     """
     Create a Text object displaying token usage information
     with enhanced formatting.
     """
+    # print(f"\nDEBUG _create_token_display: Received costs - Interaction: {interaction_cost}, Total: {total_cost}")
+    
     tokens_text = Text(justify="left")
 
     # Create a more compact, horizontal display
@@ -357,8 +359,15 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
     tokens_text.append(f"O:{interaction_output_tokens} ", style="red")
     tokens_text.append(f"R:{interaction_reasoning_tokens} ", style="yellow")
     
-    # Current cost
-    current_cost = float(interaction_cost) if interaction_cost is not None else 0.0
+    # Current cost - only calculate if not provided
+    if interaction_cost is None:
+        interaction_cost = calculate_model_cost(model, interaction_input_tokens, interaction_output_tokens)
+    # Ensure interaction_cost is a float
+    try:
+        current_cost = float(interaction_cost) if interaction_cost is not None else 0.0
+    except (ValueError, TypeError):
+        current_cost = 0.0
+
     tokens_text.append(f"(${current_cost:.4f}) ", style="bold")
     
     # Separator
@@ -370,8 +379,15 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
     tokens_text.append(f"O:{total_output_tokens} ", style="red")
     tokens_text.append(f"R:{total_reasoning_tokens} ", style="yellow")
     
-    # Total cost
-    total_cost_value = float(total_cost) if total_cost is not None else 0.0
+    # Total cost - only calculate if not provided
+    if total_cost is None:
+        total_cost = calculate_model_cost(model, total_input_tokens, total_output_tokens)
+    # Ensure total_cost is a float
+    try:
+        total_cost_value = float(total_cost) if total_cost is not None else 0.0
+    except (ValueError, TypeError):
+        total_cost_value = 0.0
+        
     tokens_text.append(f"(${total_cost_value:.4f}) ", style="bold")
     
     # Separator
@@ -561,14 +577,18 @@ def finish_agent_streaming(context, final_stats=None):
     # If we have token stats, add them
     tokens_text = None
     if final_stats:
+        #print(f"\nDEBUG finish_agent_streaming: Received final_stats: {final_stats}")
+        
         interaction_input_tokens = final_stats.get("interaction_input_tokens")
         interaction_output_tokens = final_stats.get("interaction_output_tokens")
         interaction_reasoning_tokens = final_stats.get("interaction_reasoning_tokens")
         total_input_tokens = final_stats.get("total_input_tokens")
         total_output_tokens = final_stats.get("total_output_tokens")
         total_reasoning_tokens = final_stats.get("total_reasoning_tokens")
-        interaction_cost = final_stats.get("interaction_cost")
-        total_cost = final_stats.get("total_cost")
+        
+        # Ensure costs are properly extracted and preserved as floats
+        interaction_cost = float(final_stats.get("interaction_cost", 0.0))
+        total_cost = float(final_stats.get("total_cost", 0.0))
         
         if (interaction_input_tokens is not None and
                 interaction_output_tokens is not None and
@@ -576,6 +596,12 @@ def finish_agent_streaming(context, final_stats=None):
                 total_input_tokens is not None and
                 total_output_tokens is not None and
                 total_reasoning_tokens is not None):
+            
+            # Only calculate costs if they weren't provided or are zero
+            if interaction_cost is None or interaction_cost == 0.0:
+                interaction_cost = calculate_model_cost(context["model"], interaction_input_tokens, interaction_output_tokens)
+            if total_cost is None or total_cost == 0.0:
+                total_cost = calculate_model_cost(context["model"], total_input_tokens, total_output_tokens)
             
             tokens_text = _create_token_display(
                 interaction_input_tokens,
@@ -616,3 +642,43 @@ def finish_agent_streaming(context, final_stats=None):
     
     # Stop the live display
     context["live"].stop()
+
+def calculate_model_cost(model_name, input_tokens, output_tokens):
+    """
+    Calculate the cost for a given model based on token usage.
+    
+    Args:
+        model_name: The name of the model being used
+        input_tokens: Number of input tokens used
+        output_tokens: Number of output tokens used
+        
+    Returns:
+        float: The calculated cost in dollars
+    """
+    # Fetch model pricing data from LiteLLM GitHub repository
+    LITELLM_URL = (
+        "https://raw.githubusercontent.com/BerriAI/litellm/main/"
+        "model_prices_and_context_window.json"
+    )
+    
+    try:
+        import requests
+        response = requests.get(LITELLM_URL, timeout=2)
+        if response.status_code == 200:
+            model_pricing_data = response.json()
+            
+            # Get pricing info for the model
+            pricing_info = model_pricing_data.get(model_name, {})
+            input_cost_per_token = pricing_info.get("input_cost_per_token", 0)
+            output_cost_per_token = pricing_info.get("output_cost_per_token", 0)
+            
+            # Calculate costs
+            input_cost = input_tokens * input_cost_per_token
+            output_cost = output_tokens * output_cost_per_token
+            
+            return input_cost + output_cost
+    except Exception:
+        # If we can't fetch pricing data, return 0
+        pass
+    
+    return 0.0

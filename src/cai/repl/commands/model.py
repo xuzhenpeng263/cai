@@ -201,7 +201,6 @@ class ModelCommand(Command):
             console.print(
                 "[yellow]Warning: Could not fetch model pricing data[/yellow]"
             )
-
         # Create a flat list of all models for numeric selection
         # pylint: disable=invalid-name
         ALL_MODELS = []
