@@ -522,58 +522,38 @@ def parse_message_tool_call(message, tool_output=None):
                             args_dict = {"raw_arguments": tool_call['function']['arguments']}
             
             # Create a panel for this tool call if we have a valid name
-            if tool_name:
-                # Create content for the panel
+            # Don't show the tool execution panel here - that will be handled by cli_print_tool_output
+            # We'll only pass on tool info to generate panels for display in cli_print_agent_messages
+            if tool_name and tool_output:
+                # Create content for the panel - just showing the output, not the tool call
                 panel_content = []
                 
-                # Start with the tool name and arguments
-                tool_text = Text()
-                tool_text.append(f"{tool_name}", style="bold #00BCD4")  # Cyan (timestamp color from theme) in bold
+                # Add tool output to the panel
+                output_text = Text()
+                output_text.append("Output:", style="bold #C0C0C0")  # Silver/gray
+                output_text.append(f"\n{tool_output}", style="#C0C0C0")  # Silver/gray
                 
-                # Format arguments
-                args_parts = []
-                for key, value in args_dict.items():
-                    if isinstance(value, bool):
-                        args_parts.append(f"{key}={value}")
-                    elif value == "" or value is None:
-                        args_parts.append(f"{key}=")
-                    else:
-                        if isinstance(value, str) and (' ' in value or '/' in value):
-                            args_parts.append(f'{key}="{value}"')
-                        else:
-                            args_parts.append(f"{key}={value}")
+                panel_content.append(output_text)
                 
-                if args_parts:
-                    tool_text.append("(", style="yellow")
-                    tool_text.append(", ".join(args_parts), style="yellow")
-                    tool_text.append(")", style="yellow")
-                
-                panel_content.append(tool_text)
-                
-                # Add tool output to the same panel if available
-                if tool_output:
-                    print(f"DEBUG parse_message_tool_call: Adding tool_output to panel: {tool_output[:50]}...")
-                    divider_text = Text("\n" + "─" * 50, style="dim")
-                    output_text = Text("\nOutput:", style="bold #C0C0C0")  # Change to silver/gray
-                    output_text.append(f"\n{tool_output}", style="#C0C0C0")  # Change to silver/gray
-                    
-                    panel_content.append(divider_text)
-                    panel_content.append(output_text)
-                else:
-                    print("DEBUG parse_message_tool_call: No tool_output available to add to panel")
-                
-                # Create a single panel with both tool call and output
+                # Create a panel with just the output
                 tool_panel = Panel(
                     Group(*panel_content),
                     border_style="blue",
                     box=ROUNDED,
                     padding=(1, 2),
-                    title="[bold]Tool Execution[/bold]",
+                    title="[bold]Tool Output[/bold]",  # Changed title to indicate this is just output
                     title_align="left",
                     expand=True
                 )
                 
                 tool_panels.append(tool_panel)
+                
+                # Store the call_id with tool name to help cli_print_tool_output avoid duplicates
+                if not hasattr(parse_message_tool_call, '_processed_calls'):
+                    parse_message_tool_call._processed_calls = set()
+                
+                call_key = call_id if call_id else f"{tool_name}:{args_dict}"
+                parse_message_tool_call._processed_calls.add(call_key)
     
     return content, tool_panels
 
@@ -901,8 +881,7 @@ def cli_print_tool_output(tool_name, args, output, call_id=None, execution_info=
     from rich.box import ROUNDED
     from rich.console import Group
     
-    # Track which tool outputs we've already printed to avoid duplicates
-    # Use a module-level dictionary to track call_ids we've seen
+    # Track which tool calls we've already printed to avoid duplicates
     if not hasattr(cli_print_tool_output, '_seen_calls'):
         cli_print_tool_output._seen_calls = {}
     
@@ -917,27 +896,15 @@ def cli_print_tool_output(tool_name, args, output, call_id=None, execution_info=
     # Mark this call as seen to avoid duplicates
     cli_print_tool_output._seen_calls[call_key] = True
     
-    # Get execution time if available, otherwise don't show it
-    execution_time = None
-    if execution_info:
-        # Format execution time if available
-        total_time = execution_info.get('total_time', 0)
-        tool_time = execution_info.get('tool_time', 0)
-        if total_time > 0:
-            total_time_str = f"{int(total_time // 60)}m {total_time % 60:.1f}s"
-            tool_time_str = f"{tool_time:.1f}s"
-            execution_time = f"Total: {total_time_str} | Tool: {tool_time_str}"
-    
-    # Format the tool and arguments in the first panel
+    # Format the tool and arguments
     if isinstance(args, dict):
         # Format as key=value pairs
         args_str = ", ".join(f"{k}={v}" for k, v in args.items())
-        display_str = f"{tool_name}({args_str})"
     else:
         # If args is just a string
-        display_str = f"{tool_name}({args})"
+        args_str = args
     
-    # Create content for the first panel - just tool name and args
+    # Create content for the tool execution panel
     tool_text = Text()
     tool_text.append(f"{tool_name}", style="#00BCD4")  # Cyan (timestamp color from theme)
     
@@ -952,8 +919,8 @@ def cli_print_tool_output(tool_name, args, output, call_id=None, execution_info=
         tool_text.append(f"{args}", style="yellow")
         tool_text.append(")", style="yellow")
     
-    # Create the first panel - just shows the tool name and args
-    first_panel = Panel(
+    # Create the tool execution panel
+    tool_panel = Panel(
         tool_text,
         border_style="blue",
         box=ROUNDED,
@@ -962,22 +929,30 @@ def cli_print_tool_output(tool_name, args, output, call_id=None, execution_info=
         title_align="left",
         expand=True
     )
-    console.print(first_panel)
+    console.print(tool_panel)
     
-    # Create content for the second panel
+    # Create content for the output panel
     panel_content = []
     
-    # For the second panel, only show execution time without repeating the tool name
-    if execution_time:
-        exec_text = Text()
-        exec_text.append("[", style="dim")
-        exec_text.append(f"{execution_time}", style="magenta")
-        exec_text.append("]", style="dim")
-        panel_content.append(exec_text)
+    # Add execution time if available
+    if execution_info:
+        # Format execution time if available
+        total_time = execution_info.get('total_time', 0)
+        tool_time = execution_info.get('tool_time', 0)
+        if total_time > 0:
+            total_time_str = f"{int(total_time // 60)}m {total_time % 60:.1f}s"
+            tool_time_str = f"{tool_time:.1f}s"
+            execution_time = f"Total: {total_time_str} | Tool: {tool_time_str}"
+            
+            exec_text = Text()
+            exec_text.append("[", style="dim")
+            exec_text.append(f"{execution_time}", style="magenta")
+            exec_text.append("]", style="dim")
+            panel_content.append(exec_text)
     
     # Add the tool output - change from yellow to silver/gray
     if output and output.strip():
-        output_text = Text("\n" if execution_time else "")
+        output_text = Text("\n" if panel_content else "")
         # Use a silver/gray color (#C0C0C0) for the output
         output_text.append(output.strip(), style="#C0C0C0")
         panel_content.append(output_text)
@@ -1037,14 +1012,15 @@ def cli_print_tool_output(tool_name, args, output, call_id=None, execution_info=
         
         panel_content.append(tokens_text)
     
-    # Only create and print the second panel if we have content for it
+    # Only create and print the output panel if we have content for it
     if panel_content:
-        # Create the second panel - shows execution time, output, and token info
-        second_panel = Panel(
+        # Create the output panel
+        output_panel = Panel(
             Group(*panel_content),
             border_style="blue",  
             box=ROUNDED,
             padding=(1, 2),
+            title="[bold]Tool Output[/bold]",  # Changed title to clarify this is output only
             expand=True
         )
-        console.print(second_panel)
+        console.print(output_panel)
