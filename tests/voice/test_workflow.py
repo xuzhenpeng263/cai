@@ -8,10 +8,10 @@ from inline_snapshot import snapshot
 from openai.types.responses import ResponseCompletedEvent
 from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
-from agents import Agent, Model, ModelSettings, ModelTracing, Tool
-from agents.agent_output import AgentOutputSchema
-from agents.handoffs import Handoff
-from agents.items import (
+from cai.sdk.agents import Agent, Model, ModelSettings, ModelTracing, Tool
+from cai.sdk.agents.agent_output import AgentOutputSchema
+from cai.sdk.agents.handoffs import Handoff
+from cai.sdk.agents.items import (
     ModelResponse,
     TResponseInputItem,
     TResponseOutputItem,
@@ -19,10 +19,10 @@ from agents.items import (
 )
 
 try:
-    from agents.voice import SingleAgentVoiceWorkflow
+    from cai.sdk.agents.voice import SingleAgentVoiceWorkflow
 
-    from ..fake_model import get_response_obj
-    from ..test_responses import get_function_tool, get_function_tool_call, get_text_message
+    from tests.fake_model import get_response_obj
+    from tests.core.test_responses import get_function_tool, get_function_tool_call, get_text_message
 except ImportError:
     pass
 

@@ -1,7 +1,7 @@
 import pytest
 
-from agents.exceptions import UserError
-from agents.mcp.server import _MCPServerWithClientSession
+from cai.sdk.agents.exceptions import UserError
+from cai.sdk.agents.mcp.server import _MCPServerWithClientSession
 
 
 class CrashingClientSessionServer(_MCPServerWithClientSession):

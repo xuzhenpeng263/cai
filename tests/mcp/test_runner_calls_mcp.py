@@ -3,11 +3,11 @@ import json
 import pytest
 from pydantic import BaseModel
 
-from agents import Agent, ModelBehaviorError, Runner, UserError
+from cai.sdk.agents import Agent, ModelBehaviorError, Runner, UserError
 
-from ..fake_model import FakeModel
-from ..test_responses import get_function_tool_call, get_text_message
-from .helpers import FakeMCPServer
+from tests.fake_model import FakeModel
+from tests.core.test_responses import get_function_tool_call, get_text_message
+from tests.helpers import FakeMCPServer
 
 
 @pytest.mark.asyncio

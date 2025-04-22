@@ -1,5 +1,5 @@
 try:
-    from agents.voice import StreamedAudioResult
+    from cai.sdk.agents.voice import StreamedAudioResult
 except ImportError:
     pass
 

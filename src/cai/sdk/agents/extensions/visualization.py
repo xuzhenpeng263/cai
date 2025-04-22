@@ -2,9 +2,9 @@ from typing import Optional
 
 import graphviz  # type: ignore
 
-from agents import Agent
-from agents.handoffs import Handoff
-from agents.tool import Tool
+from cai.sdk.agents import Agent
+from cai.sdk.agents.handoffs import Handoff
+from cai.sdk.agents.tool import Tool
 
 
 def get_main_graph(agent: Agent) -> str:

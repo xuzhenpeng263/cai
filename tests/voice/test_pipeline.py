@@ -5,10 +5,10 @@ import numpy.typing as npt
 import pytest
 
 try:
-    from agents.voice import AudioInput, TTSModelSettings, VoicePipeline, VoicePipelineConfig
+    from cai.sdk.agents.voice import AudioInput, TTSModelSettings, VoicePipeline, VoicePipelineConfig
 
-    from .fake_models import FakeStreamedAudioInput, FakeSTT, FakeTTS, FakeWorkflow
-    from .helpers import extract_events
+    from tests.voice.fake_models import FakeStreamedAudioInput, FakeSTT, FakeTTS, FakeWorkflow
+    from tests.mcp.helpers import extract_events
 except ImportError:
     pass
 
