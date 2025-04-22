@@ -19,7 +19,7 @@ from cai.sdk.agents.models._openai_shared import set_use_responses_by_default
 
 # Load environment variables
 load_dotenv()
-#set_tracing_disabled(True)
+#set_tracing_disabled(True) #disable tracing or OPENAI_AGENTS_DISABLE_TRACING=1
 
 # NOTE: This is needed when using LiteLLM Proxy Server
 #

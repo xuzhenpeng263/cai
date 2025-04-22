@@ -82,7 +82,7 @@ Environment Variables enabling the episodic memory store
 """
 
 import os
-from cai.sdk.agents import Agent
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from cai.tools.misc.rag import add_to_memory_semantic, add_to_memory_episodic
 from cai.rag.vector_db import get_previous_memory
 
@@ -145,32 +145,35 @@ QUERY_PROMPT = """INSTRUCTIONS:
     """
 
 semantic_builder = Agent(
-    model=model,
     name="Semantic_Builder",
     instructions=ADD_MEMORY_PROMPT,
     description="""Agent that stores semantic memories from security assessments
                    and CTF exercises in semantic format.""",
     tool_choice="required",
     temperature=0,
-    functions=[add_to_memory_semantic],
-    parallel_tool_calls=True
+    tools=[add_to_memory_semantic],
+    model=OpenAIChatCompletionsModel(
+        model=model_name,
+        openai_client=AsyncOpenAI(),
+    )
 )
 
 
 episodic_builder = Agent(
-    model=model,
     name="Episodic_Builder",
     instructions=ADD_MEMORY_PROMPT,
     description="""Agent that stores episodic memories from security assessments
                    and CTF exercises in episodic format.""",
     tool_choice="required",
     temperature=0,
-    functions=[add_to_memory_episodic],
-    parallel_tool_calls=True
+    tools=[add_to_memory_episodic],
+    model=OpenAIChatCompletionsModel(
+        model=model_name,
+        openai_client=AsyncOpenAI(),
+    )
 )
 
 query_agent = Agent(
-    model=model,
     name="Query_Agent",
     description="""Agent that queries the memory system to retrieve relevant 
                    historical information from previous security assessments
@@ -178,4 +181,8 @@ query_agent = Agent(
     instructions=QUERY_PROMPT,
     tool_choice="required",
     temperature=0,
+    model=OpenAIChatCompletionsModel(
+        model=model_name,
+        openai_client=AsyncOpenAI(),
+    )
 )
