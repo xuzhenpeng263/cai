@@ -415,16 +415,8 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
 
 def parse_message_content(message):
     """
-    Parse a message object to extract its content.
-    Sample of message object: 
-    Message(
-        content='Hello! How can I assist you today?', 
-        role='assistant', 
-        tool_calls=None, 
-        function_call=None, 
-        provider_specific_fields={'refusal': None}, 
-        annotations=[]
-        ) 
+    Parse a message object to extract its textual content.
+    Only processes messages that don't have tool calls.
     
     Args:
         message: Can be a string or a Message object with content attribute
@@ -455,7 +447,7 @@ def parse_message_tool_call(message, tool_output=None):
     """
     Parse a message object to extract its content and tool calls.
     Displays tool calls in the format: tool_name(command=command, args=args)
-    and optionally shows the tool output in a separate panel.
+    and shows the tool output in the same panel.
     
     Args:
         message: A Message object or dict with content and tool_calls attributes
@@ -467,6 +459,10 @@ def parse_message_tool_call(message, tool_output=None):
     """
     content = ""
     tool_panels = []
+    
+    # Debug the incoming tool_output
+    if tool_output:
+        print(f"DEBUG parse_message_tool_call: Received tool_output: {tool_output[:50]}...")
     
     # Extract the content text first (LLM's inference)
     if isinstance(message, str):
@@ -488,11 +484,21 @@ def parse_message_tool_call(message, tool_output=None):
         from rich.panel import Panel
         from rich.text import Text
         from rich.box import ROUNDED
+        from rich.console import Group
         
         for tool_call in tool_calls:
             # Extract tool name and arguments
             tool_name = None
             args_dict = {}
+            call_id = None
+            
+            # Extract call_id for debugging
+            if hasattr(tool_call, 'id'):
+                call_id = tool_call.id
+            elif isinstance(tool_call, dict) and 'id' in tool_call:
+                call_id = tool_call['id']
+                
+            print(f"DEBUG parse_message_tool_call: Processing tool_call with call_id={call_id}")
             
             # Handle different formats of tool_call objects
             if hasattr(tool_call, 'function'):
@@ -517,36 +523,48 @@ def parse_message_tool_call(message, tool_output=None):
             
             # Create a panel for this tool call if we have a valid name
             if tool_name:
-                # Format in the style shown in screenshot: tool_name(command=command, args=args)
+                # Create content for the panel
+                panel_content = []
+                
+                # Start with the tool name and arguments
                 tool_text = Text()
+                tool_text.append(f"{tool_name}", style="bold #00BCD4")  # Cyan (timestamp color from theme) in bold
                 
-                # Start with the tool name in green
-                tool_text.append(f"{tool_name}", style="green")
-                
-                # Create the arguments list in the format (key=value, key=value)
+                # Format arguments
                 args_parts = []
                 for key, value in args_dict.items():
-                    # Format based on value type
                     if isinstance(value, bool):
                         args_parts.append(f"{key}={value}")
                     elif value == "" or value is None:
                         args_parts.append(f"{key}=")
                     else:
-                        # If the value contains spaces or special chars, wrap it in quotes
                         if isinstance(value, str) and (' ' in value or '/' in value):
                             args_parts.append(f'{key}="{value}"')
                         else:
                             args_parts.append(f"{key}={value}")
                 
-                # Add the arguments in parentheses after the tool name
                 if args_parts:
                     tool_text.append("(", style="yellow")
                     tool_text.append(", ".join(args_parts), style="yellow")
                     tool_text.append(")", style="yellow")
                 
-                # Create the tool call panel (blue border)
+                panel_content.append(tool_text)
+                
+                # Add tool output to the same panel if available
+                if tool_output:
+                    print(f"DEBUG parse_message_tool_call: Adding tool_output to panel: {tool_output[:50]}...")
+                    divider_text = Text("\n" + "─" * 50, style="dim")
+                    output_text = Text("\nOutput:", style="bold #C0C0C0")  # Change to silver/gray
+                    output_text.append(f"\n{tool_output}", style="#C0C0C0")  # Change to silver/gray
+                    
+                    panel_content.append(divider_text)
+                    panel_content.append(output_text)
+                else:
+                    print("DEBUG parse_message_tool_call: No tool_output available to add to panel")
+                
+                # Create a single panel with both tool call and output
                 tool_panel = Panel(
-                    tool_text,
+                    Group(*panel_content),
                     border_style="blue",
                     box=ROUNDED,
                     padding=(1, 2),
@@ -556,21 +574,16 @@ def parse_message_tool_call(message, tool_output=None):
                 )
                 
                 tool_panels.append(tool_panel)
-                
-                # If there's a tool output, create a separate panel for it
-                if tool_output and tool_output.strip():
-                    output_panel = Panel(
-                        Text(tool_output, style="yellow"),
-                        border_style="red",
-                        box=ROUNDED,
-                        padding=(1, 2),
-                        title="[bold]Tool Output[/bold]",
-                        title_align="left",
-                        expand=True
-                    )
-                    tool_panels.append(output_panel)
     
     return content, tool_panels
+
+# Add this function to detect tool output panels
+def is_tool_output_message(message):
+    """Check if a message appears to be a tool output panel display message."""
+    if isinstance(message, str):
+        msg_lower = message.lower()
+        return ("call id:" in msg_lower and "output:" in msg_lower) or msg_lower.startswith("tool output")
+    return False
 
 def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pylint: disable=too-many-arguments,too-many-locals,unused-argument # noqa: E501
                              interaction_input_tokens=None,
@@ -583,6 +596,13 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
                              total_cost=None,
                              tool_output=None):  # New parameter for tool output
     """Print agent messages/thoughts with enhanced visual formatting."""
+    # Debug prints to trace the function calls
+    if debug:
+        if isinstance(message, str):
+            print(f"DEBUG cli_print_agent_messages: Received string message: {message[:50]}...")
+        if tool_output:
+            print(f"DEBUG cli_print_agent_messages: Received tool_output: {tool_output[:50]}...")
+    
     # Use the model from environment variable if available
     model_override = os.getenv('CAI_MODEL')
     if model_override:
@@ -863,3 +883,168 @@ def calculate_model_cost(model_name, input_tokens, output_tokens):
         pass
     
     return 0.0
+
+def cli_print_tool_output(tool_name, args, output, call_id=None, execution_info=None, token_info=None):
+    """
+    Print tool execution and output in a single unified panel.
+    
+    Args:
+        tool_name: Name of the tool that was executed
+        args: Arguments passed to the tool
+        output: Output from the tool execution
+        call_id: Optional ID of the tool call
+        execution_info: Dictionary with execution timing information
+        token_info: Dictionary with token usage information
+    """
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich.box import ROUNDED
+    from rich.console import Group
+    
+    # Track which tool outputs we've already printed to avoid duplicates
+    # Use a module-level dictionary to track call_ids we've seen
+    if not hasattr(cli_print_tool_output, '_seen_calls'):
+        cli_print_tool_output._seen_calls = {}
+    
+    # If we have a call_id, check if we've already printed this output
+    # If no call_id, use a combination of tool_name and args as a key
+    call_key = call_id if call_id else f"{tool_name}:{args}"
+    
+    # If we've already seen this output, don't print it again
+    if call_key in cli_print_tool_output._seen_calls:
+        return
+    
+    # Mark this call as seen to avoid duplicates
+    cli_print_tool_output._seen_calls[call_key] = True
+    
+    # Get execution time if available, otherwise don't show it
+    execution_time = None
+    if execution_info:
+        # Format execution time if available
+        total_time = execution_info.get('total_time', 0)
+        tool_time = execution_info.get('tool_time', 0)
+        if total_time > 0:
+            total_time_str = f"{int(total_time // 60)}m {total_time % 60:.1f}s"
+            tool_time_str = f"{tool_time:.1f}s"
+            execution_time = f"Total: {total_time_str} | Tool: {tool_time_str}"
+    
+    # Format the tool and arguments in the first panel
+    if isinstance(args, dict):
+        # Format as key=value pairs
+        args_str = ", ".join(f"{k}={v}" for k, v in args.items())
+        display_str = f"{tool_name}({args_str})"
+    else:
+        # If args is just a string
+        display_str = f"{tool_name}({args})"
+    
+    # Create content for the first panel - just tool name and args
+    tool_text = Text()
+    tool_text.append(f"{tool_name}", style="#00BCD4")  # Cyan (timestamp color from theme)
+    
+    # Add the arguments in their original color
+    if isinstance(args, dict):
+        args_str = ", ".join(f"{k}={v}" for k, v in args.items())
+        tool_text.append("(", style="yellow")
+        tool_text.append(args_str, style="yellow")
+        tool_text.append(")", style="yellow")
+    else:
+        tool_text.append("(", style="yellow")
+        tool_text.append(f"{args}", style="yellow")
+        tool_text.append(")", style="yellow")
+    
+    # Create the first panel - just shows the tool name and args
+    first_panel = Panel(
+        tool_text,
+        border_style="blue",
+        box=ROUNDED,
+        padding=(1, 2),
+        title="[bold]Tool Execution[/bold]",
+        title_align="left",
+        expand=True
+    )
+    console.print(first_panel)
+    
+    # Create content for the second panel
+    panel_content = []
+    
+    # For the second panel, only show execution time without repeating the tool name
+    if execution_time:
+        exec_text = Text()
+        exec_text.append("[", style="dim")
+        exec_text.append(f"{execution_time}", style="magenta")
+        exec_text.append("]", style="dim")
+        panel_content.append(exec_text)
+    
+    # Add the tool output - change from yellow to silver/gray
+    if output and output.strip():
+        output_text = Text("\n" if execution_time else "")
+        # Use a silver/gray color (#C0C0C0) for the output
+        output_text.append(output.strip(), style="#C0C0C0")
+        panel_content.append(output_text)
+    
+    # Add token display if token info is available
+    if token_info:
+        model = token_info.get('model', '')
+        interaction_input_tokens = token_info.get('interaction_input_tokens', 0)
+        interaction_output_tokens = token_info.get('interaction_output_tokens', 0)
+        interaction_reasoning_tokens = token_info.get('interaction_reasoning_tokens', 0)
+        total_input_tokens = token_info.get('total_input_tokens', 0)
+        total_output_tokens = token_info.get('total_output_tokens', 0)
+        total_reasoning_tokens = token_info.get('total_reasoning_tokens', 0)
+        
+        # Calculate costs if possible
+        interaction_cost = calculate_model_cost(model, interaction_input_tokens, interaction_output_tokens)
+        total_cost = calculate_model_cost(model, total_input_tokens, total_output_tokens)
+        
+        # Calculate context usage
+        context_pct = 0
+        if model:
+            context_pct = interaction_input_tokens / get_model_input_tokens(model) * 100
+        
+        # Create token display
+        tokens_text = Text("\n" if panel_content else "")
+        tokens_text.append('(tokens) Interaction: ', style="dim")
+        tokens_text.append(f'I:{interaction_input_tokens} ', style="green")
+        tokens_text.append(f'O:{interaction_output_tokens} ', style="red")
+        tokens_text.append(f'R:{interaction_reasoning_tokens} ', style="yellow")
+        tokens_text.append(f'(${interaction_cost:.4f}) ', style="bold")
+        tokens_text.append('| ', style="dim")
+        tokens_text.append('Total: ', style="dim")
+        tokens_text.append(f'I:{total_input_tokens} ', style="green")
+        tokens_text.append(f'O:{total_output_tokens} ', style="red")
+        tokens_text.append(f'R:{total_reasoning_tokens} ', style="yellow")
+        tokens_text.append(f'(${total_cost:.4f}) ', style="bold")
+        tokens_text.append('| ', style="dim")
+        tokens_text.append(f'Context: {context_pct:.1f}% ', style="bold")
+        
+        # Context indicator
+        if context_pct < 50:
+            indicator = "🟩"
+            color_local = "green"
+        elif context_pct < 80:
+            indicator = "🟨"
+            color_local = "yellow"
+        else:
+            indicator = "🟥"
+            color_local = "red"
+        
+        tokens_text.append(f"{indicator}", style=color_local)
+        
+        # Add max context window size
+        if model:
+            max_tokens = get_model_input_tokens(model)
+            tokens_text.append(f" ({max_tokens})", style="dim")
+        
+        panel_content.append(tokens_text)
+    
+    # Only create and print the second panel if we have content for it
+    if panel_content:
+        # Create the second panel - shows execution time, output, and token info
+        second_panel = Panel(
+            Group(*panel_content),
+            border_style="blue",  
+            box=ROUNDED,
+            padding=(1, 2),
+            expand=True
+        )
+        console.print(second_panel)
