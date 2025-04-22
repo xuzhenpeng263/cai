@@ -358,16 +358,11 @@ class OpenAIChatCompletionsModel(Model):
         # Create streaming context if needed
         streaming_context = None
         if should_show_rich_stream:
-            #print(f"\nDEBUG: Creating streaming context with initial stats:")
-            #print(f"DEBUG: Model: {str(self.model)}")
-            #print(f"DEBUG: Agent name: {self.agent_name}")
-            #print(f"DEBUG: Counter: {self.interaction_counter}")
             streaming_context = create_agent_streaming_context(
                 agent_name=self.agent_name,
                 counter=self.interaction_counter,
                 model=str(self.model)
             )
-            print(f"DEBUG: Created streaming context: {streaming_context}")
         
         with generation_span(
             model=str(self.model),
@@ -772,7 +767,6 @@ class OpenAIChatCompletionsModel(Model):
             interaction_cost = max(float(interaction_cost if interaction_cost is not None else 0.0), 0.00001)
             total_cost = max(float(total_cost if total_cost is not None else 0.0), 0.00001)
             
-            #print(f"DEBUG: Final direct cost calculations - Interaction: ${interaction_cost:.6f}, Total: ${total_cost:.6f}")
             
             # Create final stats with explicit type conversion for all values
             final_stats = {
@@ -791,20 +785,12 @@ class OpenAIChatCompletionsModel(Model):
                 "total_cost": float(total_cost),
             }
             
-            #print(f"DEBUG: Final stats costs (from dictionary) - Interaction: ${final_stats['interaction_cost']:.6f}, Total: ${final_stats['total_cost']:.6f}")
-            #print(f"DEBUG: Cost types in dictionary - Interaction: {type(final_stats['interaction_cost'])}, Total: {type(final_stats['total_cost'])}")
-            
             # At the end of streaming, finish the streaming context if we were using it
             if streaming_context:
                 # Create a direct copy of the costs to ensure they remain as floats
                 direct_stats = final_stats.copy()
                 direct_stats["interaction_cost"] = float(interaction_cost)
                 direct_stats["total_cost"] = float(total_cost)
-                
-                print(f"\nDEBUG: Final stats before finish_agent_streaming:")
-                print(f"DEBUG: Direct stats costs - Interaction: ${direct_stats['interaction_cost']:.6f}, Total: ${direct_stats['total_cost']:.6f}")
-                print(f"DEBUG: Direct stats types - Interaction: {type(direct_stats['interaction_cost'])}, Total: {type(direct_stats['total_cost'])}")
-                
                 # Use the direct copy with guaranteed float costs
                 finish_agent_streaming(streaming_context, direct_stats)
             # If we're not using rich streaming and not suppressing output, use old method

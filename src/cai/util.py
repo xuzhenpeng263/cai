@@ -367,7 +367,7 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
         current_cost = float(interaction_cost) if interaction_cost is not None else 0.0
     except (ValueError, TypeError):
         current_cost = 0.0
-   # print(f"DEBUG _create_token_display: Current cost after conversion: {current_cost}")
+
     tokens_text.append(f"(${current_cost:.4f}) ", style="bold")
     
     # Separator
@@ -387,7 +387,7 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
         total_cost_value = float(total_cost) if total_cost is not None else 0.0
     except (ValueError, TypeError):
         total_cost_value = 0.0
-    # print(f"DEBUG _create_token_display: Total cost after conversion: {total_cost_value}")
+        
     tokens_text.append(f"(${total_cost_value:.4f}) ", style="bold")
     
     # Separator
@@ -586,12 +586,9 @@ def finish_agent_streaming(context, final_stats=None):
         total_output_tokens = final_stats.get("total_output_tokens")
         total_reasoning_tokens = final_stats.get("total_reasoning_tokens")
         
-        # CRITICAL FIX: Ensure costs are properly extracted and preserved as floats
+        # Ensure costs are properly extracted and preserved as floats
         interaction_cost = float(final_stats.get("interaction_cost", 0.0))
         total_cost = float(final_stats.get("total_cost", 0.0))
-        
-        #print(f"\nDEBUG finish_agent_streaming: Received costs from final_stats - Interaction: {interaction_cost}, Total: {total_cost}")
-        #print(f"DEBUG finish_agent_streaming: Type of interaction_cost: {type(interaction_cost)}, Type of total_cost: {type(total_cost)}")
         
         if (interaction_input_tokens is not None and
                 interaction_output_tokens is not None and
@@ -605,9 +602,6 @@ def finish_agent_streaming(context, final_stats=None):
                 interaction_cost = calculate_model_cost(context["model"], interaction_input_tokens, interaction_output_tokens)
             if total_cost is None or total_cost == 0.0:
                 total_cost = calculate_model_cost(context["model"], total_input_tokens, total_output_tokens)
-            
-            #print(f"DEBUG finish_agent_streaming: Costs before passing to _create_token_display - Interaction: {interaction_cost}, Total: {total_cost}")
-            #print(f"DEBUG finish_agent_streaming: Type of costs before passing - Interaction: {type(interaction_cost)}, Total: {type(total_cost)}")
             
             tokens_text = _create_token_display(
                 interaction_input_tokens,
