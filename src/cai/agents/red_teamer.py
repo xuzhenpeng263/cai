@@ -1,10 +1,11 @@
 """Red Team Base Agent"""
 import os
 from dotenv import load_dotenv
-from cai.sdk.agents import Agent  # pylint: disable=import-error
-from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
-    run_ssh_command_with_credentials
-)
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
+from openai import AsyncOpenAI
+# from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
+#     run_ssh_command_with_credentials
+# )
 
 from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
     generic_linux_command
@@ -18,25 +19,36 @@ from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error
 )
 from cai.util import load_prompt_template
 
+load_dotenv()
+model_name = os.getenv("CAI_MODEL", "qwen2.5:14b")
 # Prompts
 redteam_agent_system_prompt = load_prompt_template("prompts/system_red_team_agent.md")
-# Define functions list based on available API keys
-functions = [
+# Define tools list based on available API keys
+tools = [
     generic_linux_command,
-    run_ssh_command_with_credentials,
+    #run_ssh_command_with_credentials,
     execute_code,
 ]
 
 # Add make_web_search_with_explanation function if PERPLEXITY_API_KEY environment variable is set
 if os.getenv('PERPLEXITY_API_KEY'):
-    functions.append(make_web_search_with_explanation)
+    tools.append(make_web_search_with_explanation)
     
 
 redteam_agent = Agent(
     name="Red Team Agent",
+    description="""Agent that mimics a red teamer in a security assessment.
+                   Expert in cybersecurity, recon, and exploitation.""",
     instructions=redteam_agent_system_prompt,
-    description="""Agent that mimic pentester/red teamer in a security assessment.
-                   Expert in cybersecurity and exploitation.""",
-    model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
-    tools=functions,
+    tools=tools,
+    model=OpenAIChatCompletionsModel(
+        model=model_name,
+        openai_client=AsyncOpenAI(),
+    ),
 )
+
+# Transfer function
+def transfer_to_redteam_agent(**kwargs):  # pylint: disable=W0613
+    """Transfer to red team agent.
+    Accepts any keyword arguments but ignores them."""
+    return redteam_agent

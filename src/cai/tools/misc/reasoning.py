@@ -3,8 +3,10 @@ Reasoning tools module for tracking thoughts, findings and analysis
 Provides utilities for recording and retrieving key information discovered
 during CTF progression.
 """
+from cai.sdk.agents import function_tool
 
 
+@function_tool
 def thought(breakdowns: str = "", reflection: str = "",  # pylint: disable=too-many-arguments  # noqa: E501
             action: str = "", next_step: str = "", key_clues: str = "",
             ctf=None) -> str:  # pylint: disable=unused-argument  # noqa: E501
@@ -34,7 +36,7 @@ def thought(breakdowns: str = "", reflection: str = "",  # pylint: disable=too-m
         output.append(f"Key Clues: {key_clues}")
     return "\n".join(output)
 
-
+@function_tool
 def write_key_findings(findings: str) -> str:
     """
     Write key findings to a state.txt file to track important CTF details.
@@ -58,7 +60,7 @@ def write_key_findings(findings: str) -> str:
     except OSError as e:
         return f"Error writing to state.txt: {str(e)}"
 
-
+@function_tool
 def read_key_findings() -> str:
     """
     Read key findings from the state.txt file to retrieve important data

@@ -2,7 +2,10 @@
 Tool for executing code via LLM tool calls.
 """
 from cai.tools.common import run_command  # pylint: disable=import-error
+from cai.sdk.agents import function_tool
 
+
+@function_tool
 def execute_code(code: str = "", language: str = "python",
                 filename: str = "exploit", timeout: int = 100, ctf=None) -> str:
     """

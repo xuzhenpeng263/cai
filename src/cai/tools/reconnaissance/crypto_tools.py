@@ -2,6 +2,9 @@
  Here are crypto tools
 """
 from cai.tools.common import run_command
+from cai.sdk.agents import function_tool
+
+
 
 # # URLDecodeTool
 # # HexDumpTool
@@ -9,7 +12,7 @@ from cai.tools.common import run_command
 # # ROT13DecodeTool
 # # BinaryAnalysisTool
 
-
+@function_tool
 def strings_command(file_path: str, ctf=None) -> str:
     """
     Extract printable strings from a binary file.
@@ -24,7 +27,7 @@ def strings_command(file_path: str, ctf=None) -> str:
     command = f'strings {file_path}'
     return run_command(command, ctf=ctf)
 
-
+@function_tool
 def decode64(input_data: str, ctf=None) -> str:
     """
     Decode a base64-encoded string.
@@ -39,7 +42,7 @@ def decode64(input_data: str, ctf=None) -> str:
     command = f"base64 --decode {input_data}"
     return run_command(command, ctf=ctf)
 
-
+@function_tool
 def decode_hex_bytes(input_data: str) -> str:
     """
     Decode a string of hex bytes into ASCII text.

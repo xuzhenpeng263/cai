@@ -11,7 +11,7 @@ import asyncio
 import json
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
-from cai.sdk.agents import Runner, set_default_openai_client
+from cai.sdk.agents import Runner, set_default_openai_client, set_tracing_disabled
 from cai.agents import get_agent_by_name
 from cai.util import fix_litellm_transcription_annotations, color, cli_print_agent_messages
 from cai.sdk.agents.models._openai_shared import set_use_responses_by_default
@@ -19,6 +19,7 @@ from cai.sdk.agents.models._openai_shared import set_use_responses_by_default
 
 # Load environment variables
 load_dotenv()
+#set_tracing_disabled(True)
 
 # NOTE: This is needed when using LiteLLM Proxy Server
 #

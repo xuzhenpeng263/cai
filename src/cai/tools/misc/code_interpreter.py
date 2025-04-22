@@ -5,8 +5,10 @@ Module for executing Python code and capturing its output.
 import io
 import sys
 from typing import Dict
+from cai.sdk.agents import function_tool
 
 
+@function_tool
 def execute_python_code(code: str, context: Dict = None) -> str:
     """
     Execute Python code and return the output.

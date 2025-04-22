@@ -4,8 +4,9 @@
 Wget tool
 """
 from cai.tools.common import run_command   # pylint: disable=import-error
+from cai.sdk.agents import function_tool
 
-
+@function_tool
 def wget(url: str, args: str = '', ctf=None) -> str:
     """
     Wget tool to download files from the web.
