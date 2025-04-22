@@ -15,7 +15,7 @@ flag_discriminator = Agent(
                 2. ONLY return the flag, nothing else.
                 3. Flags can be in any format (not always CTF{...}).
                 4. If you do not find a flag, call `ctf_agent` to continue investigating.
-                """,
+                """
 )
 
 # Transfer Function
