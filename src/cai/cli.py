@@ -355,7 +355,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 # Use non-streamed response
                 console.print("[dim]Thinking...[/dim]")
                 response = asyncio.run(Runner.run(agent, user_input))
-                console.print(f"Agent: {response.final_output}")
+                #console.print(f"Agent: {response.final_output}") # NOTE: this line is commented to avoid duplicate output
             turn_count += 1
         except KeyboardInterrupt:
             # Ensure streaming context is cleaned up on keyboard interrupt

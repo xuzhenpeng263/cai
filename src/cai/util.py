@@ -413,6 +413,165 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
 
     return tokens_text
 
+def parse_message_content(message):
+    """
+    Parse a message object to extract its content.
+    Sample of message object: 
+    Message(
+        content='Hello! How can I assist you today?', 
+        role='assistant', 
+        tool_calls=None, 
+        function_call=None, 
+        provider_specific_fields={'refusal': None}, 
+        annotations=[]
+        ) 
+    
+    Args:
+        message: Can be a string or a Message object with content attribute
+        
+    Returns:
+        str: The extracted content as a string
+    """
+    # Check if this is a duplicate print from OpenAIChatCompletionsModel
+    # If the message has already been displayed, return empty string to avoid duplication
+    # This is a hacky approach but should work
+    
+    # If message is already a string, return it
+    if isinstance(message, str):
+        return message
+        
+    # If message is a Message object with content attribute
+    if hasattr(message, 'content') and message.content is not None:
+        return message.content
+        
+    # If message is a dict with content key
+    if isinstance(message, dict) and 'content' in message:
+        return message['content']
+        
+    # If we can't extract content, convert to string
+    return str(message)
+
+def parse_message_tool_call(message, tool_output=None):
+    """
+    Parse a message object to extract its content and tool calls.
+    Displays tool calls in the format: tool_name(command=command, args=args)
+    and optionally shows the tool output in a separate panel.
+    
+    Args:
+        message: A Message object or dict with content and tool_calls attributes
+        tool_output: String containing the output from the tool execution
+        
+    Returns:
+        tuple: (content, tool_panels) where content is the message text and
+               tool_panels is a list of panels representing tool calls and outputs
+    """
+    content = ""
+    tool_panels = []
+    
+    # Extract the content text first (LLM's inference)
+    if isinstance(message, str):
+        content = message
+    elif hasattr(message, 'content') and message.content is not None:
+        content = message.content
+    elif isinstance(message, dict) and 'content' in message:
+        content = message['content']
+    
+    # Extract tool calls
+    tool_calls = None
+    if hasattr(message, 'tool_calls') and message.tool_calls:
+        tool_calls = message.tool_calls
+    elif isinstance(message, dict) and 'tool_calls' in message and message['tool_calls']:
+        tool_calls = message['tool_calls']
+    
+    # Process tool calls if they exist
+    if tool_calls:
+        from rich.panel import Panel
+        from rich.text import Text
+        from rich.box import ROUNDED
+        
+        for tool_call in tool_calls:
+            # Extract tool name and arguments
+            tool_name = None
+            args_dict = {}
+            
+            # Handle different formats of tool_call objects
+            if hasattr(tool_call, 'function'):
+                if hasattr(tool_call.function, 'name'):
+                    tool_name = tool_call.function.name
+                if hasattr(tool_call.function, 'arguments'):
+                    try:
+                        import json
+                        args_dict = json.loads(tool_call.function.arguments)
+                    except:
+                        args_dict = {"raw_arguments": tool_call.function.arguments}
+            elif isinstance(tool_call, dict):
+                if 'function' in tool_call:
+                    if 'name' in tool_call['function']:
+                        tool_name = tool_call['function']['name']
+                    if 'arguments' in tool_call['function']:
+                        try:
+                            import json
+                            args_dict = json.loads(tool_call['function']['arguments'])
+                        except:
+                            args_dict = {"raw_arguments": tool_call['function']['arguments']}
+            
+            # Create a panel for this tool call if we have a valid name
+            if tool_name:
+                # Format in the style shown in screenshot: tool_name(command=command, args=args)
+                tool_text = Text()
+                
+                # Start with the tool name in green
+                tool_text.append(f"{tool_name}", style="green")
+                
+                # Create the arguments list in the format (key=value, key=value)
+                args_parts = []
+                for key, value in args_dict.items():
+                    # Format based on value type
+                    if isinstance(value, bool):
+                        args_parts.append(f"{key}={value}")
+                    elif value == "" or value is None:
+                        args_parts.append(f"{key}=")
+                    else:
+                        # If the value contains spaces or special chars, wrap it in quotes
+                        if isinstance(value, str) and (' ' in value or '/' in value):
+                            args_parts.append(f'{key}="{value}"')
+                        else:
+                            args_parts.append(f"{key}={value}")
+                
+                # Add the arguments in parentheses after the tool name
+                if args_parts:
+                    tool_text.append("(", style="yellow")
+                    tool_text.append(", ".join(args_parts), style="yellow")
+                    tool_text.append(")", style="yellow")
+                
+                # Create the tool call panel (blue border)
+                tool_panel = Panel(
+                    tool_text,
+                    border_style="blue",
+                    box=ROUNDED,
+                    padding=(1, 2),
+                    title="[bold]Tool Execution[/bold]",
+                    title_align="left",
+                    expand=True
+                )
+                
+                tool_panels.append(tool_panel)
+                
+                # If there's a tool output, create a separate panel for it
+                if tool_output and tool_output.strip():
+                    output_panel = Panel(
+                        Text(tool_output, style="yellow"),
+                        border_style="red",
+                        box=ROUNDED,
+                        padding=(1, 2),
+                        title="[bold]Tool Output[/bold]",
+                        title_align="left",
+                        expand=True
+                    )
+                    tool_panels.append(output_panel)
+    
+    return content, tool_panels
+
 def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pylint: disable=too-many-arguments,too-many-locals,unused-argument # noqa: E501
                              interaction_input_tokens=None,
                              interaction_output_tokens=None,
@@ -421,7 +580,8 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
                              total_output_tokens=None,
                              total_reasoning_tokens=None,
                              interaction_cost=None,
-                             total_cost=None):
+                             total_cost=None,
+                             tool_output=None):  # New parameter for tool output
     """Print agent messages/thoughts with enhanced visual formatting."""
     # Use the model from environment variable if available
     model_override = os.getenv('CAI_MODEL')
@@ -432,13 +592,27 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
 
     # Create a more hacker-like header
     text = Text()
+    
+    # Check if the message has tool calls
+    has_tool_calls = False
+    if hasattr(message, 'tool_calls') and message.tool_calls:
+        has_tool_calls = True
+    elif isinstance(message, dict) and 'tool_calls' in message and message['tool_calls']:
+        has_tool_calls = True
+    
+    # Parse the message based on whether it has tool calls
+    if has_tool_calls:
+        parsed_message, tool_panels = parse_message_tool_call(message, tool_output)
+    else:
+        parsed_message = parse_message_content(message)
+        tool_panels = []
 
     # Special handling for Reasoner Agent
     if agent_name == "Reasoner Agent":
         text.append(f"[{counter}] ", style="bold red")
         text.append(f"Agent: {agent_name} ", style="bold yellow")
-        if message:
-            text.append(f">> {message} ", style="green")
+        if parsed_message:
+            text.append(f">> {parsed_message} ", style="green")
         text.append(f"[{timestamp}", style="dim")
         if model:
             text.append(f" ({os.getenv('CAI_SUPPORT_MODEL')})",
@@ -447,8 +621,8 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
     else:
         text.append(f"[{counter}] ", style="bold cyan")
         text.append(f"Agent: {agent_name} ", style="bold green")
-        if message:
-            text.append(f">> {message} ", style="yellow")
+        if parsed_message:
+            text.append(f">> {parsed_message} ", style="yellow")
         text.append(f"[{timestamp}", style="dim")
         if model:
             text.append(f" ({model})", style="bold magenta")
@@ -489,6 +663,10 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
     )
     console.print("\n")
     console.print(panel)
+    
+    # If there are tool panels, print them after the main message panel
+    for tool_panel in tool_panels:
+        console.print(tool_panel)
 
 def create_agent_streaming_context(agent_name, counter, model):
     """Create a streaming context object that maintains state for streaming agent output."""
@@ -553,8 +731,11 @@ def create_agent_streaming_context(agent_name, counter, model):
 
 def update_agent_streaming_content(context, text_delta):
     """Update the streaming content with new text."""
-    # Add the new text to the content
-    context["content"].append(text_delta)
+    # Parse the text_delta to get just the content if needed
+    parsed_delta = parse_message_content(text_delta)
+    
+    # Add the parsed text to the content
+    context["content"].append(parsed_delta)
     
     # Update the live display with the latest content
     updated_panel = Panel(
