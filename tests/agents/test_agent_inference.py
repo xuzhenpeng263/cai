@@ -1,14 +1,8 @@
 import os
 import pytest
-import pytest
 from cai.sdk.agents import Runner
 from cai.agents import get_agent_by_name
-from cai.agents.bug_bounter import bug_bounter_agent
-from cai.agents.flag_discriminator import flag_discriminator
-from cai.agents.mail import dns_smtp_agent
-from cai.agents.one_tool import one_tool_agent
-from cai.agents.red_teamer import redteam_agent
-from cai.agents.thought import thought_agent
+
 
 @pytest.mark.allow_call_model_methods
 @pytest.mark.asyncio
