@@ -2,12 +2,11 @@
 CTF Flag Discriminator Agent with test
 """
 import os
-from cai.sdk.agents import Agent
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 
 model = os.getenv('CAI_MODEL', "qwen2.5:14b")
 flag_discriminator = Agent(
-    model="gpt-4o" if os.getenv('CAI_MODEL') == "o3-mini" else model,
     name="Flag discriminator",
     description="Agent focused on extracting the flag from the output",
     instructions="""INSTRUCTIONS:
@@ -15,7 +14,11 @@ flag_discriminator = Agent(
                 2. ONLY return the flag, nothing else.
                 3. Flags can be in any format (not always CTF{...}).
                 4. If you do not find a flag, call `ctf_agent` to continue investigating.
-                """
+                """,
+    model=OpenAIChatCompletionsModel(
+        model="gpt-4o" if os.getenv('CAI_MODEL') == "o3-mini" else model,
+        openai_client=AsyncOpenAI(),
+    )
 )
 
 # Transfer Function

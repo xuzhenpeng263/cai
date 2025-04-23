@@ -47,7 +47,6 @@ async def test_one_tool_agent_inference():
     Non-streaming inference test for the one_tool_agent.
     """
     prompt = "use nmap to scan 192.168.2.0/24"
-    # Run the agent in non-streaming mode
     result = await Runner.run(get_agent_by_name("one_tool_agent"), prompt)
     final_output = result.final_output or ""
     assert final_output, "Expected non-empty final output"
@@ -65,3 +64,30 @@ async def test_red_team_agent_inference():
     final_output = result.final_output or ""
     assert final_output, "Expected non-empty final output"
     assert "example.com" in final_output.lower(), f"Expected 'example.com' in output, got: {final_output}"
+
+@pytest.mark.allow_call_model_methods
+@pytest.mark.asyncio
+async def test_flag_discriminator_inference():
+    """
+    Non-streaming inference test for the one_tool_agent.
+    """
+    prompt = "Hello! Can you find tell me which is the flag in this string: 'Hi there, your reward flag{1234}"
+    result = await Runner.run(get_agent_by_name("flag_discriminator"), prompt)
+    final_output = result.final_output or ""
+    assert final_output, "Expected non-empty final output"
+    assert "flag{1234}" in final_output.lower(), f"Expected 'flag{1234}' in output, got: {final_output}"
+
+@pytest.mark.allow_call_model_methods
+@pytest.mark.asyncio
+async def test_thought_agent_inference():
+    """
+    Non-streaming inference test for the one_tool_agent.
+    """
+    prompt = """The phases of the cybersecurity kill chain are: 
+    Reconnaissance, Exploitation, Lateral Movement, Data Exfiltration, and Command and Control (C2). 
+    In which phase of the kill chain does this example fall: 
+    Gathering initial intelligence about the target using OSINT techniques?"""
+    result = await Runner.run(get_agent_by_name("thought_agent"), prompt)
+    final_output = result.final_output or ""
+    assert final_output, "Expected non-empty final output"
+    assert "reconnaissance" in final_output.lower(), f"Expected 'reconnaissance' in output, got: {final_output}"    
