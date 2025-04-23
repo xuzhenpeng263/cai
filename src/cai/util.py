@@ -189,11 +189,10 @@ class CostTracker:
         self.current_agent_output_tokens = total_output_tokens
         self.current_agent_reasoning_tokens = total_reasoning_tokens
         
-        # SIMPLIFIED APPROACH: Get previous total and add current interaction cost
+        # Get previous total and add current interaction cost
         previous_total = self.current_agent_total_cost
         
-        # Instead of recalculating the total, simply add the new interaction cost
-        # This is the key change to ensure consistency
+        # Add the new interaction cost
         if provided_cost is not None and provided_cost > 0:
             # If a total cost is explicitly provided, use it
             new_total_cost = float(provided_cost)
