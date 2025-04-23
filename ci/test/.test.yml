@@ -10,7 +10,7 @@
   script:
     - pip3 install -e .
     - pip install inline-snapshot pytest-asyncio graphviz pytest-mock
-    - echo "OPENAI_API_KEY=fake-api-key-for-tests" > .env
+    - echo 'OPENAI_API_KEY="sk-fake"' > .env
     - pytest -s $TEST_PATH
   tags:
     - p40
