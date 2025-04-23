@@ -20,18 +20,6 @@ import atexit
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
-# Near the top of the file with other global variables
-_LAST_CALCULATION_ID = ""  # Track the last calculation to avoid duplicates
-
-# Global variables to track costs
-_CAI_SESSION_TOTAL_COST = 0.0  # Tracks cost across entire CAI session
-_CURRENT_AGENT_TOTAL_COST = 0.0  # Tracks total cost for current agent run
-
-# Add this near the top of the file to keep track of the last total cost
-_LAST_TOTAL_COST = 0.0
-
-# Near the top of the file with other global variables
-_MODEL_PRICING_CACHE = {}  # Cache for model pricing data to avoid redundant lookups
 
 # Shared stats tracking object to maintain consistent costs across calls
 @dataclass
@@ -70,8 +58,7 @@ class CostTracker:
         """Add cost to session total and log the update"""
         old_total = self.session_total_cost
         self.session_total_cost += new_cost
-        # print(f"SESSION UPDATE: Adding ${new_cost:.6f} to session total (${old_total:.6f} → ${self.session_total_cost:.6f})")
-    
+        
     def log_final_cost(self) -> None:
         """Display final cost information at exit"""
         print(f"\nTotal CAI Session Cost: ${self.session_total_cost:.6f}")
@@ -133,14 +120,7 @@ class CostTracker:
         input_cost = input_tokens * input_cost_per_token
         output_cost = output_tokens * output_cost_per_token
         total_cost = input_cost + output_cost
-        
-        # Log calculation with optional label
-        # log_prefix = f"{label}: " if label else "COST CALCULATION: "
-        # print(f"{log_prefix}model={model_name}")
-        # print(f"  • Input: {input_tokens} tokens × ${input_cost_per_token:.8f} = ${input_cost:.6f}")
-        # print(f"  • Output: {output_tokens} tokens × ${output_cost_per_token:.8f} = ${output_cost:.6f}")
-        # print(f"  • Total Cost: ${total_cost:.6f}")
-        
+
         # Cache the result with full precision
         self.calculated_costs_cache[cache_key] = total_cost
         
@@ -168,9 +148,6 @@ class CostTracker:
                 model_name, input_tokens, output_tokens, 
                 label="OFFICIAL CALCULATION: Interaction")
         
-        # Debug: track the difference from last interaction
-        # cost_diff = self.interaction_cost - self.last_interaction_cost
-        # print(f"DEBUG: Interaction cost changed by ${cost_diff:.6f} (${self.last_interaction_cost:.6f} → ${self.interaction_cost:.6f})")
         self.last_interaction_cost = self.interaction_cost
         
         return self.interaction_cost
@@ -202,8 +179,6 @@ class CostTracker:
             # Simply add the current interaction cost to the previous total
             cost_diff = self.interaction_cost
             new_total_cost = previous_total + cost_diff
-            
-            # print(f"DEBUG: New total calculated by adding interaction cost: ${previous_total:.6f} + ${cost_diff:.6f} = ${new_total_cost:.6f}")
         
         # Only add to session total if there's genuinely new cost (and it's positive)
         if cost_diff > 0:
@@ -222,32 +197,27 @@ COST_TRACKER = CostTracker()
 
 # Register exit handler for final cost display
 atexit.register(COST_TRACKER.log_final_cost)
-
 theme = Theme({
-    # Primary colors - Material Design inspired
-    "timestamp": "#00BCD4",  # Cyan 500
-    "agent": "#4CAF50",      # Green 500
-    "arrow": "#FFFFFF",      # White
-    "content": "#ECEFF1",    # Blue Grey 50
-    "tool": "#F44336",       # Red 500
+    "timestamp": "#00BCD4",
+    "agent": "#4CAF50",
+    "arrow": "#FFFFFF",
+    "content": "#ECEFF1",
+    "tool": "#F44336",
 
-    # Secondary colors
-    "cost": "#009688",        # Teal 500
-    "args_str": "#FFC107",  # Amber 500
+    "cost": "#009688",
+    "args_str": "#FFC107",
 
-    # UI elements
-    "border": "#2196F3",      # Blue 500
-    "border_state": "#FFD700",      # Yellow (Gold), complementary to Blue 500
-    "model": "#673AB7",       # Deep Purple 500
-    "dim": "#9E9E9E",         # Grey 500
-    "current_token_count": "#E0E0E0",  # Grey 300 - Light grey
-    "total_token_count": "#757575",    # Grey 600 - Medium grey
-    "context_tokens": "#0A0A0A",       # Nearly black - Very high contrast
+    "border": "#2196F3",
+    "border_state": "#FFD700",
+    "model": "#673AB7",
+    "dim": "#9E9E9E",
+    "current_token_count": "#E0E0E0",
+    "total_token_count": "#757575",
+    "context_tokens": "#0A0A0A",
 
-    # Status indicators
-    "success": "#4CAF50",     # Green 500
-    "warning": "#FF9800",     # Orange 500
-    "error": "#F44336"        # Red 500
+    "success": "#4CAF50",
+    "warning": "#FF9800",
+    "error": "#F44336"
 })
 
 console = Console(theme=theme)
@@ -715,10 +685,6 @@ def parse_message_tool_call(message, tool_output=None):
     content = ""
     tool_panels = []
     
-    # Debug the incoming tool_output
-    #if tool_output:
-    #    print(f"DEBUG parse_message_tool_call: Received tool_output: {tool_output[:50]}...")
-    
     # Extract the content text (LLM's inference)
     if isinstance(message, str):
         content = message
@@ -746,14 +712,6 @@ def parse_message_tool_call(message, tool_output=None):
             tool_name = None
             args_dict = {}
             call_id = None
-            
-            ## Extract call_id for debugging
-            #if hasattr(tool_call, 'id'):
-            #    call_id = tool_call.id
-            #elif isinstance(tool_call, dict) and 'id' in tool_call:
-            #    call_id = tool_call['id']
-                
-            #print(f"DEBUG parse_message_tool_call: Processing tool_call with call_id={call_id}")
             
             # Handle different formats of tool_call objects
             if hasattr(tool_call, 'function'):
