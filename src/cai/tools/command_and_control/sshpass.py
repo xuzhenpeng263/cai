@@ -12,8 +12,11 @@ It handles privilege escalation very well and is autonomous regarding SSH passwo
 something that hasn't been seen in other cybersecurity frameworks yet (Feb 2025)
 """  # noqa: E501
 
-from cai.tools.misc.cli_utils import execute_cli_command  # pylint: disable=E0401 # noqa: E501
+from cai.tools.common import run_command  # pylint: disable=E0401 # noqa: E501
+from cai.sdk.agents import function_tool
 
+
+@function_tool
 def run_ssh_command_with_credentials(
         host: str,
         username: str,
@@ -43,4 +46,4 @@ def run_ssh_command_with_credentials(
         f"{username}@{host} -p {port} "
         f"'{escaped_command}'"
     )
-    return execute_cli_command(ssh_command)
+    return run_command(ssh_command)

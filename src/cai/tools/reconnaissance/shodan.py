@@ -8,8 +8,10 @@ import os
 import requests
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
+from cai.sdk.agents import function_tool
 
 
+@function_tool
 def shodan_search(query: str, limit: int = 10) -> str:
     """
     Search Shodan for information based on the provided query.
@@ -41,7 +43,7 @@ def shodan_search(query: str, limit: int = 10) -> str:
     
     return formatted_results
 
-
+@function_tool
 def shodan_host_info(ip: str) -> str:
     """
     Get detailed information about a specific host from Shodan.

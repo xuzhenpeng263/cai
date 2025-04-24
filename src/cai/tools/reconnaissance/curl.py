@@ -2,8 +2,9 @@
 Here are the curl tools.
 """
 from cai.tools.common import run_command  # pylint: disable=import-error
+from cai.sdk.agents import function_tool
 
-
+@function_tool
 def curl(args: str = "", target: str = "", ctf=None) -> str:
     """
     A simple curl tool to make HTTP requests to a specified target.

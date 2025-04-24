@@ -3,8 +3,9 @@ Here are the nmap tools.
 """
 
 from cai.tools.common import run_command  # pylint: disable=E0401
+from cai.sdk.agents import function_tool
 
-
+@function_tool
 def nmap(args: str, target: str, ctf=None) -> str:
     """
     A simple nmap tool to scan a specified target.

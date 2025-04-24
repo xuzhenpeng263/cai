@@ -5,12 +5,12 @@ querying and adding data to vector databases.
 import os
 import uuid
 from cai.rag.vector_db import QdrantConnector
-
+from cai.sdk.agents import function_tool
 
 # CTF BASED MEMORY
 collection_name = os.getenv('CAI_MEMORY_COLLECTION', "default")
 
-
+@function_tool
 def query_memory(query: str, top_k: int = 3, **kwargs) -> str:  # pylint: disable=unused-argument,line-too-long # noqa: E501
     """
     Query memory to retrieve relevant context. From Previous CTFs executions.
@@ -42,7 +42,7 @@ def query_memory(query: str, top_k: int = 3, **kwargs) -> str:  # pylint: disabl
     except Exception:  # pylint: disable=broad-exception-caught
         return results
 
-
+@function_tool
 def add_to_memory_episodic(texts: str, step: int = 0, **kwargs) -> str:  # pylint: disable=unused-argument,line-too-long # noqa: E501
     """
     This is a persistent memory to add relevant context to our memory.
@@ -76,7 +76,7 @@ def add_to_memory_episodic(texts: str, step: int = 0, **kwargs) -> str:  # pylin
     except Exception as e:  # pylint: disable=broad-exception-caught
         return f"Error adding documents to vector database: {str(e)}"
 
-
+@function_tool
 def add_to_memory_semantic(texts: str, step: int = 0, **kwargs) -> str:  # pylint: disable=unused-argument,line-too-long # noqa: E501
     """
     This is a persistent memory to add relevant context to our memory.

@@ -37,10 +37,10 @@ def thought_agent_handoff(ctf=None):  # pylint: disable=unused-argument
     return thought_agent
 
 
-# Register handoff functions to enable inter-agent communication pathways
-redteam_agent.functions.append(transfer_to_dns_agent)
-dns_smtp_agent.functions.append(redteam_agent_handoff)
-thought_agent.functions.append(redteam_agent_handoff)
+# Register handoff to enable inter-agent communication pathways
+redteam_agent.handoffs.append(transfer_to_dns_agent)
+dns_smtp_agent.handoffs.append(redteam_agent_handoff)
+thought_agent.handoffs.append(redteam_agent_handoff)
 
 # Initialize the swarm pattern with the thought agent as the entry point
 redteam_swarm_pattern = thought_agent

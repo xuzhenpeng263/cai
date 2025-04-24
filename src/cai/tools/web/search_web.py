@@ -6,7 +6,10 @@ from cai.tools.web.google_search import (
     google_dork_search, 
     google_search
 )
+from cai.sdk.agents import function_tool
 
+
+@function_tool
 def query_perplexity(query: str = "", context: str = "") -> str:
     """
     Query the Perplexity AI API with a user prompt.
@@ -55,7 +58,7 @@ def query_perplexity(query: str = "", context: str = "") -> str:
     )
     return response.choices[0].message.content
 
-
+@function_tool
 def make_web_search_with_explanation(context: str = "", query: str = "") -> str:
     """
     Executes an intelligent web search via the AI service for relevant
@@ -74,6 +77,7 @@ def make_web_search_with_explanation(context: str = "", query: str = "") -> str:
     """
     return query_perplexity(query, context)
 
+@function_tool
 def make_google_search(query: str, dorks = False) -> str:
     """
     Search Google for information.
