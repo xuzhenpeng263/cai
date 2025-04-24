@@ -280,8 +280,9 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 if commands_handle_command(command, args):
                     continue  # Command was handled, continue to next iteration
 
-                # If command wasn't recognized, show error
-                console.print(f"[red]Unknown command: {command}[/red]")
+                # If command wasn't recognized, show error (skip for /shell or /s)
+                if command not in ("/shell", "/s"):
+                    console.print(f"[red]Unknown command: {command}[/red]")
                 continue
 
             # Process the conversation with the agent
