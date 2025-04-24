@@ -211,7 +211,7 @@ class AgentCommand(Command):
         agent_id = args[0]
 
         agents_to_display = get_available_agents()
-        agent_list = list(agents_to_display.items())  # preserve order for indexing
+        agent_list = list(agents_to_display.items())  
 
         # Check if agent_id is a number
         if agent_id.isdigit():
