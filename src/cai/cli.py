@@ -184,8 +184,8 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
     # Function to get the short name of the agent for display
     def get_agent_short_name(agent):
         if hasattr(agent, 'name'):
-            # Split by spaces and take first word to get shortened name
-            return agent.name.split()[0]
+            # Return the full agent name instead of just the first word
+            return agent.name
         return "Agent"
     
     # Prevent the model from using its own rich streaming to avoid conflicts

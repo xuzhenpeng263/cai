@@ -1,11 +1,17 @@
 """
 This is used to create a generic linux command.
 """
+import os
+import time
+import uuid
+import subprocess
+import sys
 from cai.tools.common import (run_command,
                               list_shell_sessions,
                               get_session_output,
                               terminate_session)  # pylint: disable=import-error # noqa E501
 from cai.sdk.agents import function_tool
+from wasabi import color  # pylint: disable=import-error
 
 
 @function_tool
@@ -74,13 +80,19 @@ def generic_linux_command(command: str = "",
         async_commands = ['ssh', 'python -m http.server']
         async_mode = any(cmd in full_command for cmd in async_commands)
 
-    # NOTE: review this as it's a hack to get
-    # around the long delays with nc connections
+    # For SSH sessions or async commands, use different timeout
     if session_id:
         timeout = 10
     else:
         timeout = 100
+        
+    # Check if streaming should be enabled
+    stream = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+    
+    # Generate a call_id for streaming if needed
+    call_id = str(uuid.uuid4())[:8] if stream else None
 
+    # Run the command with the appropriate parameters
     return run_command(full_command, ctf=ctf,
                        async_mode=async_mode, session_id=session_id,
-                       timeout=timeout)
+                       timeout=timeout, stream=stream, call_id=call_id)

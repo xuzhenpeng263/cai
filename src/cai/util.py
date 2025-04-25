@@ -924,9 +924,8 @@ def create_agent_streaming_context(agent_name, counter, model):
         expand=True 
     )
     
-    # Start the live display 
-    live = Live(panel, refresh_per_second=20, console=console)
-    live.start()
+    # Create Live display object but don't start it until we have content
+    live = Live(panel, refresh_per_second=20, console=console, auto_refresh=False)
     
     return {
         "live": live,
@@ -937,13 +936,18 @@ def create_agent_streaming_context(agent_name, counter, model):
         "timestamp": timestamp,
         "model": model,
         "agent_name": agent_name,
-        "panel_width": panel_width
+        "panel_width": panel_width,
+        "is_started": False  # Track if we've started the display
     }
 
 def update_agent_streaming_content(context, text_delta):
     """Update the streaming content with new text."""
     # Parse the text_delta to get just the content if needed
     parsed_delta = parse_message_content(text_delta)
+    
+    # Skip empty updates to avoid showing an empty panel
+    if not parsed_delta or parsed_delta.strip() == "":
+        return
     
     # Add the parsed text to the content
     context["content"].append(parsed_delta)
@@ -960,12 +964,26 @@ def update_agent_streaming_content(context, text_delta):
         expand=True
     )
     
+    # Check if we need to start the display
+    if not context.get("is_started", False):
+        context["live"].start()
+        context["is_started"] = True
+    
     # Force an update with the new panel
     context["live"].update(updated_panel)
     context["panel"] = updated_panel
 
 def finish_agent_streaming(context, final_stats=None):
     """Finish the streaming session and display final stats if available."""
+    # Check if there's actual content to display - don't show empty panels
+    if not context["content"] or context["content"].plain == "":
+        # If the display was never started, nothing to do
+        if not context.get("is_started", False):
+            return
+        # Otherwise, stop the display without showing final panel
+        context["live"].stop()
+        return
+    
     # If we have token stats, add them
     tokens_text = None
     if final_stats:
@@ -1037,103 +1055,204 @@ def finish_agent_streaming(context, final_stats=None):
     # Stop the live display
     context["live"].stop()
 
-def cli_print_tool_output(tool_name, args, output, call_id=None, execution_info=None, token_info=None):
+def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execution_info=None, token_info=None):
     """
-    Print tool execution and output in a single unified panel.
+    Print a tool call output to the command line.
+    Similar to cli_print_tool_call but for the output of the tool.
     
     Args:
-        tool_name: Name of the tool that was executed
+        tool_name: Name of the tool
         args: Arguments passed to the tool
-        output: Output from the tool execution
-        call_id: Optional ID of the tool call
-        execution_info: Dictionary with execution timing information
-        token_info: Dictionary with token usage information (ignored - no cost display in tool panels)
+        output: The output of the tool
+        call_id: Optional call ID for streaming updates
+        execution_info: Optional execution information
+        token_info: Optional token information
     """
-    from rich.panel import Panel
-    from rich.text import Text
-    from rich.box import ROUNDED
-    from rich.console import Group
-    
-    # Track which tool calls we've already printed to avoid duplicates
-    if not hasattr(cli_print_tool_output, '_seen_calls'):
-        cli_print_tool_output._seen_calls = {}
-    
-    # If we have a call_id, check if we've already printed this output
-    # If no call_id, use a combination of tool_name and args as a key
-    call_key = call_id if call_id else f"{tool_name}:{args}"
-    
-    # Avoid printing duplicates
-    if call_key in cli_print_tool_output._seen_calls:
+    # If it's an empty output, don't print anything
+    if not output and not call_id:
         return
     
-    # Mark this call as seen to avoid duplicates
-    cli_print_tool_output._seen_calls[call_key] = True
-    
-    # Format the tool and arguments
-    if isinstance(args, dict): #key=value pairs
-        args_str = ", ".join(f"{k}={v}" for k, v in args.items())
-    else: #single string
-        args_str = args
-    
-    # Create content for the tool execution panel
-    tool_text = Text()
-    tool_text.append(f"{tool_name}", style="#00BCD4")
-    
-    # Add the arguments 
-    if isinstance(args, dict):
-        args_str = ", ".join(f"{k}={v}" for k, v in args.items())
-        tool_text.append("(", style="yellow")
-        tool_text.append(args_str, style="yellow")
-        tool_text.append(")", style="yellow")
-    else:
-        tool_text.append("(", style="yellow")
-        tool_text.append(f"{args}", style="yellow")
-        tool_text.append(")", style="yellow")
-    
-    # Create the tool execution panel
-    tool_panel = Panel(
-        tool_text,
-        border_style="blue",
-        box=ROUNDED,
-        padding=(1, 2),
-        title="[bold]Tool Execution[/bold]",
-        title_align="left",
-        expand=True
-    )
-    console.print(tool_panel)
-    
-    # Create content for the output panel
-    panel_content = []
-    
-    # Add execution time if available
-    if execution_info:
-        total_time = execution_info.get('total_time', 0)
-        tool_time = execution_info.get('tool_time', 0)
-        if total_time > 0:
-            total_time_str = f"{int(total_time // 60)}m {total_time % 60:.1f}s"
-            tool_time_str = f"{tool_time:.1f}s"
-            execution_time = f"Total: {total_time_str} | Tool: {tool_time_str}"
+    # Track seen call IDs to prevent duplicate panels
+    if not hasattr(cli_print_tool_output, '_seen_calls'):
+        cli_print_tool_output._seen_calls = {}
+        
+    # For streaming updates, only show updates for the same call_id
+    # but allow the first appearance of each call_id
+    if call_id:
+        call_key = f"{call_id}:{output[:20]}"  # Use first 20 chars as fingerprint with call_id
+        
+        # Skip if we've seen this exact output for this call_id before
+        if call_key in cli_print_tool_output._seen_calls:
+            return
             
-            exec_text = Text()
-            exec_text.append("[", style="dim")
-            exec_text.append(f"{execution_time}", style="magenta")
-            exec_text.append("]", style="dim")
-            panel_content.append(exec_text)
+        # Mark as seen
+        cli_print_tool_output._seen_calls[call_key] = True
+        
+        # Limit cache size to prevent memory growth
+        if len(cli_print_tool_output._seen_calls) > 1000:
+            # Keep only the most recent 500 entries
+            cli_print_tool_output._seen_calls = {
+                k: cli_print_tool_output._seen_calls[k] 
+                for k in list(cli_print_tool_output._seen_calls.keys())[-500:]
+            }
     
-    # Add the tool output
-    if output and output.strip():
-        output_text = Text("\n" if panel_content else "")
-        output_text.append(output.strip(), style="#C0C0C0")
-        panel_content.append(output_text)
-    
-    if panel_content:
-        output_panel = Panel(
-            Group(*panel_content),
-            border_style="blue",  
-            box=ROUNDED,
+    # Try to use Rich for better formatting if available
+    try:
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.text import Text
+        from rich.box import ROUNDED
+        
+        # Create a console for output
+        console = Console()
+        
+        # Format arguments as a string if they are a dictionary
+        if isinstance(args, dict):
+            args_str = ", ".join([f"{key}='{value}'" for key, value in args.items()])
+        else:
+            args_str = str(args)
+        
+        # For streaming mode with call_id, use Rich Live display
+        if call_id:
+            # Create the header text
+            header = Text()
+            header.append(tool_name, style="#00BCD4")
+            header.append("(", style="yellow")
+            header.append(args_str, style="yellow")
+            header.append(")", style="yellow")
+            
+            # Create content text with the output
+            content = Text(output)
+            
+            # Create the panel for display
+            panel = Panel(
+                Text.assemble(header, "\n\n", content),
+                title=f"[bold blue]Tool Output (ID: {call_id})[/bold blue]",
+                subtitle="[bold green]Live Update[/bold green]",
+                border_style="blue",
+                padding=(1, 2),
+                box=ROUNDED
+            )
+            
+            # Display using Rich
+            console.print(panel)
+            return
+            
+        # For non-streaming output, show a standard panel
+        tool_call = f"{tool_name}({args_str})"
+        
+        # Add execution info if available
+        subtitle = "[bold green]Completed[/bold green]"
+        if execution_info:
+            time_taken = execution_info.get('time_taken', 0)
+            status = execution_info.get('status', 'completed')
+            
+            if time_taken:
+                subtitle = f"[bold green]{status.title()} in {time_taken:.2f}s[/bold green]"
+            else:
+                subtitle = f"[bold green]{status.title()}[/bold green]"
+        
+        # Create content sections
+        sections = []
+        
+        # Add token info if available
+        if token_info:
+            tokens_in = token_info.get('input_tokens', 0)
+            tokens_out = token_info.get('output_tokens', 0)
+            cost = token_info.get('cost', 0)
+            
+            token_text = Text()
+            if tokens_in or tokens_out:
+                token_text.append(f"Tokens: {tokens_in} in, {tokens_out} out", style="cyan")
+            if cost:
+                token_text.append(f"\nCost: ${cost:.6f}", style="cyan")
+                
+            if token_text:
+                sections.append(token_text)
+        
+        # Add the main output
+        if output:
+            output_text = Text()
+            if sections:  # Add a separator if we have previous sections
+                output_text.append("\n")
+            output_text.append(output)
+            sections.append(output_text)
+        
+        # Create the panel with all sections
+        panel = Panel(
+            Text.assemble(*sections),
+            title=f"[bold blue]Tool Output: {tool_call}[/bold blue]",
+            subtitle=subtitle,
+            border_style="blue",
             padding=(1, 2),
-            title="[bold]Tool Output[/bold]",
-            title_align="left",
-            expand=True
+            box=ROUNDED
         )
-        console.print(output_panel)
+        
+        # Display the panel
+        console.print(panel)
+        
+    except ImportError:
+        # Fall back to simple formatting if Rich is not available
+        # Format arguments as a string if they are a dictionary
+        if isinstance(args, dict):
+            args_str = ", ".join([f"{key}='{value}'" for key, value in args.items()])
+        else:
+            args_str = str(args)
+        
+        # Simplify output presentation for streaming mode
+        if call_id:
+            # This is a streaming update, so we need to overwrite previous output
+            # We'll use a basic format that's better suited for streaming
+            
+            # Get terminal width for better formatting
+            try:
+                term_width = os.get_terminal_size().columns
+            except:  # pylint: disable=bare-except
+                term_width = 80
+                
+            # Create a header for the tool output
+            header = f"{tool_name}({args_str})"
+            header = header[:term_width-4]
+            
+            # Clear the screen for the tool output (alternative approach)
+            # This works better with streamed content as it doesn't scroll the terminal
+            print(f"\r{header}")
+            
+            # Print the content
+            # For streaming updates, we'll use a simple format
+            print(output)
+            
+            # Force flush to ensure output is displayed immediately
+            sys.stdout.flush()
+            return
+        
+        # For non-streaming output, use the original formatting
+        tool_call = f"{tool_name}({args_str})"
+        
+        # If there's execution info, add it to the output
+        if execution_info:
+            time_taken = execution_info.get('time_taken', 0)
+            status = execution_info.get('status', 'completed')
+            
+            # Add execution info to the tool call display
+            if time_taken:
+                tool_call += f" [{status} in {time_taken:.2f}s]"
+            else:
+                tool_call += f" [{status}]"
+        
+        print(color(f"Tool Output: {tool_call}", fg="blue"))
+        
+        # If we have token info, display it
+        if token_info:
+            tokens_in = token_info.get('input_tokens', 0)
+            tokens_out = token_info.get('output_tokens', 0)
+            cost = token_info.get('cost', 0)
+            
+            if tokens_in or tokens_out:
+                print(color(f"  Tokens: {tokens_in} in, {tokens_out} out", fg="cyan"))
+            if cost:
+                print(color(f"  Cost: ${cost:.6f}", fg="cyan"))
+        
+        # Print the actual output
+        print(output)
+        print()
