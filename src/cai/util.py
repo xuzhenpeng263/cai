@@ -877,8 +877,11 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
     console.print(panel)
     
     # If there are tool panels, print them after the main message panel
-    for tool_panel in tool_panels:
-        console.print(tool_panel)
+    # But only in non-streaming mode to avoid duplicates
+    is_streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+    if tool_panels and not is_streaming_enabled:
+        for tool_panel in tool_panels:
+            console.print(tool_panel)
 
 def create_agent_streaming_context(agent_name, counter, model):
     """Create a streaming context object that maintains state for streaming agent output."""
@@ -1072,10 +1075,17 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
     if not output and not call_id:
         return
     
+    # CRITICAL CHECK: When in streaming mode (CAI_STREAM=true), ONLY show output panels
+    # for streaming updates (those with call_id). This prevents duplicate output panels.
+    is_streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+    if is_streaming_enabled and not call_id:
+        # Skip all non-streaming tool output in streaming mode
+        return
+    
     # Track seen call IDs to prevent duplicate panels
     if not hasattr(cli_print_tool_output, '_seen_calls'):
         cli_print_tool_output._seen_calls = {}
-        
+    
     # For streaming updates, only show updates for the same call_id
     # but allow the first appearance of each call_id
     if call_id:
@@ -1127,11 +1137,12 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
             # Create the panel for display
             panel = Panel(
                 Text.assemble(header, "\n\n", content),
-                title=f"[bold blue]Tool Output (ID: {call_id})[/bold blue]",
-                subtitle="[bold green]Live Update[/bold green]",
+                title=f"[bold blue]Tool Output[/bold blue]", #(ID: {call_id})[/bold green]",
+                #subtitle="[bold green]Live Update[/bold green]",
                 border_style="blue",
                 padding=(1, 2),
-                box=ROUNDED
+                box=ROUNDED,
+                title_align="left"
             )
             
             # Display using Rich
@@ -1181,9 +1192,9 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         # Create the panel with all sections
         panel = Panel(
             Text.assemble(*sections),
-            title=f"[bold blue]Tool Output: {tool_call}[/bold blue]",
+            title=f"[bold green]Tool Output: {tool_call}[/bold green]",
             subtitle=subtitle,
-            border_style="blue",
+            border_style="green",
             padding=(1, 2),
             box=ROUNDED
         )
@@ -1215,7 +1226,6 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
             header = header[:term_width-4]
             
             # Clear the screen for the tool output (alternative approach)
-            # This works better with streamed content as it doesn't scroll the terminal
             print(f"\r{header}")
             
             # Print the content

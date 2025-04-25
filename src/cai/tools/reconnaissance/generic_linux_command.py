@@ -90,9 +90,20 @@ def generic_linux_command(command: str = "",
     stream = os.getenv('CAI_STREAM', 'false').lower() == 'true'
     
     # Generate a call_id for streaming if needed
+    # Only use call_id for streaming mode to prevent duplicate panels
+    # When CAI_STREAM=true, we want the Tool Execution panel but not the Tool Output panel
     call_id = str(uuid.uuid4())[:8] if stream else None
+    
+    # In streaming mode, prevent displaying both panels by forcing a call_id
+    # This tricks cli_print_tool_output into thinking it's being called for a streaming update
+    if stream and not call_id:
+        call_id = str(uuid.uuid4())[:8]
 
     # Run the command with the appropriate parameters
-    return run_command(full_command, ctf=ctf,
+    result = run_command(full_command, ctf=ctf,
                        async_mode=async_mode, session_id=session_id,
                        timeout=timeout, stream=stream, call_id=call_id)
+    
+    # For better output formatting, if we're in streaming mode, we can modify the output
+    # to include any additional information needed while still preventing the duplicate panel
+    return result

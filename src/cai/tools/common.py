@@ -245,6 +245,14 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None):
         output = result.stdout if result.stdout else result.stderr
         if stdout:
             print("\033[32m" + output + "\033[0m")
+            
+        # Skip passing output to cli_print_tool_output when CAI_STREAM=true
+        # This prevents duplicate output in streaming mode
+        is_streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+        if not is_streaming_enabled:
+            # Optional: Add cli_print_tool_output call here if needed for non-streaming
+            pass
+            
         return output
     except subprocess.TimeoutExpired as e:
         error_output = e.stdout.decode() if e.stdout else str(e)
@@ -288,10 +296,16 @@ def _run_local_streamed(command, call_id, timeout=100):
         # Create panel content for Rich display
         if rich_available:
             tool_name = "generic_linux_command"
+            # Parse command into command and args
+            parts = command.strip().split(' ', 1)
+            cmd = parts[0] if parts else ""
+            args = parts[1] if len(parts) > 1 else ""
+            
             header = Text()
             header.append(tool_name, style="#00BCD4")
             header.append("(", style="yellow")
-            header.append(f"command='{command}'", style="yellow")
+            # Format to match: generic_linux_command({"command":"ls","args":"-la","ctf":{},"async_mode":false,"session_id":""})
+            header.append(f'{{"command":"{cmd}","args":"{args}","ctf":{{}},"async_mode":false,"session_id":""}}', style="yellow")
             header.append(")", style="yellow")
             
             content = Text()
@@ -299,9 +313,9 @@ def _run_local_streamed(command, call_id, timeout=100):
             
             panel = Panel(
                 Text.assemble(header, "\n\n", content),
-                title="[bold blue]Tool Execution[/bold blue]",
+                title="[bold green]Tool Execution[/bold green]",
                 subtitle="[bold green]Live Output[/bold green]",
-                border_style="blue",
+                border_style="green",
                 padding=(1, 2),
                 box=ROUNDED
             )
@@ -320,9 +334,9 @@ def _run_local_streamed(command, call_id, timeout=100):
                     content.append(line, style="bright_white")
                     panel = Panel(
                         Text.assemble(header, "\n\n", content),
-                        title="[bold blue]Tool Execution[/bold blue]",
+                        title="[bold green]Tool Execution[/bold green]",
                         subtitle="[bold green]Live Output[/bold green]",
-                        border_style="blue",
+                        border_style="green",
                         padding=(1, 2),
                         box=ROUNDED
                     )
@@ -340,9 +354,9 @@ def _run_local_streamed(command, call_id, timeout=100):
                     output_buffer.append("\nERROR OUTPUT:\n" + stderr_data)
                     panel = Panel(
                         Text.assemble(header, "\n\n", content),
-                        title="[bold blue]Tool Execution[/bold blue]",
+                        title="[bold green]Tool Execution[/bold green]",
                         subtitle="[bold green]Live Output[/bold green]",
-                        border_style="blue",
+                        border_style="green",
                         padding=(1, 2),
                         box=ROUNDED
                     )
@@ -353,9 +367,9 @@ def _run_local_streamed(command, call_id, timeout=100):
                 content.append(f"\nCommand {completion_status}", style="green")
                 panel = Panel(
                     Text.assemble(header, "\n\n", content),
-                    title="[bold blue]Tool Execution[/bold blue]",
+                    title="[bold green]Tool Execution[/bold green]",
                     subtitle=f"[bold green]{completion_status}[/bold green]",
-                    border_style="blue",
+                    border_style="green",
                     padding=(1, 2),
                     box=ROUNDED
                 )
@@ -365,7 +379,11 @@ def _run_local_streamed(command, call_id, timeout=100):
                 time.sleep(0.5)
         else:
             # Fallback to simpler streaming with cli_print_tool_output
-            tool_args = {"command": command}
+            # Parse command into command and args (same as rich mode)
+            parts = command.strip().split(' ', 1)
+            cmd = parts[0] if parts else ""
+            args = parts[1] if len(parts) > 1 else ""
+            tool_args = {"command": cmd, "args": args, "ctf": {}, "async_mode": False, "session_id": ""}
             
             # Initial notification - just once
             cli_print_tool_output("generic_linux_command", tool_args, "Command started...", call_id=call_id)

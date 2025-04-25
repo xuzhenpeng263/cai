@@ -1609,43 +1609,50 @@ class _Converter:
                 # Display the tool output immediately with the matched tool call
                 from cai.util import cli_print_tool_output
                 
-                # Look up the original tool call to get the name and arguments
-                if hasattr(cls, 'recent_tool_calls') and call_id in cls.recent_tool_calls:
-                    tool_call = cls.recent_tool_calls[call_id]
-                    tool_name = tool_call.get('name', 'Unknown Tool')
-                    tool_args = tool_call.get('arguments', {})
-                    execution_info = tool_call.get('execution_info', {})
-                    
-                    # Get token counts from the OpenAIChatCompletionsModel if available
-                    model_instance = None
-                    for frame in inspect.stack():
-                        if 'self' in frame.frame.f_locals:
-                            self_obj = frame.frame.f_locals['self']
-                            if isinstance(self_obj, OpenAIChatCompletionsModel):
-                                model_instance = self_obj
-                                break
-                    
-                    token_info = {}
-                    if model_instance:
-                        token_info = {
-                            'interaction_input_tokens': getattr(model_instance, 'interaction_input_tokens', 0),
-                            'interaction_output_tokens': getattr(model_instance, 'interaction_output_tokens', 0),
-                            'interaction_reasoning_tokens': getattr(model_instance, 'interaction_reasoning_tokens', 0),
-                            'total_input_tokens': getattr(model_instance, 'total_input_tokens', 0),
-                            'total_output_tokens': getattr(model_instance, 'total_output_tokens', 0),
-                            'total_reasoning_tokens': getattr(model_instance, 'total_reasoning_tokens', 0),
-                            'model': str(getattr(model_instance, 'model', '')),
-                        }
-                    
-                    # Use the cli_print_tool_output function with actual token values
-                    cli_print_tool_output(
-                        tool_name=tool_name, 
-                        args=tool_args, 
-                        output=output_content, 
-                        call_id=call_id,
-                        execution_info=execution_info,
-                        token_info=token_info
-                    )
+                # Check if we're in streaming mode - don't show tool output panel in streaming mode
+                is_streaming_enabled = os.environ.get('CAI_STREAM', 'false').lower() == 'true'
+                if is_streaming_enabled:
+                    # Don't display tool output in streaming mode - it will be handled elsewhere
+                    pass  # Just skip the display, but preserve the tool output
+                else:
+                    # For non-streaming mode, maintain the original behavior
+                    # Look up the original tool call to get the name and arguments
+                    if hasattr(cls, 'recent_tool_calls') and call_id in cls.recent_tool_calls:
+                        tool_call = cls.recent_tool_calls[call_id]
+                        tool_name = tool_call.get('name', 'Unknown Tool')
+                        tool_args = tool_call.get('arguments', {})
+                        execution_info = tool_call.get('execution_info', {})
+                        
+                        # Get token counts from the OpenAIChatCompletionsModel if available
+                        model_instance = None
+                        for frame in inspect.stack():
+                            if 'self' in frame.frame.f_locals:
+                                self_obj = frame.frame.f_locals['self']
+                                if isinstance(self_obj, OpenAIChatCompletionsModel):
+                                    model_instance = self_obj
+                                    break
+                        
+                        token_info = {}
+                        if model_instance:
+                            token_info = {
+                                'interaction_input_tokens': getattr(model_instance, 'interaction_input_tokens', 0),
+                                'interaction_output_tokens': getattr(model_instance, 'interaction_output_tokens', 0),
+                                'interaction_reasoning_tokens': getattr(model_instance, 'interaction_reasoning_tokens', 0),
+                                'total_input_tokens': getattr(model_instance, 'total_input_tokens', 0),
+                                'total_output_tokens': getattr(model_instance, 'total_output_tokens', 0),
+                                'total_reasoning_tokens': getattr(model_instance, 'total_reasoning_tokens', 0),
+                                'model': str(getattr(model_instance, 'model', '')),
+                            }
+                        
+                        # Use the cli_print_tool_output function with actual token values
+                        cli_print_tool_output(
+                            tool_name=tool_name, 
+                            args=tool_args, 
+                            output=output_content, 
+                            call_id=call_id,  # Keep call_id for non-streaming mode
+                            execution_info=execution_info,
+                            token_info=token_info
+                        )
                 
                 # Continue with normal processing
                 flush_assistant_message()
