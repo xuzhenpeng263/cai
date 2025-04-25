@@ -1,11 +1,17 @@
 """
 This is used to create a generic linux command.
 """
+import os
+import time
+import uuid
+import subprocess
+import sys
 from cai.tools.common import (run_command,
                               list_shell_sessions,
                               get_session_output,
                               terminate_session)  # pylint: disable=import-error # noqa E501
 from cai.sdk.agents import function_tool
+from wasabi import color  # pylint: disable=import-error
 
 
 @function_tool
@@ -74,13 +80,30 @@ def generic_linux_command(command: str = "",
         async_commands = ['ssh', 'python -m http.server']
         async_mode = any(cmd in full_command for cmd in async_commands)
 
-    # NOTE: review this as it's a hack to get
-    # around the long delays with nc connections
+    # For SSH sessions or async commands, use different timeout
     if session_id:
         timeout = 10
     else:
         timeout = 100
+        
+    # Check if streaming should be enabled
+    stream = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+    
+    # Generate a call_id for streaming if needed
+    # Only use call_id for streaming mode to prevent duplicate panels
+    # When CAI_STREAM=true, we want the Tool Execution panel but not the Tool Output panel
+    call_id = str(uuid.uuid4())[:8] if stream else None
+    
+    # In streaming mode, prevent displaying both panels by forcing a call_id
+    # This tricks cli_print_tool_output into thinking it's being called for a streaming update
+    if stream and not call_id:
+        call_id = str(uuid.uuid4())[:8]
 
-    return run_command(full_command, ctf=ctf,
+    # Run the command with the appropriate parameters
+    result = run_command(full_command, ctf=ctf,
                        async_mode=async_mode, session_id=session_id,
-                       timeout=timeout)
+                       timeout=timeout, stream=stream, call_id=call_id)
+    
+    # For better output formatting, if we're in streaming mode, we can modify the output
+    # to include any additional information needed while still preventing the duplicate panel
+    return result

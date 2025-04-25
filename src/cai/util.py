@@ -16,32 +16,208 @@ from rich.theme import Theme  # pylint: disable=import-error
 from rich.traceback import install  # pylint: disable=import-error
 from rich.pretty import install as install_pretty  # pylint: disable=import-error # noqa: 501
 from datetime import datetime
+import atexit
+from dataclasses import dataclass, field
+from typing import Dict, Optional
 
+
+# Shared stats tracking object to maintain consistent costs across calls
+@dataclass
+class CostTracker:
+    # Session-level stats
+    session_total_cost: float = 0.0
+    
+    # Current agent stats
+    current_agent_total_cost: float = 0.0
+    current_agent_input_tokens: int = 0
+    current_agent_output_tokens: int = 0
+    current_agent_reasoning_tokens: int = 0
+    
+    # Current interaction stats
+    interaction_input_tokens: int = 0
+    interaction_output_tokens: int = 0
+    interaction_reasoning_tokens: int = 0
+    interaction_cost: float = 0.0
+    
+    # Calculation cache
+    model_pricing_cache: Dict[str, tuple] = field(default_factory=dict)
+    calculated_costs_cache: Dict[str, float] = field(default_factory=dict)
+    
+    # Track the last calculation to debug inconsistencies
+    last_interaction_cost: float = 0.0
+    last_total_cost: float = 0.0
+    
+    def reset_interaction_stats(self):
+        """Reset stats for a new interaction"""
+        self.interaction_input_tokens = 0
+        self.interaction_output_tokens = 0
+        self.interaction_reasoning_tokens = 0
+        self.interaction_cost = 0.0
+    
+    def update_session_cost(self, new_cost: float) -> None:
+        """Add cost to session total and log the update"""
+        old_total = self.session_total_cost
+        self.session_total_cost += new_cost
+        
+    def log_final_cost(self) -> None:
+        """Display final cost information at exit"""
+        print(f"\nTotal CAI Session Cost: ${self.session_total_cost:.6f}")
+    
+    def get_model_pricing(self, model_name: str) -> tuple:
+        """Get and cache pricing information for a model"""
+        # Use the centralized function to standardize model names
+        model_name = get_model_name(model_name)
+        
+        # Check cache first
+        if model_name in self.model_pricing_cache:
+            return self.model_pricing_cache[model_name]
+        
+        # Fetch from LiteLLM API
+        LITELLM_URL = (
+            "https://raw.githubusercontent.com/BerriAI/litellm/main/"
+            "model_prices_and_context_window.json"
+        )
+        
+        try:
+            import requests
+            response = requests.get(LITELLM_URL, timeout=2)
+            if response.status_code == 200:
+                model_pricing_data = response.json()
+                
+                # Get pricing info for the model
+                pricing_info = model_pricing_data.get(model_name, {})
+                input_cost_per_token = pricing_info.get("input_cost_per_token", 0)
+                output_cost_per_token = pricing_info.get("output_cost_per_token", 0)
+                
+                # Cache the results
+                self.model_pricing_cache[model_name] = (input_cost_per_token, output_cost_per_token)
+                return input_cost_per_token, output_cost_per_token
+        except Exception as e:
+            print(f"  WARNING: Error fetching model pricing: {str(e)}")
+        
+        # Default values if pricing not found
+        default_pricing = (0, 0)
+        self.model_pricing_cache[model_name] = default_pricing
+        return default_pricing
+    
+    def calculate_cost(self, model: str, input_tokens: int, output_tokens: int, 
+                       label: Optional[str] = None, force_calculation: bool = False) -> float:
+        """Calculate and cache cost for a given model and token counts"""
+        # Standardize model name using the central function
+        model_name = get_model_name(model)
+        
+        # Generate a cache key
+        cache_key = f"{model_name}_{input_tokens}_{output_tokens}"
+        
+        # Return cached result if available (unless force_calculation is True)
+        if cache_key in self.calculated_costs_cache and not force_calculation:
+            return self.calculated_costs_cache[cache_key]
+        
+        # Get pricing information
+        input_cost_per_token, output_cost_per_token = self.get_model_pricing(model_name)
+        
+        # Calculate costs - use high precision for calculations
+        input_cost = input_tokens * input_cost_per_token
+        output_cost = output_tokens * output_cost_per_token
+        total_cost = input_cost + output_cost
+
+        # Cache the result with full precision
+        self.calculated_costs_cache[cache_key] = total_cost
+        
+        return total_cost
+    
+    def process_interaction_cost(self, model: str, 
+                                input_tokens: int, 
+                                output_tokens: int, 
+                                reasoning_tokens: int = 0,
+                                provided_cost: Optional[float] = None) -> float:
+        """Process and track costs for a new interaction"""
+        # Standardize model name
+        model_name = get_model_name(model)
+        
+        # Update token counts
+        self.interaction_input_tokens = input_tokens
+        self.interaction_output_tokens = output_tokens
+        self.interaction_reasoning_tokens = reasoning_tokens
+        
+        # Use provided cost or calculate
+        if provided_cost is not None and provided_cost > 0:
+            self.interaction_cost = float(provided_cost)
+        else:
+            self.interaction_cost = self.calculate_cost(
+                model_name, input_tokens, output_tokens, 
+                label="OFFICIAL CALCULATION: Interaction")
+        
+        self.last_interaction_cost = self.interaction_cost
+        
+        return self.interaction_cost
+    
+    def process_total_cost(self, model: str, 
+                          total_input_tokens: int, 
+                          total_output_tokens: int,
+                          total_reasoning_tokens: int = 0,
+                          provided_cost: Optional[float] = None) -> float:
+        """Process and track costs for total (cumulative) usage"""
+        # Standardize model name
+        model_name = get_model_name(model)
+        
+        # Update token counts
+        self.current_agent_input_tokens = total_input_tokens
+        self.current_agent_output_tokens = total_output_tokens
+        self.current_agent_reasoning_tokens = total_reasoning_tokens
+        
+        # Get previous total and add current interaction cost
+        previous_total = self.current_agent_total_cost
+        
+        # Add the new interaction cost
+        if provided_cost is not None and provided_cost > 0:
+            # If a total cost is explicitly provided, use it
+            new_total_cost = float(provided_cost)
+            # Calculate how much was added in this interaction
+            cost_diff = new_total_cost - previous_total
+        else:
+            # Simply add the current interaction cost to the previous total
+            cost_diff = self.interaction_cost
+            new_total_cost = previous_total + cost_diff
+        
+        # Only add to session total if there's genuinely new cost (and it's positive)
+        if cost_diff > 0:
+            self.update_session_cost(cost_diff)
+        
+        # Update the current agent's total cost
+        self.current_agent_total_cost = new_total_cost
+        
+        # Track the last total for debugging
+        self.last_total_cost = new_total_cost
+        
+        return new_total_cost
+
+# Initialize the global cost tracker
+COST_TRACKER = CostTracker()
+
+# Register exit handler for final cost display
+atexit.register(COST_TRACKER.log_final_cost)
 theme = Theme({
-    # Primary colors - Material Design inspired
-    "timestamp": "#00BCD4",  # Cyan 500
-    "agent": "#4CAF50",      # Green 500
-    "arrow": "#FFFFFF",      # White
-    "content": "#ECEFF1",    # Blue Grey 50
-    "tool": "#F44336",       # Red 500
+    "timestamp": "#00BCD4",
+    "agent": "#4CAF50",
+    "arrow": "#FFFFFF",
+    "content": "#ECEFF1",
+    "tool": "#F44336",
 
-    # Secondary colors
-    "cost": "#009688",        # Teal 500
-    "args_str": "#FFC107",  # Amber 500
+    "cost": "#009688",
+    "args_str": "#FFC107",
 
-    # UI elements
-    "border": "#2196F3",      # Blue 500
-    "border_state": "#FFD700",      # Yellow (Gold), complementary to Blue 500
-    "model": "#673AB7",       # Deep Purple 500
-    "dim": "#9E9E9E",         # Grey 500
-    "current_token_count": "#E0E0E0",  # Grey 300 - Light grey
-    "total_token_count": "#757575",    # Grey 600 - Medium grey
-    "context_tokens": "#0A0A0A",       # Nearly black - Very high contrast
+    "border": "#2196F3",
+    "border_state": "#FFD700",
+    "model": "#673AB7",
+    "dim": "#9E9E9E",
+    "current_token_count": "#E0E0E0",
+    "total_token_count": "#757575",
+    "context_tokens": "#0A0A0A",
 
-    # Status indicators
-    "success": "#4CAF50",     # Green 500
-    "warning": "#FF9800",     # Orange 500
-    "error": "#F44336"        # Red 500
+    "success": "#4CAF50",
+    "warning": "#FF9800",
+    "error": "#F44336"
 })
 
 console = Console(theme=theme)
@@ -331,9 +507,62 @@ def get_model_input_tokens(model):
             return tokens
     return model_tokens["gpt"]
 
-def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements,too-many-branches # noqa: E501
+def get_model_name(model):
+    """
+    Extract a string model name from various model inputs.
+    Centralizes model name standardization to avoid inconsistencies (e.g. avoid passing model object instead of string name).
+    Args:
+        model: String model name or model object
+        
+    Returns:
+        str: Standardized model name string
+    """
+    if isinstance(model, str):
+        return model
+    # If not a string, use environment variable
+    return os.environ.get('CAI_MODEL', 'qwen2.5:72b')
+
+def get_model_pricing(model_name):
+    """
+    Get pricing information for a model, using the CostTracker's implementation.
+    This is a global helper that delegates to the CostTracker instance.
+    
+    Args:
+        model_name: String name of the model
+        
+    Returns:
+        tuple: (input_cost_per_token, output_cost_per_token)
+    """
+    # Standardize model name
+    model_name = get_model_name(model_name)
+    
+    # Use the CostTracker's implementation to maintain consistency and use its cache
+    return COST_TRACKER.get_model_pricing(model_name)
+
+def calculate_model_cost(model, input_tokens, output_tokens):
+    """
+    Calculate the cost for a given model based on token usage.
+    
+    Args:
+        model: The model name or object
+        input_tokens: Number of input tokens used
+        output_tokens: Number of output tokens used
+        
+    Returns:
+        float: The calculated cost in dollars
+    """
+    # Use the CostTracker to handle duplicates
+    return COST_TRACKER.calculate_cost(
+        model, 
+        input_tokens, 
+        output_tokens,
+        label="COST CALCULATION",
+        force_calculation=False  # Let it use the cache for duplicates
+    )
+
+def _create_token_display(
     interaction_input_tokens,
-    interaction_output_tokens,  # noqa: E501, pylint: disable=R0913
+    interaction_output_tokens,
     interaction_reasoning_tokens,
     total_input_tokens,
     total_output_tokens,
@@ -341,60 +570,59 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
     model,
     interaction_cost=None,
     total_cost=None
-) -> Text:  # noqa: E501
-    """
-    Create a Text object displaying token usage information
-    with enhanced formatting.
-    """
-    # print(f"\nDEBUG _create_token_display: Received costs - Interaction: {interaction_cost}, Total: {total_cost}")
+) -> Text:
+    # Standardize model name
+    model_name = get_model_name(model)
     
+    # Process interaction cost
+    current_cost = COST_TRACKER.process_interaction_cost(
+        model_name, 
+        interaction_input_tokens, 
+        interaction_output_tokens,
+        interaction_reasoning_tokens,
+        interaction_cost
+    )
+    
+    # Process total cost 
+    total_cost_value = COST_TRACKER.process_total_cost(
+        model_name,
+        total_input_tokens,
+        total_output_tokens,
+        total_reasoning_tokens,
+        total_cost
+    )
+    
+    # Create display text
     tokens_text = Text(justify="left")
-
-    # Create a more compact, horizontal display
-    tokens_text.append(" ", style="bold")  # Small padding
+    tokens_text.append(" ", style="bold")
     
     # Current interaction tokens
     tokens_text.append("Current: ", style="bold")
     tokens_text.append(f"I:{interaction_input_tokens} ", style="green")
     tokens_text.append(f"O:{interaction_output_tokens} ", style="red")
     tokens_text.append(f"R:{interaction_reasoning_tokens} ", style="yellow")
-    
-    # Current cost - only calculate if not provided
-    if interaction_cost is None:
-        interaction_cost = calculate_model_cost(model, interaction_input_tokens, interaction_output_tokens)
-    # Ensure interaction_cost is a float
-    try:
-        current_cost = float(interaction_cost) if interaction_cost is not None else 0.0
-    except (ValueError, TypeError):
-        current_cost = 0.0
-
     tokens_text.append(f"(${current_cost:.4f}) ", style="bold")
     
     # Separator
     tokens_text.append("| ", style="dim")
     
-    # Total tokens
+    # Total tokens for this agent run
     tokens_text.append("Total: ", style="bold")
     tokens_text.append(f"I:{total_input_tokens} ", style="green")
     tokens_text.append(f"O:{total_output_tokens} ", style="red")
     tokens_text.append(f"R:{total_reasoning_tokens} ", style="yellow")
-    
-    # Total cost - only calculate if not provided
-    if total_cost is None:
-        total_cost = calculate_model_cost(model, total_input_tokens, total_output_tokens)
-    # Ensure total_cost is a float
-    try:
-        total_cost_value = float(total_cost) if total_cost is not None else 0.0
-    except (ValueError, TypeError):
-        total_cost_value = 0.0
-        
     tokens_text.append(f"(${total_cost_value:.4f}) ", style="bold")
     
     # Separator
     tokens_text.append("| ", style="dim")
     
+    # Session total across all agents
+    tokens_text.append("Session: ", style="bold magenta")
+    tokens_text.append(f"${COST_TRACKER.session_total_cost:.4f}", style="bold magenta")
+    
     # Context usage
-    context_pct = interaction_input_tokens / get_model_input_tokens(model) * 100
+    tokens_text.append(" | ", style="dim")
+    context_pct = interaction_input_tokens / get_model_input_tokens(model_name) * 100
     tokens_text.append("Context: ", style="bold")
     tokens_text.append(f"{context_pct:.1f}% ", style="bold")
     
@@ -413,6 +641,143 @@ def _create_token_display(  # pylint: disable=too-many-arguments,too-many-locals
 
     return tokens_text
 
+def parse_message_content(message):
+    """
+    Parse a message object to extract its textual content.
+    Only processes messages that don't have tool calls.
+    
+    Args:
+        message: Can be a string or a Message object with content attribute
+        
+    Returns:
+        str: The extracted content as a string
+    """
+    # Check if this is a duplicate print from OpenAIChatCompletionsModel    
+    # If message is already a string, return it
+    if isinstance(message, str):
+        return message
+        
+    # If message is a Message object with content attribute
+    if hasattr(message, 'content') and message.content is not None:
+        return message.content
+        
+    # If message is a dict with content key
+    if isinstance(message, dict) and 'content' in message:
+        return message['content']
+        
+    # If we can't extract content, convert to string
+    return str(message)
+
+def parse_message_tool_call(message, tool_output=None):
+    """
+    Parse a message object to extract its content and tool calls.
+    Displays tool calls in the format: tool_name({"command":"","args":"","ctf":{},"async_mode":false,"session_id":""}) 
+    and shows the tool output in a separated panel.
+    
+    Args:
+        message: A Message object or dict with content and tool_calls attributes
+        tool_output: String containing the output from the tool execution
+        
+    Returns:
+        tuple: (content, tool_panels) where content is the message text and
+               tool_panels is a list of panels representing tool calls and outputs
+    """
+    content = ""
+    tool_panels = []
+    
+    # Extract the content text (LLM's inference)
+    if isinstance(message, str):
+        content = message
+    elif hasattr(message, 'content') and message.content is not None:
+        content = message.content
+    elif isinstance(message, dict) and 'content' in message:
+        content = message['content']
+    
+    # Extract tool calls
+    tool_calls = None
+    if hasattr(message, 'tool_calls') and message.tool_calls:
+        tool_calls = message.tool_calls
+    elif isinstance(message, dict) and 'tool_calls' in message and message['tool_calls']:
+        tool_calls = message['tool_calls']
+    
+    # Process tool calls if they exist
+    if tool_calls:
+        from rich.panel import Panel
+        from rich.text import Text
+        from rich.box import ROUNDED
+        from rich.console import Group
+        
+        for tool_call in tool_calls:
+            # Extract tool name and arguments
+            tool_name = None
+            args_dict = {}
+            call_id = None
+            
+            # Handle different formats of tool_call objects
+            if hasattr(tool_call, 'function'):
+                if hasattr(tool_call.function, 'name'):
+                    tool_name = tool_call.function.name
+                if hasattr(tool_call.function, 'arguments'):
+                    try:
+                        import json
+                        args_dict = json.loads(tool_call.function.arguments)
+                    except:
+                        args_dict = {"raw_arguments": tool_call.function.arguments}
+            elif isinstance(tool_call, dict):
+                if 'function' in tool_call:
+                    if 'name' in tool_call['function']:
+                        tool_name = tool_call['function']['name']
+                    if 'arguments' in tool_call['function']:
+                        try:
+                            import json
+                            args_dict = json.loads(tool_call['function']['arguments'])
+                        except:
+                            args_dict = {"raw_arguments": tool_call['function']['arguments']}
+            
+            # Create a panel for this tool call if name is not None
+            # NOTE: Tool execution panel will be handled in cli_print_tool_output
+            # Pass on tool info to generate panels for display in cli_print_agent_messages
+            if tool_name and tool_output:
+                # Create content for the panel - just showing the output, not the tool call
+                panel_content = []
+                
+                # Add tool output to the panel
+                output_text = Text()
+                output_text.append("Output:", style="bold #C0C0C0")  # Silver/gray
+                output_text.append(f"\n{tool_output}", style="#C0C0C0")  # Silver/gray
+                
+                panel_content.append(output_text)
+                
+                # Create a panel with just the output
+                tool_panel = Panel(
+                    Group(*panel_content),
+                    border_style="blue",
+                    box=ROUNDED,
+                    padding=(1, 2),
+                    title="[bold]Tool Output[/bold]",  # Changed title to indicate this is just output
+                    title_align="left",
+                    expand=True
+                )
+                
+                tool_panels.append(tool_panel)
+                
+                # Store the call_id with tool name to help cli_print_tool_output avoid duplicates
+                if not hasattr(parse_message_tool_call, '_processed_calls'):
+                    parse_message_tool_call._processed_calls = set()
+                
+                call_key = call_id if call_id else f"{tool_name}:{args_dict}"
+                parse_message_tool_call._processed_calls.add(call_key)
+    
+    return content, tool_panels
+
+# Add this function to detect tool output panels
+def is_tool_output_message(message):
+    """Check if a message appears to be a tool output panel display message."""
+    if isinstance(message, str):
+        msg_lower = message.lower()
+        return ("call id:" in msg_lower and "output:" in msg_lower) or msg_lower.startswith("tool output")
+    return False
+
 def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pylint: disable=too-many-arguments,too-many-locals,unused-argument # noqa: E501
                              interaction_input_tokens=None,
                              interaction_output_tokens=None,
@@ -421,8 +786,16 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
                              total_output_tokens=None,
                              total_reasoning_tokens=None,
                              interaction_cost=None,
-                             total_cost=None):
+                             total_cost=None,
+                             tool_output=None):  # New parameter for tool output
     """Print agent messages/thoughts with enhanced visual formatting."""
+    # Debug prints to trace the function calls
+    if debug:
+        if isinstance(message, str):
+            print(f"DEBUG cli_print_agent_messages: Received string message: {message[:50]}...")
+        if tool_output:
+            print(f"DEBUG cli_print_agent_messages: Received tool_output: {tool_output[:50]}...")
+    
     # Use the model from environment variable if available
     model_override = os.getenv('CAI_MODEL')
     if model_override:
@@ -430,15 +803,29 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
 
     timestamp = datetime.now().strftime("%H:%M:%S")
 
-    # Create a more hacker-like header
+    # Create header
     text = Text()
+    
+    # Check if the message has tool calls
+    has_tool_calls = False
+    if hasattr(message, 'tool_calls') and message.tool_calls:
+        has_tool_calls = True
+    elif isinstance(message, dict) and 'tool_calls' in message and message['tool_calls']:
+        has_tool_calls = True
+    
+    # Parse the message based on whether it has tool calls
+    if has_tool_calls:
+        parsed_message, tool_panels = parse_message_tool_call(message, tool_output)
+    else:
+        parsed_message = parse_message_content(message)
+        tool_panels = []
 
     # Special handling for Reasoner Agent
     if agent_name == "Reasoner Agent":
         text.append(f"[{counter}] ", style="bold red")
         text.append(f"Agent: {agent_name} ", style="bold yellow")
-        if message:
-            text.append(f">> {message} ", style="green")
+        if parsed_message:
+            text.append(f">> {parsed_message} ", style="green")
         text.append(f"[{timestamp}", style="dim")
         if model:
             text.append(f" ({os.getenv('CAI_SUPPORT_MODEL')})",
@@ -447,8 +834,8 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
     else:
         text.append(f"[{counter}] ", style="bold cyan")
         text.append(f"Agent: {agent_name} ", style="bold green")
-        if message:
-            text.append(f">> {message} ", style="yellow")
+        if parsed_message:
+            text.append(f">> {parsed_message} ", style="yellow")
         text.append(f"[{timestamp}", style="dim")
         if model:
             text.append(f" ({model})", style="bold magenta")
@@ -476,7 +863,6 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
         )
         text.append(tokens_text)
 
-    # Create a panel for better visual separation
     panel = Panel(
         text,
         border_style="red" if agent_name == "Reasoner Agent" else "blue",
@@ -489,20 +875,27 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
     )
     console.print("\n")
     console.print(panel)
+    
+    # If there are tool panels, print them after the main message panel
+    # But only in non-streaming mode to avoid duplicates
+    is_streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+    if tool_panels and not is_streaming_enabled:
+        for tool_panel in tool_panels:
+            console.print(tool_panel)
 
 def create_agent_streaming_context(agent_name, counter, model):
     """Create a streaming context object that maintains state for streaming agent output."""
     from rich.live import Live
     import shutil
     
-    # Use the model from environment variable if available
+    # Use the model from env if available
     model_override = os.getenv('CAI_MODEL')
     if model_override:
         model = model_override
         
     timestamp = datetime.now().strftime("%H:%M:%S")
     
-    # Determine terminal size for best display
+    # Terminal size for better display
     terminal_width, _ = shutil.get_terminal_size((100, 24))
     panel_width = min(terminal_width - 4, 120)  # Keep some margin
     
@@ -527,18 +920,16 @@ def create_agent_streaming_context(agent_name, counter, model):
         Text.assemble(header, content, footer),
         border_style="blue",
         box=ROUNDED,
-        padding=(1, 2),  # Add more padding for better readability
+        padding=(1, 2),  
         title="[bold]Agent Streaming Response[/bold]",
         title_align="left",
         width=panel_width,
-        expand=True  # Allow panel to expand to terminal width
+        expand=True 
     )
     
-    # Start the live display with a higher refresh rate
-    live = Live(panel, refresh_per_second=20, console=console)
-    live.start()
+    # Create Live display object but don't start it until we have content
+    live = Live(panel, refresh_per_second=20, console=console, auto_refresh=False)
     
-    # Return context object with all the elements needed for updating
     return {
         "live": live,
         "panel": panel,
@@ -548,25 +939,38 @@ def create_agent_streaming_context(agent_name, counter, model):
         "timestamp": timestamp,
         "model": model,
         "agent_name": agent_name,
-        "panel_width": panel_width
+        "panel_width": panel_width,
+        "is_started": False  # Track if we've started the display
     }
 
 def update_agent_streaming_content(context, text_delta):
     """Update the streaming content with new text."""
-    # Add the new text to the content
-    context["content"].append(text_delta)
+    # Parse the text_delta to get just the content if needed
+    parsed_delta = parse_message_content(text_delta)
+    
+    # Skip empty updates to avoid showing an empty panel
+    if not parsed_delta or parsed_delta.strip() == "":
+        return
+    
+    # Add the parsed text to the content
+    context["content"].append(parsed_delta)
     
     # Update the live display with the latest content
     updated_panel = Panel(
         Text.assemble(context["header"], context["content"], context["footer"]),
         border_style="blue",
         box=ROUNDED,
-        padding=(1, 2),  # Match padding from creation
+        padding=(1, 2), 
         title="[bold]Agent Streaming Response[/bold]",
         title_align="left",
         width=context.get("panel_width", 100),
-        expand=True  # Allow panel to expand to terminal width
+        expand=True
     )
+    
+    # Check if we need to start the display
+    if not context.get("is_started", False):
+        context["live"].start()
+        context["is_started"] = True
     
     # Force an update with the new panel
     context["live"].update(updated_panel)
@@ -574,11 +978,18 @@ def update_agent_streaming_content(context, text_delta):
 
 def finish_agent_streaming(context, final_stats=None):
     """Finish the streaming session and display final stats if available."""
+    # Check if there's actual content to display - don't show empty panels
+    if not context["content"] or context["content"].plain == "":
+        # If the display was never started, nothing to do
+        if not context.get("is_started", False):
+            return
+        # Otherwise, stop the display without showing final panel
+        context["live"].stop()
+        return
+    
     # If we have token stats, add them
     tokens_text = None
     if final_stats:
-        #print(f"\nDEBUG finish_agent_streaming: Received final_stats: {final_stats}")
-        
         interaction_input_tokens = final_stats.get("interaction_input_tokens")
         interaction_output_tokens = final_stats.get("interaction_output_tokens")
         interaction_reasoning_tokens = final_stats.get("interaction_reasoning_tokens")
@@ -590,6 +1001,11 @@ def finish_agent_streaming(context, final_stats=None):
         interaction_cost = float(final_stats.get("interaction_cost", 0.0))
         total_cost = float(final_stats.get("total_cost", 0.0))
         
+        model_name = context.get("model", "")
+        # If model is not a string, use env
+        if not isinstance(model_name, str):
+            model_name = os.environ.get('CAI_MODEL', 'gpt-4o-mini')
+        
         if (interaction_input_tokens is not None and
                 interaction_output_tokens is not None and
                 interaction_reasoning_tokens is not None and
@@ -599,9 +1015,9 @@ def finish_agent_streaming(context, final_stats=None):
             
             # Only calculate costs if they weren't provided or are zero
             if interaction_cost is None or interaction_cost == 0.0:
-                interaction_cost = calculate_model_cost(context["model"], interaction_input_tokens, interaction_output_tokens)
+                interaction_cost = calculate_model_cost(model_name, interaction_input_tokens, interaction_output_tokens)
             if total_cost is None or total_cost == 0.0:
-                total_cost = calculate_model_cost(context["model"], total_input_tokens, total_output_tokens)
+                total_cost = calculate_model_cost(model_name, total_input_tokens, total_output_tokens)
             
             tokens_text = _create_token_display(
                 interaction_input_tokens,
@@ -610,12 +1026,11 @@ def finish_agent_streaming(context, final_stats=None):
                 total_input_tokens,
                 total_output_tokens,
                 total_reasoning_tokens,
-                context["model"],
+                model_name,  # string model name!
                 interaction_cost,
                 total_cost
             )
     
-    # Create the final panel with stats
     final_panel = Panel(
         Text.assemble(
             context["header"], 
@@ -626,7 +1041,7 @@ def finish_agent_streaming(context, final_stats=None):
         ),
         border_style="blue",
         box=ROUNDED,
-        padding=(1, 2),  # Match padding from creation
+        padding=(1, 2), 
         title="[bold]Agent Streaming Response[/bold]",
         title_align="left",
         width=context.get("panel_width", 100),
@@ -643,42 +1058,211 @@ def finish_agent_streaming(context, final_stats=None):
     # Stop the live display
     context["live"].stop()
 
-def calculate_model_cost(model_name, input_tokens, output_tokens):
+def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execution_info=None, token_info=None):
     """
-    Calculate the cost for a given model based on token usage.
+    Print a tool call output to the command line.
+    Similar to cli_print_tool_call but for the output of the tool.
     
     Args:
-        model_name: The name of the model being used
-        input_tokens: Number of input tokens used
-        output_tokens: Number of output tokens used
-        
-    Returns:
-        float: The calculated cost in dollars
+        tool_name: Name of the tool
+        args: Arguments passed to the tool
+        output: The output of the tool
+        call_id: Optional call ID for streaming updates
+        execution_info: Optional execution information
+        token_info: Optional token information
     """
-    # Fetch model pricing data from LiteLLM GitHub repository
-    LITELLM_URL = (
-        "https://raw.githubusercontent.com/BerriAI/litellm/main/"
-        "model_prices_and_context_window.json"
-    )
+    # If it's an empty output, don't print anything
+    if not output and not call_id:
+        return
     
+    # CRITICAL CHECK: When in streaming mode (CAI_STREAM=true), ONLY show output panels
+    # for streaming updates (those with call_id). This prevents duplicate output panels.
+    is_streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+    if is_streaming_enabled and not call_id:
+        # Skip all non-streaming tool output in streaming mode
+        return
+    
+    # Track seen call IDs to prevent duplicate panels
+    if not hasattr(cli_print_tool_output, '_seen_calls'):
+        cli_print_tool_output._seen_calls = {}
+    
+    # For streaming updates, only show updates for the same call_id
+    # but allow the first appearance of each call_id
+    if call_id:
+        call_key = f"{call_id}:{output[:20]}"  # Use first 20 chars as fingerprint with call_id
+        
+        # Skip if we've seen this exact output for this call_id before
+        if call_key in cli_print_tool_output._seen_calls:
+            return
+            
+        # Mark as seen
+        cli_print_tool_output._seen_calls[call_key] = True
+        
+        # Limit cache size to prevent memory growth
+        if len(cli_print_tool_output._seen_calls) > 1000:
+            # Keep only the most recent 500 entries
+            cli_print_tool_output._seen_calls = {
+                k: cli_print_tool_output._seen_calls[k] 
+                for k in list(cli_print_tool_output._seen_calls.keys())[-500:]
+            }
+    
+    # Try to use Rich for better formatting if available
     try:
-        import requests
-        response = requests.get(LITELLM_URL, timeout=2)
-        if response.status_code == 200:
-            model_pricing_data = response.json()
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.text import Text
+        from rich.box import ROUNDED
+        
+        # Create a console for output
+        console = Console()
+        
+        # Format arguments as a string if they are a dictionary
+        if isinstance(args, dict):
+            args_str = ", ".join([f"{key}='{value}'" for key, value in args.items()])
+        else:
+            args_str = str(args)
+        
+        # For streaming mode with call_id, use Rich Live display
+        if call_id:
+            # Create the header text
+            header = Text()
+            header.append(tool_name, style="#00BCD4")
+            header.append("(", style="yellow")
+            header.append(args_str, style="yellow")
+            header.append(")", style="yellow")
             
-            # Get pricing info for the model
-            pricing_info = model_pricing_data.get(model_name, {})
-            input_cost_per_token = pricing_info.get("input_cost_per_token", 0)
-            output_cost_per_token = pricing_info.get("output_cost_per_token", 0)
+            # Create content text with the output
+            content = Text(output)
             
-            # Calculate costs
-            input_cost = input_tokens * input_cost_per_token
-            output_cost = output_tokens * output_cost_per_token
+            # Create the panel for display
+            panel = Panel(
+                Text.assemble(header, "\n\n", content),
+                title=f"[bold blue]Tool Output[/bold blue]", #(ID: {call_id})[/bold green]",
+                #subtitle="[bold green]Live Update[/bold green]",
+                border_style="blue",
+                padding=(1, 2),
+                box=ROUNDED,
+                title_align="left"
+            )
             
-            return input_cost + output_cost
-    except Exception:
-        # If we can't fetch pricing data, return 0
-        pass
-    
-    return 0.0
+            # Display using Rich
+            console.print(panel)
+            return
+            
+        # For non-streaming output, show a standard panel
+        tool_call = f"{tool_name}({args_str})"
+        
+        # Add execution info if available
+        subtitle = "[bold green]Completed[/bold green]"
+        if execution_info:
+            time_taken = execution_info.get('time_taken', 0)
+            status = execution_info.get('status', 'completed')
+            
+            if time_taken:
+                subtitle = f"[bold green]{status.title()} in {time_taken:.2f}s[/bold green]"
+            else:
+                subtitle = f"[bold green]{status.title()}[/bold green]"
+        
+        # Create content sections
+        sections = []
+        
+        # Add token info if available
+        if token_info:
+            tokens_in = token_info.get('input_tokens', 0)
+            tokens_out = token_info.get('output_tokens', 0)
+            cost = token_info.get('cost', 0)
+            
+            token_text = Text()
+            if tokens_in or tokens_out:
+                token_text.append(f"Tokens: {tokens_in} in, {tokens_out} out", style="cyan")
+            if cost:
+                token_text.append(f"\nCost: ${cost:.6f}", style="cyan")
+                
+            if token_text:
+                sections.append(token_text)
+        
+        # Add the main output
+        if output:
+            output_text = Text()
+            if sections:  # Add a separator if we have previous sections
+                output_text.append("\n")
+            output_text.append(output)
+            sections.append(output_text)
+        
+        # Create the panel with all sections
+        panel = Panel(
+            Text.assemble(*sections),
+            title=f"[bold green]Tool Output: {tool_call}[/bold green]",
+            subtitle=subtitle,
+            border_style="green",
+            padding=(1, 2),
+            box=ROUNDED
+        )
+        
+        # Display the panel
+        console.print(panel)
+        
+    except ImportError:
+        # Fall back to simple formatting if Rich is not available
+        # Format arguments as a string if they are a dictionary
+        if isinstance(args, dict):
+            args_str = ", ".join([f"{key}='{value}'" for key, value in args.items()])
+        else:
+            args_str = str(args)
+        
+        # Simplify output presentation for streaming mode
+        if call_id:
+            # This is a streaming update, so we need to overwrite previous output
+            # We'll use a basic format that's better suited for streaming
+            
+            # Get terminal width for better formatting
+            try:
+                term_width = os.get_terminal_size().columns
+            except:  # pylint: disable=bare-except
+                term_width = 80
+                
+            # Create a header for the tool output
+            header = f"{tool_name}({args_str})"
+            header = header[:term_width-4]
+            
+            # Clear the screen for the tool output (alternative approach)
+            print(f"\r{header}")
+            
+            # Print the content
+            # For streaming updates, we'll use a simple format
+            print(output)
+            
+            # Force flush to ensure output is displayed immediately
+            sys.stdout.flush()
+            return
+        
+        # For non-streaming output, use the original formatting
+        tool_call = f"{tool_name}({args_str})"
+        
+        # If there's execution info, add it to the output
+        if execution_info:
+            time_taken = execution_info.get('time_taken', 0)
+            status = execution_info.get('status', 'completed')
+            
+            # Add execution info to the tool call display
+            if time_taken:
+                tool_call += f" [{status} in {time_taken:.2f}s]"
+            else:
+                tool_call += f" [{status}]"
+        
+        print(color(f"Tool Output: {tool_call}", fg="blue"))
+        
+        # If we have token info, display it
+        if token_info:
+            tokens_in = token_info.get('input_tokens', 0)
+            tokens_out = token_info.get('output_tokens', 0)
+            cost = token_info.get('cost', 0)
+            
+            if tokens_in or tokens_out:
+                print(color(f"  Tokens: {tokens_in} in, {tokens_out} out", fg="cyan"))
+            if cost:
+                print(color(f"  Cost: ${cost:.6f}", fg="cyan"))
+        
+        # Print the actual output
+        print(output)
+        print()

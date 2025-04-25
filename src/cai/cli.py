@@ -184,8 +184,8 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
     # Function to get the short name of the agent for display
     def get_agent_short_name(agent):
         if hasattr(agent, 'name'):
-            # Split by spaces and take first word to get shortened name
-            return agent.name.split()[0]
+            # Return the full agent name instead of just the first word
+            return agent.name
         return "Agent"
     
     # Prevent the model from using its own rich streaming to avoid conflicts
@@ -209,7 +209,9 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 get_toolbar_with_refresh,
                 current_text
             )
-
+        except KeyboardInterrupt:
+            break
+        try:
             # Handle special commands
             if user_input.startswith('/') or user_input.startswith('$'):
                 parts = user_input.strip().split()
@@ -355,17 +357,17 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 # Use non-streamed response
                 console.print("[dim]Thinking...[/dim]")
                 response = asyncio.run(Runner.run(agent, user_input))
-                console.print(f"Agent: {response.final_output}")
+                #console.print(f"Agent: {response.final_output}") # NOTE: this line is commented to avoid duplicate output
             turn_count += 1
         except KeyboardInterrupt:
-            # Ensure streaming context is cleaned up on keyboard interrupt
-            if current_streaming_context is not None:
-                try:
-                    current_streaming_context["live"].stop()
-                except Exception:
-                    pass
-                current_streaming_context = None
-            break
+            if stream:
+                # Ensure streaming context is cleaned up on keyboard interrupt
+                if current_streaming_context is not None:
+                    try:
+                        current_streaming_context["live"].stop()
+                    except Exception:
+                        pass
+                    current_streaming_context = None
         except Exception as e:
             # Ensure streaming context is cleaned up on any exception
             if current_streaming_context is not None:
