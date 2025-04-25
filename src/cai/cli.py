@@ -209,7 +209,9 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 get_toolbar_with_refresh,
                 current_text
             )
-
+        except KeyboardInterrupt:
+            break
+        try:
             # Handle special commands
             if user_input.startswith('/') or user_input.startswith('$'):
                 parts = user_input.strip().split()
@@ -358,14 +360,14 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 #console.print(f"Agent: {response.final_output}") # NOTE: this line is commented to avoid duplicate output
             turn_count += 1
         except KeyboardInterrupt:
-            # Ensure streaming context is cleaned up on keyboard interrupt
-            if current_streaming_context is not None:
-                try:
-                    current_streaming_context["live"].stop()
-                except Exception:
-                    pass
-                current_streaming_context = None
-            break
+            if stream:
+                # Ensure streaming context is cleaned up on keyboard interrupt
+                if current_streaming_context is not None:
+                    try:
+                        current_streaming_context["live"].stop()
+                    except Exception:
+                        pass
+                    current_streaming_context = None
         except Exception as e:
             # Ensure streaming context is cleaned up on any exception
             if current_streaming_context is not None:
