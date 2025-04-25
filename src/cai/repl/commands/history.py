@@ -29,13 +29,13 @@ class HistoryCommand(Command):
         """
         # Access messages directly from repl.py's global scope
         try:
-            from cai.repl.repl import messages  # pylint: disable=import-outside-toplevel  # noqa: E501
+            from cai.sdk.agents.models.openai_chatcompletions import message_history  # pylint: disable=import-outside-toplevel  # noqa: E501
         except ImportError:
             console.print(
                 "[red]Error: Could not access conversation history[/red]")
             return False
 
-        if not messages:
+        if not message_history:
             console.print("[yellow]No conversation history available[/yellow]")
             return True
 
@@ -50,7 +50,7 @@ class HistoryCommand(Command):
         table.add_column("Content", style="green")
 
         # Add messages to the table
-        for idx, msg in enumerate(messages, 1):
+        for idx, msg in enumerate(message_history, 1):
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
 

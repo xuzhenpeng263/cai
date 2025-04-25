@@ -96,6 +96,7 @@ litellm.suppress_debug_info = True
 _USER_AGENT = f"Agents/Python {__version__}"
 _HEADERS = {"User-Agent": _USER_AGENT}
 
+message_history = []
 
 @dataclass
 class _StreamingState:
@@ -235,7 +236,28 @@ class OpenAIChatCompletionsModel(Model):
                         "role": "system",
                     },
                 )
-                
+            # --- Add to message_history: user, system, and assistant tool call messages ---
+            # Add system prompt to message_history
+            if system_instructions:
+                message_history.append({
+                    "role": "system",
+                    "content": system_instructions
+                })
+            # Add user prompt(s) to message_history
+            if isinstance(input, str):
+                message_history.append({
+                    "role": "user",
+                    "content": input
+                })
+            elif isinstance(input, list):
+                for item in input:
+                    # Try to extract user messages
+                    if isinstance(item, dict):
+                        if item.get("role") == "user":
+                            message_history.append({
+                                "role": "user",
+                                "content": item.get("content", "")
+                            })
             # Get token count estimate before API call for consistent counting
             estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
             
@@ -335,6 +357,34 @@ class OpenAIChatCompletionsModel(Model):
                     tool_output=None,  # Don't pass tool output here, we're using direct display
                 )
 
+            # --- Add assistant tool call to message_history if present ---
+            # If the response contains tool_calls, add them to message_history as assistant messages
+            assistant_msg = response.choices[0].message
+            if hasattr(assistant_msg, "tool_calls") and assistant_msg.tool_calls:
+                for tool_call in assistant_msg.tool_calls:
+                    # Compose a message for the tool call
+                    tool_call_msg = {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": tool_call.id,
+                                "type": tool_call.type,
+                                "function": {
+                                    "name": tool_call.function.name,
+                                    "arguments": tool_call.function.arguments
+                                }
+                            }
+                        ]
+                    }
+                    message_history.append(tool_call_msg)
+            # If the assistant message is just text, add it as well
+            elif hasattr(assistant_msg, "content") and assistant_msg.content:
+                message_history.append({
+                    "role": "assistant",
+                    "content": assistant_msg.content
+                })
+
             usage = (
                 Usage(
                     requests=1,
@@ -404,7 +454,25 @@ class OpenAIChatCompletionsModel(Model):
                         "role": "system",
                     },
                 )
-                
+            # --- Add to message_history: user, system prompts ---
+            if system_instructions:
+                message_history.append({
+                    "role": "system",
+                    "content": system_instructions
+                })
+            if isinstance(input, str):
+                message_history.append({
+                    "role": "user",
+                    "content": input
+                })
+            elif isinstance(input, list):
+                for item in input:
+                    if isinstance(item, dict):
+                        if item.get("role") == "user":
+                            message_history.append({
+                                "role": "user",
+                                "content": item.get("content", "")
+                            })
             # Get token count estimate before API call for consistent counting
             estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
             
@@ -429,7 +497,9 @@ class OpenAIChatCompletionsModel(Model):
             
             # Initialize a streaming text accumulator for rich display
             streaming_text_buffer = ""
-            
+            # For tool call streaming, accumulate tool_calls to add to message_history at the end
+            streamed_tool_calls = []
+
             async for chunk in stream:
                 if not state.started:
                     state.started = True
@@ -639,6 +709,26 @@ class OpenAIChatCompletionsModel(Model):
                             
                         state.function_calls[tc_index].call_id += call_id
 
+                        # --- Accumulate tool call for message_history ---
+                        # Only add if not already present (avoid duplicates in streaming)
+                        tool_call_msg = {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": state.function_calls[tc_index].call_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": state.function_calls[tc_index].name,
+                                        "arguments": state.function_calls[tc_index].arguments
+                                    }
+                                }
+                            ]
+                        }
+                        # Only add if not already in streamed_tool_calls
+                        if tool_call_msg not in streamed_tool_calls:
+                            streamed_tool_calls.append(tool_call_msg)
+
             function_call_starting_index = 0
             if state.text_content_index_and_output:
                 function_call_starting_index += 1
@@ -838,7 +928,17 @@ class OpenAIChatCompletionsModel(Model):
                             total_cost=total_cost,
                         )
                         break
-            
+
+            # --- Add assistant tool call(s) to message_history at the end of streaming ---
+            for tool_call_msg in streamed_tool_calls:
+                message_history.append(tool_call_msg)
+            # If there was only text output, add that as an assistant message
+            if (not streamed_tool_calls) and state.text_content_index_and_output and state.text_content_index_and_output[1].text:
+                message_history.append({
+                    "role": "assistant",
+                    "content": state.text_content_index_and_output[1].text
+                })
+
             if tracing.include_data():
                 span_generation.span_data.output = [final_response.model_dump()]
 
