@@ -51,30 +51,34 @@ class HistoryCommand(Command):
 
         # Add messages to the table
         for idx, msg in enumerate(message_history, 1):
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
+            try:
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")
 
-            # Truncate long content for better display
-            if len(content) > 100:
-                content = content[:97] + "..."
+                # Truncate long content for better display
+                if len(content) > 100:
+                    content = content[:97] + "..."
 
-            # Color the role based on type
-            if role == "user":
-                role_style = "cyan"
-            elif role == "assistant":
-                role_style = "yellow"
-            else:
-                role_style = "red"
+                # Color the role based on type
+                if role == "user":
+                    role_style = "cyan"
+                elif role == "assistant":
+                    role_style = "yellow"
+                else:
+                    role_style = "red"
 
-            # Add a newline between each role for better readability
-            if idx > 1:
-                table.add_row("", "", "")
+                # Add a newline between each role for better readability
+                if idx > 1:
+                    table.add_row("", "", "")
 
-            table.add_row(
-                str(idx),
-                f"[{role_style}]{role}[/{role_style}]",
-                content
-            )
+                table.add_row(
+                    str(idx),
+                    f"[{role_style}]{role}[/{role_style}]",
+                    content
+                )
+            except Exception:
+                # Si hay un error, evita esto (no agregues la fila)
+                continue
 
         console.print(table)
         return True
