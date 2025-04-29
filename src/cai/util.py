@@ -1187,10 +1187,14 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
             session_time = None
         
         # Extract execution timing info
+        print(execution_info)
         tool_time = None
         status = None
         if execution_info:
-            tool_time = execution_info.get('time_taken', 0)
+            # Prefer 'tool_time' if present, else fallback to 'time_taken'
+            tool_time = execution_info.get('tool_time')
+            if tool_time is None:
+                tool_time = execution_info.get('time_taken', 0)
             status = execution_info.get('status', 'completed')
         
         # Create header for all panel displays (both streaming and non-streaming)
@@ -1206,10 +1210,9 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
             timing_info.append(f"Total: {format_time(total_time)}")
         if tool_time:
             timing_info.append(f"Tool: {format_time(tool_time)}")
-            
         if timing_info:
             header.append(f" [{' | '.join(timing_info)}]", style="cyan")
-            
+           
         # Add completion status if available - REMOVED, just showing timing now
         # if status:
         #     if status == 'completed':
@@ -1257,7 +1260,7 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
             # Create the panel for display, including token info if available
             panel_content = [header, Text("\n\n"), content]
             if token_content:
-                panel_content.insert(1, token_content)  # Insert token info after header
+                panel_content.append(token_content)
                 
             # Create title - simple title with no timing info
             title = "[bold blue]Tool Output[/bold blue]"
@@ -1413,8 +1416,10 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         timing_info = []
         if total_time:
             timing_info.append(f"Total: {format_time(total_time)}")
-        if tool_time_str:
-            timing_info.append(tool_time_str)
+        if tool_time:
+            timing_info.append(f"Tool: {format_time(tool_time)}")
+        if timing_info:
+            header.append(f" [{' | '.join(timing_info)}]", style="cyan")
             
         timing_display = f" [{' | '.join(timing_info)}]" if timing_info else ""
         
