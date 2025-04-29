@@ -873,7 +873,7 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
                else "[bold]Agent Interaction[/bold]"),
         title_align="left"
     )
-    console.print("\n")
+    #console.print("\n")
     console.print(panel)
     
     # If there are tool panels, print them after the main message panel
