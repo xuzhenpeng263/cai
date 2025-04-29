@@ -233,11 +233,6 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
 
             Total = time.time() - START_TIME
             try:
-                from rich.panel import Panel
-                from rich.text import Text
-                from rich.box import ROUNDED
-                from rich.console import Group
-
                 active_time = Total - IDLE_TIME
 
                 metrics = {
@@ -255,6 +250,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 content.append(f"Idle Time: {metrics['idle_time']}")
                 if logging_path:
                     content.append(f"Log available at: {logging_path}")
+                
                 def print_session_summary(console, metrics, logging_path=None):
                     """
                     Print a session summary panel using Rich.
@@ -263,19 +259,6 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                     from rich.text import Text
                     from rich.box import ROUNDED
                     from rich.console import Group
-
-                    content = []
-                    content.append(f"Session Time: {metrics['session_time']}")
-                    content.append(f"Active Time: {metrics['active_time']}")
-                    content.append(f"Idle Time: {metrics['idle_time']}")
-                    if logging_path:
-                        content.append(f"Log available at: {logging_path}")
-
-                    if metrics['llm_time'] != "0.0s":
-                        content.append(
-                            f"LLM Processing Time: [bold yellow]{metrics['llm_time']}[/bold yellow] "
-                            f"[dim]({metrics['llm_percentage']:.1f}% of session)[/dim]"
-                        )
 
                     time_panel = Panel(
                         Group(*[Text(line) for line in content]),
