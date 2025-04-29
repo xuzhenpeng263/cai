@@ -831,6 +831,13 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
             text.append(f" ({os.getenv('CAI_SUPPORT_MODEL')})",
                         style="bold blue")
         text.append("]", style="dim")
+    elif not parsed_message: 
+        # When parsed_message is empty, only include timestamp and model info
+        text.append(f"Agent: {agent_name} ", style="bold green")
+        text.append(f"[{timestamp}", style="dim")
+        if model:
+            text.append(f" ({model})", style="bold magenta")
+        text.append("]", style="dim")
     else:
         text.append(f"[{counter}] ", style="bold cyan")
         text.append(f"Agent: {agent_name} ", style="bold green")
@@ -861,7 +868,9 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
             interaction_cost,
             total_cost
         )
-        text.append(tokens_text)
+        # Only append token information if there is a parsed message
+        if parsed_message:
+            text.append(tokens_text)
 
     panel = Panel(
         text,
