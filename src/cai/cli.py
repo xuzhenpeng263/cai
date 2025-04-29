@@ -100,6 +100,7 @@ Usage Examples:
 
 import os
 import sys
+import time
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from cai.sdk.agents import OpenAIChatCompletionsModel, Agent, Runner, AsyncOpenAI
@@ -131,6 +132,14 @@ load_dotenv()
 #     api_key=os.getenv('LITELLM_API_KEY', 'key'))
 #
 # set_default_openai_client(external_client)
+
+START_TIME = None
+GLOBAL_START_TIME = None
+LAST_TOOL_TIME = None
+ACTIVE_TIME = 0.0
+IDLE_TIME = 0.0
+LAST_STATE_CHANGE = None
+IS_ACTIVE = False
 
 set_tracing_disabled(True)
 
@@ -167,7 +176,10 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
     """
     agent = starting_agent
     turn_count = 0
-
+    global START_TIME
+    START_TIME = time.time() 
+    ACTIVE_TIME = 0
+    IDLE_TIME = 0
     console = Console()
 
     # Initialize command completer and key bindings
@@ -201,6 +213,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
 
     while turn_count < max_turns:
         try:
+            idle_start_time = time.time()
             # Get user input with command completion and history
             user_input = get_user_input(
                 command_completer,
@@ -209,8 +222,76 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 get_toolbar_with_refresh,
                 current_text
             )
+            IDLE_TIME += time.time() - idle_start_time
+
+           
         except KeyboardInterrupt:
+            def format_time(seconds):
+                mins, secs = divmod(int(seconds), 60)
+                hours, mins = divmod(mins, 60)
+                return f"{hours:02d}:{mins:02d}:{secs:02d}"
+
+            Total = time.time() - START_TIME
+            try:
+                from rich.panel import Panel
+                from rich.text import Text
+                from rich.box import ROUNDED
+                from rich.console import Group
+
+                active_time = Total - IDLE_TIME
+
+                metrics = {
+                    "session_time": format_time(Total),
+                    "active_time": format_time(active_time),
+                    "idle_time": format_time(IDLE_TIME),
+                    "llm_time": "0.0s",  # Placeholder, update if available
+                    "llm_percentage": 0.0,  # Placeholder, update if available
+                }
+                logging_path = None  # Set this if you have a log file path
+
+                content = []
+                content.append(f"Session Time: {metrics['session_time']}")
+                content.append(f"Active Time: {metrics['active_time']}")
+                content.append(f"Idle Time: {metrics['idle_time']}")
+                if logging_path:
+                    content.append(f"Log available at: {logging_path}")
+                def print_session_summary(console, metrics, logging_path=None):
+                    """
+                    Print a session summary panel using Rich.
+                    """
+                    from rich.panel import Panel
+                    from rich.text import Text
+                    from rich.box import ROUNDED
+                    from rich.console import Group
+
+                    content = []
+                    content.append(f"Session Time: {metrics['session_time']}")
+                    content.append(f"Active Time: {metrics['active_time']}")
+                    content.append(f"Idle Time: {metrics['idle_time']}")
+                    if logging_path:
+                        content.append(f"Log available at: {logging_path}")
+
+                    if metrics['llm_time'] != "0.0s":
+                        content.append(
+                            f"LLM Processing Time: [bold yellow]{metrics['llm_time']}[/bold yellow] "
+                            f"[dim]({metrics['llm_percentage']:.1f}% of session)[/dim]"
+                        )
+
+                    time_panel = Panel(
+                        Group(*[Text(line) for line in content]),
+                        border_style="blue",
+                        box=ROUNDED,
+                        padding=(0, 1),
+                        title="[bold]Session Summary[/bold]",
+                        title_align="left"
+                    )
+                    console.print(time_panel)
+
+                print_session_summary(console, metrics, logging_path)
+            except Exception:
+                pass
             break
+      
         try:
             # Handle special commands
             if user_input.startswith('/') or user_input.startswith('$'):
@@ -358,6 +439,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 response = asyncio.run(Runner.run(agent, user_input))
                 #console.print(f"Agent: {response.final_output}") # NOTE: this line is commented to avoid duplicate output
             turn_count += 1
+
         except KeyboardInterrupt:
             if stream:
                 # Ensure streaming context is cleaned up on keyboard interrupt
