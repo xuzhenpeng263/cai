@@ -228,10 +228,10 @@ def _run_ctf(ctf, command, stdout=False, timeout=100, stream=False, call_id=None
         return f"Error executing CTF command: {str(e)}"
 
 
-def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None):
+def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None):
     # If streaming is enabled and we have a call_id
     if stream and call_id:
-        return _run_local_streamed(command, call_id, timeout)
+        return _run_local_streamed(command, call_id, timeout, tool_name)
     
     try:
         # nosec B602 - shell=True is required for command chaining
@@ -265,7 +265,7 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None):
         return error_msg
 
 
-def _run_local_streamed(command, call_id, timeout=100):
+def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
     """Run a local command with streaming output to the Tool output panel"""
     try:
         # Try to import Rich for nice display
@@ -293,9 +293,13 @@ def _run_local_streamed(command, call_id, timeout=100):
             bufsize=1
         )
         
+        # If tool_name is not provided, derive it from the command
+        if tool_name is None:
+            # Just use the first command as the tool name
+            tool_name = command.strip().split()[0] + "_command"
+        
         # Create panel content for Rich display
         if rich_available:
-            tool_name = "generic_linux_command"
             # Parse command into command and args
             parts = command.strip().split(' ', 1)
             cmd = parts[0] if parts else ""
@@ -304,7 +308,7 @@ def _run_local_streamed(command, call_id, timeout=100):
             header = Text()
             header.append(tool_name, style="#00BCD4")
             header.append("(", style="yellow")
-            # Format to match: generic_linux_command({"command":"ls","args":"-la","ctf":{},"async_mode":false,"session_id":""})
+            # Format to match: tool_name({"command":"ls","args":"-la","ctf":{},"async_mode":false,"session_id":""})
             header.append(f'{{"command":"{cmd}","args":"{args}","ctf":{{}},"async_mode":false,"session_id":""}}', style="yellow")
             header.append(")", style="yellow")
             
@@ -386,7 +390,7 @@ def _run_local_streamed(command, call_id, timeout=100):
             tool_args = {"command": cmd, "args": args, "ctf": {}, "async_mode": False, "session_id": ""}
             
             # Initial notification - just once
-            cli_print_tool_output("generic_linux_command", tool_args, "Command started...", call_id=call_id)
+            cli_print_tool_output(tool_name, tool_args, "Command started...", call_id=call_id)
             
             # Buffer for collecting output 
             buffer_size = 0
@@ -404,7 +408,7 @@ def _run_local_streamed(command, call_id, timeout=100):
                 # Only update the output periodically to reduce panel refresh rate
                 if buffer_size >= update_interval:
                     current_output = ''.join(output_buffer)
-                    cli_print_tool_output("generic_linux_command", tool_args, current_output, call_id=call_id)
+                    cli_print_tool_output(tool_name, tool_args, current_output, call_id=call_id)
                     buffer_size = 0
             
             # Check if process is done
@@ -421,7 +425,7 @@ def _run_local_streamed(command, call_id, timeout=100):
             if return_code != 0:
                 final_output += f"\nCommand exited with code {return_code}"
                 
-            cli_print_tool_output("generic_linux_command", tool_args, final_output, call_id=call_id)
+            cli_print_tool_output(tool_name, tool_args, final_output, call_id=call_id)
         
         # Return the full output
         return ''.join(output_buffer)
@@ -434,7 +438,7 @@ def _run_local_streamed(command, call_id, timeout=100):
         # Update tool output panel with timeout message
         if not rich_available:
             tool_args = {"command": command}
-            cli_print_tool_output("generic_linux_command", tool_args, final_output, call_id=call_id)
+            cli_print_tool_output(tool_name, tool_args, final_output, call_id=call_id)
         
         return final_output
         
@@ -445,14 +449,14 @@ def _run_local_streamed(command, call_id, timeout=100):
         # Update tool output panel with error message if simple streaming
         if not rich_available:
             tool_args = {"command": command}
-            cli_print_tool_output("generic_linux_command", tool_args, error_msg, call_id=call_id)
+            cli_print_tool_output(tool_name, tool_args, error_msg, call_id=call_id)
         
         return error_msg
 
 
 def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arguments # noqa: E501
                 async_mode=False, session_id=None,
-                timeout=100, stream=False, call_id=None):
+                timeout=100, stream=False, call_id=None, tool_name=None):
     """
     Run command either in CTF container or on the local attacker machine
 
@@ -465,6 +469,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
         timeout: Command timeout in seconds
         stream: Whether to stream output in real-time
         call_id: Unique ID for the command execution (for streaming)
+        tool_name: Name of the tool being executed (for display in streaming output).
+                  If None, the tool name will be derived from the command.
 
     Returns:
         str: Command output, status message, or session ID
@@ -497,4 +503,4 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
     # Otherwise, run command normally
     if ctf:
         return _run_ctf(ctf, command, stdout, timeout, stream, call_id)
-    return _run_local(command, stdout, timeout, stream, call_id)
+    return _run_local(command, stdout, timeout, stream, call_id, tool_name)
