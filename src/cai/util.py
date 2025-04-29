@@ -1125,9 +1125,33 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         # Create a console for output
         console = Console()
         
-        # Format arguments as a string if they are a dictionary
+        # Format arguments for display
+        # Parse JSON string if args is a string
+        if isinstance(args, str) and args.strip().startswith('{'):
+            try:
+                import json
+                args = json.loads(args)
+            except:
+                # Keep as is if not valid JSON
+                pass
+        
+        # Format arguments as a clean string
         if isinstance(args, dict):
-            args_str = ", ".join([f"{key}='{value}'" for key, value in args.items()])
+            # Only include non-empty values and exclude async_mode=false
+            arg_parts = []
+            for key, value in args.items():
+                # Skip empty values
+                if value == "" or value == {} or value is None:
+                    continue
+                # Skip async_mode=false (default)
+                if key == "async_mode" and value is False:
+                    continue
+                # Format the value
+                if isinstance(value, str):
+                    arg_parts.append(f"{key}={value}")
+                else:
+                    arg_parts.append(f"{key}={value}")
+            args_str = ", ".join(arg_parts)
         else:
             args_str = str(args)
         
@@ -1213,37 +1237,35 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         
     except ImportError:
         # Fall back to simple formatting if Rich is not available
-        # Format arguments as a string if they are a dictionary
+        # Format arguments in the cleaner format
+        # Parse JSON string if args is a string
+        if isinstance(args, str) and args.strip().startswith('{'):
+            try:
+                import json
+                args = json.loads(args)
+            except:
+                # Keep as is if not valid JSON
+                pass
+        
+        # Format arguments as a clean string
         if isinstance(args, dict):
-            args_str = ", ".join([f"{key}='{value}'" for key, value in args.items()])
+            # Only include non-empty values and exclude async_mode=false
+            arg_parts = []
+            for key, value in args.items():
+                # Skip empty values
+                if value == "" or value == {} or value is None:
+                    continue
+                # Skip async_mode=false (default)
+                if key == "async_mode" and value is False:
+                    continue
+                # Format the value
+                if isinstance(value, str):
+                    arg_parts.append(f"{key}={value}")
+                else:
+                    arg_parts.append(f"{key}={value}")
+            args_str = ", ".join(arg_parts)
         else:
             args_str = str(args)
-        
-        # Simplify output presentation for streaming mode
-        if call_id:
-            # This is a streaming update, so we need to overwrite previous output
-            # We'll use a basic format that's better suited for streaming
-            
-            # Get terminal width for better formatting
-            try:
-                term_width = os.get_terminal_size().columns
-            except:  # pylint: disable=bare-except
-                term_width = 80
-                
-            # Create a header for the tool output
-            header = f"{tool_name}({args_str})"
-            header = header[:term_width-4]
-            
-            # Clear the screen for the tool output (alternative approach)
-            print(f"\r{header}")
-            
-            # Print the content
-            # For streaming updates, we'll use a simple format
-            print(output)
-            
-            # Force flush to ensure output is displayed immediately
-            sys.stdout.flush()
-            return
         
         # For non-streaming output, use the original formatting
         tool_call = f"{tool_name}({args_str})"

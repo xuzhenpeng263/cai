@@ -305,15 +305,21 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
             cmd = parts[0] if parts else ""
             args = parts[1] if len(parts) > 1 else ""
             
+            # Format clean arguments, following the same rules as cli_print_tool_output
+            arg_parts = []
+            if cmd:
+                arg_parts.append(f"command={cmd}")
+            if args and args.strip():  # Only add args if non-empty
+                arg_parts.append(f"args={args}")
+            args_str = ", ".join(arg_parts)
+            
             header = Text()
             header.append(tool_name, style="#00BCD4")
             header.append("(", style="yellow")
-            # Format to match: tool_name({"command":"ls","args":"-la","ctf":{},"async_mode":false,"session_id":""})
-            header.append(f'{{"command":"{cmd}","args":"{args}","ctf":{{}},"async_mode":false,"session_id":""}}', style="yellow")
+            header.append(args_str, style="yellow")
             header.append(")", style="yellow")
             
             content = Text()
-            content.append(f"Executing: {command}\n\n", style="green")
             
             panel = Panel(
                 Text.assemble(header, "\n\n", content),
@@ -367,12 +373,9 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
                     live.update(panel)
                 
                 # Add completion message
-                completion_status = "Completed" if return_code == 0 else f"Failed (code {return_code})"
-                content.append(f"\nCommand {completion_status}", style="green")
                 panel = Panel(
                     Text.assemble(header, "\n\n", content),
                     title="[bold green]Tool Execution[/bold green]",
-                    subtitle=f"[bold green]{completion_status}[/bold green]",
                     border_style="green",
                     padding=(1, 2),
                     box=ROUNDED
@@ -387,7 +390,14 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
             parts = command.strip().split(' ', 1)
             cmd = parts[0] if parts else ""
             args = parts[1] if len(parts) > 1 else ""
-            tool_args = {"command": cmd, "args": args, "ctf": {}, "async_mode": False, "session_id": ""}
+            
+            # Create a dictionary with only non-empty values (following the same rules)
+            tool_args = {}
+            if cmd:
+                tool_args["command"] = cmd
+            if args and args.strip():
+                tool_args["args"] = args
+            # Note: Omitted empty values and async_mode=False as it's default
             
             # Initial notification - just once
             cli_print_tool_output(tool_name, tool_args, "Command started...", call_id=call_id)
