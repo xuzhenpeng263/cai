@@ -114,7 +114,7 @@ from cai.util import create_agent_streaming_context, update_agent_streaming_cont
 from cai.repl.commands import FuzzyCommandCompleter, handle_command as commands_handle_command
 from cai.repl.ui.keybindings import create_key_bindings
 from cai.repl.ui.logging import setup_session_logging
-from cai.repl.ui.banner import display_banner
+from cai.repl.ui.banner import display_banner, display_quick_guide
 from cai.repl.ui.prompt import get_user_input
 from cai.repl.ui.toolbar import get_toolbar_with_refresh
 
@@ -180,7 +180,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
 
     # Display banner
     display_banner(console)
-
+    display_quick_guide(console)
     # Function to get the short name of the agent for display
     def get_agent_short_name(agent):
         if hasattr(agent, 'name'):

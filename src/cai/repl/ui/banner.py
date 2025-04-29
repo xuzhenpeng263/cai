@@ -253,3 +253,107 @@ def display_welcome_tips(console: Console):
         title="Quick Tips",
         border_style="blue"
     ))
+
+
+def display_quick_guide(console: Console):
+    """Display the quick guide."""
+    # Display help panel instead
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich.columns import Columns
+    from rich.console import Group  # <-- Fix: import Group
+
+    help_text = Text.assemble(
+        ("CAI Command Reference", "bold cyan underline"), "\n\n",
+        ("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "dim"), "\n",
+        ("WORKSPACE", "bold yellow"), "\n",
+        ("  CAI>/ws set [NAME]", "green"), " - Set current workspace directory\n\n",
+        ("AGENT MANAGEMENT", "bold yellow"), "\n",
+        ("  CAI>/agent [NAME]", "green"), " - Switch to specific agent by name\n",
+        ("  CAI>/agent 1 2 3", "green"), " - Switch to agent by position number\n",
+        ("  CAI>/agent", "green"), " - Display list of all available agents\n\n",
+        ("MODEL SELECTION", "bold yellow"), "\n",
+        ("  CAI>/model [NAME]", "green"), " - Change to a different model by name\n",
+        ("  CAI>/model 1", "green"), " - Change model by position number\n",
+        ("  CAI>/model", "green"), " - Show all available models\n\n",
+        ("INPUT & EXECUTION", "bold yellow"), "\n",
+        ("  ESC + ENTER", "green"), " - Enter multi-line input mode\n",
+        ("  CAI>/shell or CAI> $", "green"), " - Run system shell commands\n",
+        ("  CAI>hi, cybersecurity AI", "green"), " - Any text without commands will be sent as a prompt\n",
+        ("  CAI>/help", "green"), " - Display complete command reference\n",
+        ("  CAI>/flush or CAI> /clear", "green"), " - Clear the conversation history\n\n",
+        ("UTILITY COMMANDS", "bold yellow"), "\n",
+        ("  CAI>/mcp", "green"), " - Load additional tools with MCP server to an agent\n",
+        ("  CAI>/virt", "green"), " - Show all available virtualized environments\n",
+        ("  CAI>/flush", "green"), " - Flush context/message list\n",
+        ("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "dim"), "\n",
+    )
+    
+    # Get current environment variable values
+    current_model = os.getenv('CAI_MODEL', "qwen2.5:14b")
+    current_agent_type = os.getenv('CAI_AGENT_TYPE', "one_tool_agent")
+    
+    config_text = Text.assemble(
+        ("Quick Start Configuration", "bold cyan underline"), "\n\n",
+        ("1. Configure .env file with your settings", "yellow"), "\n",
+        ("2. Select an agent: ", "yellow"), f"by default: CAI_AGENT_TYPE={current_agent_type}\n",
+        ("3. Select a model: ", "yellow"), f"by default: CAI_MODEL={current_model}\n\n",
+        ("Basic Usage:", "bold yellow"), "\n",
+        ("  1. CAI> /model", "green"), " - View all available models first\n",
+        ("  2. CAI> /agent", "green"), " - View all available agents first\n",
+        ("  3. CAI> /model deepseek/deepseek-chat", "green"), " - Then select your preferred model\n",
+        ("  4. CAI> /agent 16", "green"), " - Then select your preferred agent\n",
+        ("  5. CAI> Scan 192.168.1.1", "green"), " - Example prompt for target scan\n\n",
+        ("  /help", "green"), " - Display complete command reference\n\n",
+        ("Common Environment Variables:", "bold yellow"), "\n",
+        ("  CAI_MODEL", "green"), f" - Model to use (default: {current_model})\n",
+        ("  CAI_AGENT_TYPE", "green"), f" - Agent type (default: {current_agent_type})\n",
+        ("  CAI_DEBUG", "green"), f" - Debug level (default: {os.getenv('CAI_DEBUG', '1')})\n",
+        ("  CAI_MAX_TURNS", "green"), f" - Max conversation turns (default: {os.getenv('CAI_MAX_TURNS', 'inf')})\n",
+        ("  CAI_TRACING", "green"), f" - Enable tracing (default: {os.getenv('CAI_TRACING', 'true')})\n",
+    )
+    
+    # Create additional tips panels
+    ollama_tip = Panel(
+        "To use Ollama models, configure OLLAMA_API_BASE\n"
+        "before startup.\n\n"
+        "Default: host.docker.internal:8000/v1",
+        title="[bold yellow]Ollama Configuration[/bold yellow]",
+        border_style="yellow",
+        padding=(1, 2),
+        title_align="center"
+    )
+    
+    context_tip = Panel(
+        "As security exercises progress, LLM quality may\n"
+        "degrade, especially if progress stalls.\n\n"
+        "It's often better to clear the context window\n"
+        "or restart CAI rather than waiting until\n"
+        "context usage reaches 100%.\n\n"
+        "When context exceeds 80%, follow these steps:\n"
+        "1. CAI> Dump your memory and findings in current scenario in findings.txt\n"
+        "2. CAI> /flush\n"
+        "3. CAI> Analyze findings.txt, and continue exercise with target: ...",
+        title="[bold yellow]Performance Tip[/bold yellow]",
+        border_style="yellow",
+        padding=(1, 2),
+        title_align="center"
+    )
+    
+    # Combine tips into a group
+    # tips_group = Group(ollama_tip, context_tip)
+    tips_group = Group(context_tip)
+    
+    # Create a three-column panel layout
+    console.print(Panel(
+        Columns(
+            [help_text, config_text, tips_group],
+            column_first=True,
+            expand=True,
+            align="center"
+        ),
+        title="[bold]CAI Quick Guide[/bold]",
+        border_style="blue",
+        padding=(1, 2),
+        title_align="center"
+    ))
