@@ -133,13 +133,14 @@ load_dotenv()
 #
 # set_default_openai_client(external_client)
 
-START_TIME = None
-GLOBAL_START_TIME = None
-LAST_TOOL_TIME = None
-ACTIVE_TIME = 0.0
-IDLE_TIME = 0.0
-LAST_STATE_CHANGE = None
-IS_ACTIVE = False
+# Global variables for timing tracking
+START_TIME = None  # Track the start time of the current session
+GLOBAL_START_TIME = time.time()  # Track the start time of the entire CLI run
+LAST_TOOL_TIME = None  # Track the last time a tool was executed
+ACTIVE_TIME = 0.0  # Track the time spent actively executing tools
+IDLE_TIME = 0.0  # Track the time spent idle
+LAST_STATE_CHANGE = None  # Track when the state last changed between active and idle
+IS_ACTIVE = False  # Track if we're currently in an active state
 
 set_tracing_disabled(True)
 

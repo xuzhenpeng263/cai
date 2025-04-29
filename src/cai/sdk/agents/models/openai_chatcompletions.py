@@ -1632,17 +1632,31 @@ class _Converter:
                                     model_instance = self_obj
                                     break
                         
-                        token_info = {}
-                        if model_instance:
-                            token_info = {
-                                'interaction_input_tokens': getattr(model_instance, 'interaction_input_tokens', 0),
-                                'interaction_output_tokens': getattr(model_instance, 'interaction_output_tokens', 0),
-                                'interaction_reasoning_tokens': getattr(model_instance, 'interaction_reasoning_tokens', 0),
-                                'total_input_tokens': getattr(model_instance, 'total_input_tokens', 0),
-                                'total_output_tokens': getattr(model_instance, 'total_output_tokens', 0),
-                                'total_reasoning_tokens': getattr(model_instance, 'total_reasoning_tokens', 0),
-                                'model': str(getattr(model_instance, 'model', '')),
-                            }
+                        # Always create a token_info dictionary, even if some values are zero
+                        token_info = {
+                            'interaction_input_tokens': getattr(model_instance, 'interaction_input_tokens', 0),
+                            'interaction_output_tokens': getattr(model_instance, 'interaction_output_tokens', 0),
+                            'interaction_reasoning_tokens': getattr(model_instance, 'interaction_reasoning_tokens', 0),
+                            'total_input_tokens': getattr(model_instance, 'total_input_tokens', 0),
+                            'total_output_tokens': getattr(model_instance, 'total_output_tokens', 0),
+                            'total_reasoning_tokens': getattr(model_instance, 'total_reasoning_tokens', 0),
+                            'model': str(getattr(model_instance, 'model', '')),
+                        }
+                        
+                        # Calculate costs using standard cost model
+                        if model_instance and hasattr(model_instance, 'model'):
+                            from cai.util import calculate_model_cost
+                            model_name = str(model_instance.model)
+                            token_info['interaction_cost'] = calculate_model_cost(
+                                model_name, 
+                                token_info['interaction_input_tokens'], 
+                                token_info['interaction_output_tokens']
+                            )
+                            token_info['total_cost'] = calculate_model_cost(
+                                model_name,
+                                token_info['total_input_tokens'],
+                                token_info['total_output_tokens']
+                            )
                         
                         # Use the cli_print_tool_output function with actual token values
                         cli_print_tool_output(

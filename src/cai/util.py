@@ -19,6 +19,7 @@ from datetime import datetime
 import atexit
 from dataclasses import dataclass, field
 from typing import Dict, Optional
+import time
 
 
 # Shared stats tracking object to maintain consistent costs across calls
@@ -1061,7 +1062,6 @@ def finish_agent_streaming(context, final_stats=None):
     context["live"].update(final_panel)
     
     # Ensure updates are displayed before stopping
-    import time
     time.sleep(0.5)
     
     # Stop the live display
@@ -1078,11 +1078,16 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         output: The output of the tool
         call_id: Optional call ID for streaming updates
         execution_info: Optional execution information
-        token_info: Optional token information
+        token_info: Optional token information with keys:
+            - interaction_input_tokens, interaction_output_tokens, interaction_reasoning_tokens
+            - total_input_tokens, total_output_tokens, total_reasoning_tokens
+            - model: model name string
+            - interaction_cost, total_cost: optional cost values
     """
     # If it's an empty output, don't print anything
     if not output and not call_id:
         return
+    
     
     # CRITICAL CHECK: When in streaming mode (CAI_STREAM=true), ONLY show output panels
     # for streaming updates (those with call_id). This prevents duplicate output panels.
@@ -1121,9 +1126,10 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         from rich.panel import Panel
         from rich.text import Text
         from rich.box import ROUNDED
+        from rich.console import Group
         
         # Create a console for output
-        console = Console()
+        console = Console(theme=theme)
         
         # Format arguments for display
         # Parse JSON string if args is a string
@@ -1155,23 +1161,110 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         else:
             args_str = str(args)
         
+        # Helper function to format time in a human-readable way
+        def format_time(seconds):
+            if seconds is None:
+                return "N/A"
+            
+            if seconds < 60:
+                return f"{seconds:.1f}s"
+            elif seconds < 3600:
+                minutes = int(seconds / 60)
+                seconds_remainder = seconds % 60
+                return f"{minutes}m {seconds_remainder:.1f}s"
+            else:
+                hours = int(seconds / 3600)
+                minutes = int((seconds % 3600) / 60)
+                return f"{hours}h {minutes}m"
+        
+        # Get session timing information
+        try:
+            from cai.cli import GLOBAL_START_TIME, START_TIME
+            total_time = time.time() - GLOBAL_START_TIME if GLOBAL_START_TIME else None
+            session_time = time.time() - START_TIME if START_TIME else None
+        except ImportError:
+            total_time = None
+            session_time = None
+        
+        # Extract execution timing info
+        tool_time = None
+        status = None
+        if execution_info:
+            tool_time = execution_info.get('time_taken', 0)
+            status = execution_info.get('status', 'completed')
+        
+        # Create header for all panel displays (both streaming and non-streaming)
+        header = Text()
+        header.append(tool_name, style="#00BCD4")
+        header.append("(", style="yellow")
+        header.append(args_str, style="yellow")
+        header.append(")", style="yellow")
+        
+        # Add timing information directly in the header
+        timing_info = []
+        if total_time:
+            timing_info.append(f"Total: {format_time(total_time)}")
+        if tool_time:
+            timing_info.append(f"Tool: {format_time(tool_time)}")
+            
+        if timing_info:
+            header.append(f" [{' | '.join(timing_info)}]", style="cyan")
+            
+        # Add completion status if available - REMOVED, just showing timing now
+        # if status:
+        #     if status == 'completed':
+        #         header.append(f" [Completed]", style="green")
+        #     elif status == 'running':
+        #         header.append(f" [Running]", style="yellow")
+        #     elif status == 'error':
+        #         header.append(f" [Error]", style="red")
+        #     elif status == 'timeout':
+        #         header.append(f" [Timeout]", style="red")
+        #     else:
+        #         header.append(f" [{status.title()}]", style="dim")
+        
         # For streaming mode with call_id, use Rich Live display
         if call_id:
-            # Create the header text
-            header = Text()
-            header.append(tool_name, style="#00BCD4")
-            header.append("(", style="yellow")
-            header.append(args_str, style="yellow")
-            header.append(")", style="yellow")
+            # Create token information if available
+            token_content = None
+            if token_info:
+                model = token_info.get('model', '')
+                interaction_input_tokens = token_info.get('interaction_input_tokens', 0)
+                interaction_output_tokens = token_info.get('interaction_output_tokens', 0)
+                interaction_reasoning_tokens = token_info.get('interaction_reasoning_tokens', 0)
+                total_input_tokens = token_info.get('total_input_tokens', 0)
+                total_output_tokens = token_info.get('total_output_tokens', 0)
+                total_reasoning_tokens = token_info.get('total_reasoning_tokens', 0)
+                
+                if (interaction_input_tokens > 0 or total_input_tokens > 0):
+                    token_text = _create_token_display(
+                        interaction_input_tokens,
+                        interaction_output_tokens,
+                        interaction_reasoning_tokens,
+                        total_input_tokens,
+                        total_output_tokens,
+                        total_reasoning_tokens,
+                        model,
+                        token_info.get('interaction_cost'),
+                        token_info.get('total_cost')
+                    )
+                    token_content = Text("\n\n")
+                    token_content.append(token_text)
             
             # Create content text with the output
             content = Text(output)
             
-            # Create the panel for display
+            # Create the panel for display, including token info if available
+            panel_content = [header, Text("\n\n"), content]
+            if token_content:
+                panel_content.insert(1, token_content)  # Insert token info after header
+                
+            # Create title - simple title with no timing info
+            title = "[bold blue]Tool Output[/bold blue]"
+            
             panel = Panel(
-                Text.assemble(header, "\n\n", content),
-                title=f"[bold blue]Tool Output[/bold blue]", #(ID: {call_id})[/bold green]",
-                #subtitle="[bold green]Live Update[/bold green]",
+                Text.assemble(*panel_content),
+                title=title,
                 border_style="blue",
                 padding=(1, 2),
                 box=ROUNDED,
@@ -1182,52 +1275,59 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
             console.print(panel)
             return
             
-        # For non-streaming output, show a standard panel
-        tool_call = f"{tool_name}({args_str})"
-        
-        # Add execution info if available
-        subtitle = "[bold green]Completed[/bold green]"
-        if execution_info:
-            time_taken = execution_info.get('time_taken', 0)
-            status = execution_info.get('status', 'completed')
-            
-            if time_taken:
-                subtitle = f"[bold green]{status.title()} in {time_taken:.2f}s[/bold green]"
-            else:
-                subtitle = f"[bold green]{status.title()}[/bold green]"
-        
-        # Create content sections
-        sections = []
-        
-        # Add token info if available
+        # For non-streaming output, also use a blue panel with the same format
+        # Create token information if available
+        token_text = None
         if token_info:
-            tokens_in = token_info.get('input_tokens', 0)
-            tokens_out = token_info.get('output_tokens', 0)
-            cost = token_info.get('cost', 0)
+            model = token_info.get('model', '')
+            interaction_input_tokens = token_info.get('interaction_input_tokens', 0)
+            interaction_output_tokens = token_info.get('interaction_output_tokens', 0)
+            interaction_reasoning_tokens = token_info.get('interaction_reasoning_tokens', 0)
+            total_input_tokens = token_info.get('total_input_tokens', 0)
+            total_output_tokens = token_info.get('total_output_tokens', 0)
+            total_reasoning_tokens = token_info.get('total_reasoning_tokens', 0)
+            interaction_cost = token_info.get('interaction_cost')
+            total_cost = token_info.get('total_cost')
             
-            token_text = Text()
-            if tokens_in or tokens_out:
-                token_text.append(f"Tokens: {tokens_in} in, {tokens_out} out", style="cyan")
-            if cost:
-                token_text.append(f"\nCost: ${cost:.6f}", style="cyan")
-                
-            if token_text:
-                sections.append(token_text)
+            # Generate token display with CostTracker
+            if (interaction_input_tokens > 0 or total_input_tokens > 0):
+                token_text = _create_token_display(
+                    interaction_input_tokens,
+                    interaction_output_tokens,
+                    interaction_reasoning_tokens,
+                    total_input_tokens,
+                    total_output_tokens,
+                    total_reasoning_tokens,
+                    model,
+                    interaction_cost,
+                    total_cost
+                )
         
-        # Add the main output
+        # Now create the panel content, starting with the header
+        panel_content = [header, Text("\n")]
+        
+        # Add token display if available
+        if token_text:
+            panel_content.append(token_text)
+            panel_content.append(Text("\n"))  # Add spacing after token display
+            
+        # Add the output
         if output:
-            output_text = Text()
-            if sections:  # Add a separator if we have previous sections
-                output_text.append("\n")
-            output_text.append(output)
-            sections.append(output_text)
+            output_text = Text(output)
+            panel_content.append(output_text)
         
-        # Create the panel with all sections
+        # If no content was added but we have output, add it directly
+        if len(panel_content) == 2 and output:  # Only header and newline
+            panel_content.append(Text(output))
+        
+        # Create title - simple title with no timing info
+        title = "[bold blue]Tool Output[/bold blue]"
+        
+        # Create the final panel - always blue now
         panel = Panel(
-            Text.assemble(*sections),
-            title=f"[bold green]Tool Output: {tool_call}[/bold green]",
-            subtitle=subtitle,
-            border_style="green",
+            Group(*panel_content),
+            title=title,
+            border_style="blue",
             padding=(1, 2),
             box=ROUNDED
         )
@@ -1267,32 +1367,98 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         else:
             args_str = str(args)
         
+        # Helper function to format time in a human-readable way
+        def format_time(seconds):
+            if seconds is None:
+                return "N/A"
+            
+            if seconds < 60:
+                return f"{seconds:.1f}s"
+            elif seconds < 3600:
+                minutes = int(seconds / 60)
+                seconds_remainder = seconds % 60
+                return f"{minutes}m {seconds_remainder:.1f}s"
+            else:
+                hours = int(seconds / 3600)
+                minutes = int((seconds % 3600) / 60)
+                return f"{hours}h {minutes}m"
+        
+        # Get session timing information
+        try:
+            from cai.cli import GLOBAL_START_TIME, START_TIME
+            total_time = time.time() - GLOBAL_START_TIME if GLOBAL_START_TIME else None
+            session_time = time.time() - START_TIME if START_TIME else None
+        except ImportError:
+            total_time = None
+            session_time = None
+        
         # For non-streaming output, use the original formatting
         tool_call = f"{tool_name}({args_str})"
         
-        # If there's execution info, add it to the output
+        # Get tool execution time if available
+        tool_time_str = ""
+        execution_status = ""
         if execution_info:
             time_taken = execution_info.get('time_taken', 0)
             status = execution_info.get('status', 'completed')
             
             # Add execution info to the tool call display
             if time_taken:
-                tool_call += f" [{status} in {time_taken:.2f}s]"
+                tool_time_str = f"Tool: {format_time(time_taken)}"
+                execution_status = f" [{status} in {time_taken:.2f}s]"
             else:
-                tool_call += f" [{status}]"
+                execution_status = f" [{status}]"
         
-        print(color(f"Tool Output: {tool_call}", fg="blue"))
-        
-        # If we have token info, display it
-        if token_info:
-            tokens_in = token_info.get('input_tokens', 0)
-            tokens_out = token_info.get('output_tokens', 0)
-            cost = token_info.get('cost', 0)
+        # Create timing display string
+        timing_info = []
+        if total_time:
+            timing_info.append(f"Total: {format_time(total_time)}")
+        if tool_time_str:
+            timing_info.append(tool_time_str)
             
-            if tokens_in or tokens_out:
-                print(color(f"  Tokens: {tokens_in} in, {tokens_out} out", fg="cyan"))
-            if cost:
-                print(color(f"  Cost: ${cost:.6f}", fg="cyan"))
+        timing_display = f" [{' | '.join(timing_info)}]" if timing_info else ""
+        
+        # Show tool name, args, execution status and timing display
+        print(color(f"Tool Output: {tool_call}{timing_display}{execution_status}", fg="blue"))
+        
+        # If we have token info, display it using the consistent format from _create_token_display
+        if token_info:
+            model = token_info.get('model', '')
+            interaction_input_tokens = token_info.get('interaction_input_tokens', 0)
+            interaction_output_tokens = token_info.get('interaction_output_tokens', 0)
+            interaction_reasoning_tokens = token_info.get('interaction_reasoning_tokens', 0)
+            total_input_tokens = token_info.get('total_input_tokens', 0)
+            total_output_tokens = token_info.get('total_output_tokens', 0)
+            total_reasoning_tokens = token_info.get('total_reasoning_tokens', 0)
+            interaction_cost = token_info.get('interaction_cost')
+            total_cost = token_info.get('total_cost')
+            
+            # If we have complete token information, display it
+            if (interaction_input_tokens > 0 or total_input_tokens > 0):
+                # Manually create formatted output similar to _create_token_display
+                print(color(f"  Current: I:{interaction_input_tokens} O:{interaction_output_tokens} R:{interaction_reasoning_tokens}", fg="cyan"))
+                
+                # Calculate or use provided costs
+                current_cost = COST_TRACKER.process_interaction_cost(
+                    model, 
+                    interaction_input_tokens, 
+                    interaction_output_tokens,
+                    interaction_reasoning_tokens,
+                    interaction_cost
+                )
+                total_cost_value = COST_TRACKER.process_total_cost(
+                    model,
+                    total_input_tokens,
+                    total_output_tokens,
+                    total_reasoning_tokens,
+                    total_cost
+                )
+                print(color(f"  Cost: Current ${current_cost:.4f} | Total ${total_cost_value:.4f} | Session ${COST_TRACKER.session_total_cost:.4f}", fg="cyan"))
+                
+                # Show context usage
+                context_pct = interaction_input_tokens / get_model_input_tokens(model) * 100
+                indicator = "🟩" if context_pct < 50 else "🟨" if context_pct < 80 else "🟥"
+                print(color(f"  Context: {context_pct:.1f}% {indicator}", fg="cyan"))
         
         # Print the actual output
         print(output)
