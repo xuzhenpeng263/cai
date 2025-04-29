@@ -964,18 +964,19 @@ class OpenAIChatCompletionsModel(Model):
             "extra_headers": _HEADERS,
         }
 
+      
+
+        # Error encountered: Error code: 400 - {'error': {'code': 'invalid_request_error', 
+        #     'message': "'tool_choice' is only allowed when 'tools' are specified", 
+        #     'type': 'invalid_request_error', 'param': None}}
+        #
+        # Only remove tool_choice if model starts with "gpt" and has no tools
+        if self.model.startswith("gpt") and not converted_tools:
+            kwargs.pop("tool_choice", None)
+
         # Model adjustments
         if any(x in self.model for x in ["claude"]):
             litellm.drop_params = True
-
-            # Error encountered: Error code: 400 - {'error': {'code': 'invalid_request_error', 
-            #     'message': "'tool_choice' is only allowed when 'tools' are specified", 
-            #     'type': 'invalid_request_error', 'param': None}}
-            #
-            # if has no tools, remove tool_choice
-            if not converted_tools:
-                kwargs.pop("tool_choice", None)
-                        
             # BadRequestError encountered: litellm.BadRequestError: AnthropicException - 
             # b'{"type":"error","error":
             #     {"type":"invalid_request_error","message":"store: Extra inputs are not permitted"}}'
