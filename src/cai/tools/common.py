@@ -12,6 +12,8 @@ import time
 import uuid
 import sys
 from wasabi import color  # pylint: disable=import-error
+from cai.util  import format_time
+from cai.cli import START_TIME
 
 # Global dictionary to store active sessions
 ACTIVE_SESSIONS = {}
@@ -318,7 +320,17 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
             header.append("(", style="yellow")
             header.append(args_str, style="yellow")
             header.append(")", style="yellow")
-            
+            start_time = time.time()
+            tool_time = 0 
+            total_time = START_TIME
+            timing_info = []
+            if total_time:
+                timing_info.append(f"Total: {format_time(total_time)}")
+            if tool_time:
+                timing_info.append(f"Tool: {format_time(tool_time)}")
+            if timing_info:
+                header.append(f" [{' | '.join(timing_info)}]", style="cyan")
+           
             content = Text()
             
             panel = Panel(
@@ -333,15 +345,35 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
             # Start Live display
             with Live(panel, console=console, refresh_per_second=4) as live:
                 # Stream stdout in real-time
+                start_time = time.time()
                 for line in iter(process.stdout.readline, ''):
                     if not line:
                         break
-                    
+
                     # Add to output collection
                     output_buffer.append(line)
-                    
+
                     # Update content with new line
                     content.append(line, style="bright_white")
+
+                    # Update tool_time and header with new timing info
+                    tool_time = time.time() - start_time
+                    total_time = time.time() - start_time + tool_time
+                    # Remove any previous timing info from header (rebuild header)
+                    timing_info = []
+                    if total_time:
+                        timing_info.append(f"Total: {format_time(total_time)}")
+                    if tool_time:
+                        timing_info.append(f"Tool: {format_time(tool_time)}")
+                    # Rebuild header to update timing
+                    header = Text()
+                    header.append(tool_name, style="#00BCD4")
+                    header.append("(", style="yellow")
+                    header.append(args_str, style="yellow")
+                    header.append(")", style="yellow")
+                    if timing_info:
+                        header.append(f" [{' | '.join(timing_info)}]", style="cyan")
+
                     panel = Panel(
                         Text.assemble(header, "\n\n", content),
                         title="[bold green]Tool Execution[/bold green]",
@@ -351,7 +383,6 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
                         box=ROUNDED
                     )
                     live.update(panel)
-                
                 # Check if process is done
                 process.stdout.close()
                 return_code = process.wait(timeout=timeout)

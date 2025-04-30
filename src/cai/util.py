@@ -522,7 +522,22 @@ def get_model_name(model):
         return model
     # If not a string, use environment variable
     return os.environ.get('CAI_MODEL', 'qwen2.5:72b')
-
+ # Helper function to format time in a human-readable way
+def format_time(seconds):
+            if seconds is None:
+                return "N/A"
+            
+            if seconds < 60:
+                return f"{seconds:.1f}s"
+            elif seconds < 3600:
+                minutes = int(seconds / 60)
+                seconds_remainder = seconds % 60
+                return f"{minutes}m {seconds_remainder:.1f}s"
+            else:
+                hours = int(seconds / 3600)
+                minutes = int((seconds % 3600) / 60)
+                return f"{hours}h {minutes}m"
+        
 def get_model_pricing(model_name):
     """
     Get pricing information for a model, using the CostTracker's implementation.
@@ -1160,22 +1175,6 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
             args_str = ", ".join(arg_parts)
         else:
             args_str = str(args)
-        
-        # Helper function to format time in a human-readable way
-        def format_time(seconds):
-            if seconds is None:
-                return "N/A"
-            
-            if seconds < 60:
-                return f"{seconds:.1f}s"
-            elif seconds < 3600:
-                minutes = int(seconds / 60)
-                seconds_remainder = seconds % 60
-                return f"{minutes}m {seconds_remainder:.1f}s"
-            else:
-                hours = int(seconds / 3600)
-                minutes = int((seconds % 3600) / 60)
-                return f"{hours}h {minutes}m"
         
         # Get session timing information
         try:
