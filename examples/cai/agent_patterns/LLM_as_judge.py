@@ -29,7 +29,7 @@ ctf_task_planner = Agent(
         model= os.getenv('CAI_MODEL', "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
     ),
-    tools =[]
+    tools=[] 
 )
 
 
@@ -53,6 +53,7 @@ ctf_plan_evaluator = Agent[None](
         model= os.getenv('CAI_MODEL', "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
     ),
+    tools=[],  
     output_type=EvaluationFeedback,
 )
 
