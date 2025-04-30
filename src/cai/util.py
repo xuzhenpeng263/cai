@@ -1187,12 +1187,12 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
             session_time = None
         
         # Extract execution timing info
-        print(execution_info)
+        
         tool_time = None
         status = None
         if execution_info:
             # Prefer 'tool_time' if present, else fallback to 'time_taken'
-            tool_time = total_time-execution_info.get('total_time')
+            tool_time = time.time()-execution_info.get('total_time')
             status = execution_info.get('status', 'completed')
         
         # Create header for all panel displays (both streaming and non-streaming)

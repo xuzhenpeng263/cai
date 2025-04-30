@@ -180,7 +180,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
     global START_TIME
     START_TIME = time.time() 
     ACTIVE_TIME = 0
-    IDLE_TIME = 0
+    idle_time = 0
     console = Console()
 
     # Initialize command completer and key bindings
@@ -223,8 +223,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 get_toolbar_with_refresh,
                 current_text
             )
-            IDLE_TIME += time.time() - idle_start_time
-
+            idle_time += time.time() - idle_start_time
            
         except KeyboardInterrupt:
             def format_time(seconds):
@@ -233,13 +232,14 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 return f"{hours:02d}:{mins:02d}:{secs:02d}"
 
             Total = time.time() - START_TIME
+            idle_time += time.time() - idle_start_time
             try:
-                active_time = Total - IDLE_TIME
+                active_time = Total - idle_time
 
                 metrics = {
                     "session_time": format_time(Total),
                     "active_time": format_time(active_time),
-                    "idle_time": format_time(IDLE_TIME),
+                    "idle_time": format_time(idle_time),
                     "llm_time": "0.0s",  # Placeholder, update if available
                     "llm_percentage": 0.0,  # Placeholder, update if available
                 }
