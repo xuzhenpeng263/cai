@@ -1179,12 +1179,11 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         
         # Get session timing information
         try:
-            from cai.cli import GLOBAL_START_TIME, START_TIME
-            total_time = time.time() - GLOBAL_START_TIME if GLOBAL_START_TIME else None
-            session_time = time.time() - START_TIME if START_TIME else None
+            from cai.cli import START_TIME
+            total_time = time.time() - START_TIME if START_TIME else None
         except ImportError:
             total_time = None
-            session_time = None
+            
         
         # Extract execution timing info
         
@@ -1192,7 +1191,8 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         status = None
         if execution_info:
             # Prefer 'tool_time' if present, else fallback to 'time_taken'
-            tool_time = time.time()-execution_info.get('total_time')
+
+            tool_time = execution_info.get('tool_time') 
             status = execution_info.get('status', 'completed')
         
         # Create header for all panel displays (both streaming and non-streaming)
@@ -1386,12 +1386,11 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         
         # Get session timing information
         try:
-            from cai.cli import GLOBAL_START_TIME, START_TIME
-            total_time = time.time() - GLOBAL_START_TIME if GLOBAL_START_TIME else None
-            session_time = time.time() - START_TIME if START_TIME else None
+            from cai.cli import START_TIME
+            total_time = time.time() - START_TIME if START_TIME else None
         except ImportError:
             total_time = None
-            session_time = None
+            
         
         # For non-streaming output, use the original formatting
         tool_call = f"{tool_name}({args_str})"
