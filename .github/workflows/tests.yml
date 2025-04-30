@@ -43,7 +43,7 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     env:
-      OPENAI_API_KEY: fake-for-tests
+      OPENAI_API_KEY: dummy_key_for_testing
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
