@@ -13,7 +13,13 @@ import uuid
 import sys
 from wasabi import color  # pylint: disable=import-error
 from cai.util  import format_time
-from cai.cli import START_TIME
+
+
+# Instead of direct import
+try:
+    from cai.cli import START_TIME
+except ImportError:
+    START_TIME = None
 
 # Global dictionary to store active sessions
 ACTIVE_SESSIONS = {}
