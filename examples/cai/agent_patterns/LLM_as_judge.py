@@ -50,7 +50,7 @@ ctf_plan_evaluator = Agent[None](
         "Provide actionable feedback. Never approve on the first try."
     ),
     model=OpenAIChatCompletionsModel(
-        model= os.getenv(' z', "qwen2.5:14b"),
+        model= os.getenv('CAI_MODEL', "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),
     ),
     output_type=EvaluationFeedback,
