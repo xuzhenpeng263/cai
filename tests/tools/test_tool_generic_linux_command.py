@@ -7,6 +7,9 @@ import pytest
 import json
 from unittest.mock import MagicMock
 from cai.tools.reconnaissance.generic_linux_command import generic_linux_command  
+from cai.sdk.agents import set_tracing_disabled
+
+set_tracing_disabled(True) #disable tracing or OPENAI_AGENTS_DISABLE_TRACING=1
 
 async def test_generic_linux_command_regular_commands():
     """Test the execution of a regular command using the generic Linux command tool."""
