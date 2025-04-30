@@ -12,6 +12,14 @@ import time
 import uuid
 import sys
 from wasabi import color  # pylint: disable=import-error
+from cai.util  import format_time
+
+
+# Instead of direct import
+try:
+    from cai.cli import START_TIME
+except ImportError:
+    START_TIME = None
 
 # Global dictionary to store active sessions
 ACTIVE_SESSIONS = {}
@@ -228,10 +236,10 @@ def _run_ctf(ctf, command, stdout=False, timeout=100, stream=False, call_id=None
         return f"Error executing CTF command: {str(e)}"
 
 
-def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None):
+def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None):
     # If streaming is enabled and we have a call_id
     if stream and call_id:
-        return _run_local_streamed(command, call_id, timeout)
+        return _run_local_streamed(command, call_id, timeout, tool_name)
     
     try:
         # nosec B602 - shell=True is required for command chaining
@@ -265,7 +273,7 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None):
         return error_msg
 
 
-def _run_local_streamed(command, call_id, timeout=100):
+def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
     """Run a local command with streaming output to the Tool output panel"""
     try:
         # Try to import Rich for nice display
@@ -293,23 +301,43 @@ def _run_local_streamed(command, call_id, timeout=100):
             bufsize=1
         )
         
+        # If tool_name is not provided, derive it from the command
+        if tool_name is None:
+            # Just use the first command as the tool name
+            tool_name = command.strip().split()[0] + "_command"
+        
         # Create panel content for Rich display
         if rich_available:
-            tool_name = "generic_linux_command"
             # Parse command into command and args
             parts = command.strip().split(' ', 1)
             cmd = parts[0] if parts else ""
             args = parts[1] if len(parts) > 1 else ""
             
+            # Format clean arguments, following the same rules as cli_print_tool_output
+            arg_parts = []
+            if cmd:
+                arg_parts.append(f"command={cmd}")
+            if args and args.strip():  # Only add args if non-empty
+                arg_parts.append(f"args={args}")
+            args_str = ", ".join(arg_parts)
+            
             header = Text()
             header.append(tool_name, style="#00BCD4")
             header.append("(", style="yellow")
-            # Format to match: generic_linux_command({"command":"ls","args":"-la","ctf":{},"async_mode":false,"session_id":""})
-            header.append(f'{{"command":"{cmd}","args":"{args}","ctf":{{}},"async_mode":false,"session_id":""}}', style="yellow")
+            header.append(args_str, style="yellow")
             header.append(")", style="yellow")
-            
+            tool_time = 0 
+            start_time = time.time()
+            total_time = time.time() - START_TIME
+            timing_info = []
+            if total_time:
+                timing_info.append(f"Total: {format_time(total_time)}")
+            if tool_time:
+                timing_info.append(f"Tool: {format_time(tool_time)}")
+            if timing_info:
+                header.append(f" [{' | '.join(timing_info)}]", style="cyan")
+
             content = Text()
-            content.append(f"Executing: {command}\n\n", style="green")
             
             panel = Panel(
                 Text.assemble(header, "\n\n", content),
@@ -323,15 +351,35 @@ def _run_local_streamed(command, call_id, timeout=100):
             # Start Live display
             with Live(panel, console=console, refresh_per_second=4) as live:
                 # Stream stdout in real-time
+                start_time = time.time()
                 for line in iter(process.stdout.readline, ''):
                     if not line:
                         break
-                    
+
                     # Add to output collection
                     output_buffer.append(line)
-                    
+
                     # Update content with new line
                     content.append(line, style="bright_white")
+
+                    # Update tool_time and header with new timing info
+                    tool_time = time.time() - start_time
+                    total_time = time.time() - START_TIME 
+                    # Remove any previous timing info from header (rebuild header)
+                    timing_info = []
+                    if total_time:
+                        timing_info.append(f"Total: {format_time(total_time)}")
+                    if tool_time:
+                        timing_info.append(f"Tool: {format_time(tool_time)}")
+                    # Rebuild header to update timing
+                    header = Text()
+                    header.append(tool_name, style="#00BCD4")
+                    header.append("(", style="yellow")
+                    header.append(args_str, style="yellow")
+                    header.append(")", style="yellow")
+                    if timing_info:
+                        header.append(f" [{' | '.join(timing_info)}]", style="cyan")
+
                     panel = Panel(
                         Text.assemble(header, "\n\n", content),
                         title="[bold green]Tool Execution[/bold green]",
@@ -341,7 +389,6 @@ def _run_local_streamed(command, call_id, timeout=100):
                         box=ROUNDED
                     )
                     live.update(panel)
-                
                 # Check if process is done
                 process.stdout.close()
                 return_code = process.wait(timeout=timeout)
@@ -363,12 +410,9 @@ def _run_local_streamed(command, call_id, timeout=100):
                     live.update(panel)
                 
                 # Add completion message
-                completion_status = "Completed" if return_code == 0 else f"Failed (code {return_code})"
-                content.append(f"\nCommand {completion_status}", style="green")
                 panel = Panel(
                     Text.assemble(header, "\n\n", content),
                     title="[bold green]Tool Execution[/bold green]",
-                    subtitle=f"[bold green]{completion_status}[/bold green]",
                     border_style="green",
                     padding=(1, 2),
                     box=ROUNDED
@@ -383,10 +427,17 @@ def _run_local_streamed(command, call_id, timeout=100):
             parts = command.strip().split(' ', 1)
             cmd = parts[0] if parts else ""
             args = parts[1] if len(parts) > 1 else ""
-            tool_args = {"command": cmd, "args": args, "ctf": {}, "async_mode": False, "session_id": ""}
+            
+            # Create a dictionary with only non-empty values (following the same rules)
+            tool_args = {}
+            if cmd:
+                tool_args["command"] = cmd
+            if args and args.strip():
+                tool_args["args"] = args
+            # Note: Omitted empty values and async_mode=False as it's default
             
             # Initial notification - just once
-            cli_print_tool_output("generic_linux_command", tool_args, "Command started...", call_id=call_id)
+            cli_print_tool_output(tool_name, tool_args, "Command started...", call_id=call_id)
             
             # Buffer for collecting output 
             buffer_size = 0
@@ -404,7 +455,7 @@ def _run_local_streamed(command, call_id, timeout=100):
                 # Only update the output periodically to reduce panel refresh rate
                 if buffer_size >= update_interval:
                     current_output = ''.join(output_buffer)
-                    cli_print_tool_output("generic_linux_command", tool_args, current_output, call_id=call_id)
+                    cli_print_tool_output(tool_name, tool_args, current_output, call_id=call_id)
                     buffer_size = 0
             
             # Check if process is done
@@ -421,7 +472,7 @@ def _run_local_streamed(command, call_id, timeout=100):
             if return_code != 0:
                 final_output += f"\nCommand exited with code {return_code}"
                 
-            cli_print_tool_output("generic_linux_command", tool_args, final_output, call_id=call_id)
+            cli_print_tool_output(tool_name, tool_args, final_output, call_id=call_id)
         
         # Return the full output
         return ''.join(output_buffer)
@@ -434,7 +485,7 @@ def _run_local_streamed(command, call_id, timeout=100):
         # Update tool output panel with timeout message
         if not rich_available:
             tool_args = {"command": command}
-            cli_print_tool_output("generic_linux_command", tool_args, final_output, call_id=call_id)
+            cli_print_tool_output(tool_name, tool_args, final_output, call_id=call_id)
         
         return final_output
         
@@ -445,14 +496,14 @@ def _run_local_streamed(command, call_id, timeout=100):
         # Update tool output panel with error message if simple streaming
         if not rich_available:
             tool_args = {"command": command}
-            cli_print_tool_output("generic_linux_command", tool_args, error_msg, call_id=call_id)
+            cli_print_tool_output(tool_name, tool_args, error_msg, call_id=call_id)
         
         return error_msg
 
 
 def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arguments # noqa: E501
                 async_mode=False, session_id=None,
-                timeout=100, stream=False, call_id=None):
+                timeout=100, stream=False, call_id=None, tool_name=None):
     """
     Run command either in CTF container or on the local attacker machine
 
@@ -465,6 +516,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
         timeout: Command timeout in seconds
         stream: Whether to stream output in real-time
         call_id: Unique ID for the command execution (for streaming)
+        tool_name: Name of the tool being executed (for display in streaming output).
+                  If None, the tool name will be derived from the command.
 
     Returns:
         str: Command output, status message, or session ID
@@ -497,4 +550,4 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
     # Otherwise, run command normally
     if ctf:
         return _run_ctf(ctf, command, stdout, timeout, stream, call_id)
-    return _run_local(command, stdout, timeout, stream, call_id)
+    return _run_local(command, stdout, timeout, stream, call_id, tool_name)
