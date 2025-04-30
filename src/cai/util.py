@@ -1366,23 +1366,6 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
             args_str = ", ".join(arg_parts)
         else:
             args_str = str(args)
-        
-        # Helper function to format time in a human-readable way
-        def format_time(seconds):
-            if seconds is None:
-                return "N/A"
-            
-            if seconds < 60:
-                return f"{seconds:.1f}s"
-            elif seconds < 3600:
-                minutes = int(seconds / 60)
-                seconds_remainder = seconds % 60
-                return f"{minutes}m {seconds_remainder:.1f}s"
-            else:
-                hours = int(seconds / 3600)
-                minutes = int((seconds % 3600) / 60)
-                return f"{hours}h {minutes}m"
-        
         # Get session timing information
         try:
             from cai.cli import START_TIME

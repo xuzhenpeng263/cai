@@ -320,9 +320,9 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
             header.append("(", style="yellow")
             header.append(args_str, style="yellow")
             header.append(")", style="yellow")
-            start_time = time.time()
             tool_time = 0 
-            total_time = START_TIME
+            start_time = time.time()
+            total_time = time.time() - START_TIME
             timing_info = []
             if total_time:
                 timing_info.append(f"Total: {format_time(total_time)}")
@@ -330,7 +330,7 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
                 timing_info.append(f"Tool: {format_time(tool_time)}")
             if timing_info:
                 header.append(f" [{' | '.join(timing_info)}]", style="cyan")
-           
+
             content = Text()
             
             panel = Panel(
@@ -358,7 +358,7 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
 
                     # Update tool_time and header with new timing info
                     tool_time = time.time() - start_time
-                    total_time = time.time() - start_time + tool_time
+                    total_time = time.time() - START_TIME 
                     # Remove any previous timing info from header (rebuild header)
                     timing_info = []
                     if total_time:

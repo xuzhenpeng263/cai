@@ -134,13 +134,8 @@ load_dotenv()
 # set_default_openai_client(external_client)
 
 # Global variables for timing tracking
-START_TIME = None  # Track the start time of the current session
-GLOBAL_START_TIME = time.time()  # Track the start time of the entire CLI run
-LAST_TOOL_TIME = None  # Track the last time a tool was executed
-ACTIVE_TIME = 0.0  # Track the time spent actively executing tools
-IDLE_TIME = 0.0  # Track the time spent idle
-LAST_STATE_CHANGE = None  # Track when the state last changed between active and idle
-IS_ACTIVE = False  # Track if we're currently in an active state
+global START_TIME
+START_TIME = time.time() 
 
 set_tracing_disabled(True)
 
@@ -177,8 +172,6 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
     """
     agent = starting_agent
     turn_count = 0
-    global START_TIME
-    START_TIME = time.time() 
     ACTIVE_TIME = 0
     idle_time = 0
     console = Console()
