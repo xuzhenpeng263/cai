@@ -1,11 +1,11 @@
-"""
-This module contains tests for the generic Linux command tool functionality.
-It includes tests for executing regular commands and handling invalid commands.
-"""
-
+import os
 import pytest
 import json
 from unittest.mock import MagicMock
+
+# Set test environment variables to avoid OpenAI client initialization errors
+os.environ["OPENAI_API_KEY"] = "test_key_for_ci_environment"
+
 from cai.tools.reconnaissance.generic_linux_command import generic_linux_command  
 
 async def test_generic_linux_command_regular_commands():
@@ -48,4 +48,4 @@ async def test_generic_linux_command_invalid_command():
     result = await generic_linux_command.on_invoke_tool(mock_ctx, json.dumps(params))
 
     # Assert that the result indicates the command was not found
-    assert "not found" in result  
+    assert "not found" in result 
