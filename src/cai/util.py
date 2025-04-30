@@ -21,6 +21,11 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional
 import time
 
+# Instead of direct import
+try:
+    from cai.cli import START_TIME
+except ImportError:
+    START_TIME = None
 
 # Shared stats tracking object to maintain consistent costs across calls
 @dataclass
