@@ -175,7 +175,8 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
     ACTIVE_TIME = 0
     idle_time = 0
     console = Console()
-
+    last_model = os.getenv('CAI_MODEL', 'qwen2.5:14b')
+    last_agent_type = os.getenv('CAI_AGENT_TYPE', 'one_tool_agent') 
     # Initialize command completer and key bindings
     command_completer = FuzzyCommandCompleter()
     current_text = ['']
@@ -208,6 +209,36 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
     while turn_count < max_turns:
         try:
             idle_start_time = time.time()
+            
+            # Check if model has changed and update if needed
+            current_model = os.getenv('CAI_MODEL', 'qwen2.5:14b')
+            if current_model != last_model and hasattr(agent, 'model'):
+                # Update the model in the agent
+                if hasattr(agent.model, 'model'):
+                    agent.model.model = current_model
+                    last_model = current_model
+            
+            # Check if agent type has changed and recreate agent if needed
+            current_agent_type = os.getenv('CAI_AGENT_TYPE', 'one_tool_agent')
+            if current_agent_type != last_agent_type:
+                try:
+                    # Import is already at the top level
+                    agent = get_agent_by_name(current_agent_type)
+                    last_agent_type = current_agent_type
+                    
+                    # Configure the new agent's model flags
+                    if hasattr(agent, 'model'):
+                        if hasattr(agent.model, 'disable_rich_streaming'):
+                            agent.model.disable_rich_streaming = True
+                        if hasattr(agent.model, 'suppress_final_output'):
+                            agent.model.suppress_final_output = True
+                            
+                        # Apply current model to the new agent
+                        if hasattr(agent.model, 'model'):
+                            agent.model.model = current_model
+                except Exception as e:
+                    console.print(f"[red]Error switching agent: {str(e)}[/red]")
+
             # Get user input with command completion and history
             user_input = get_user_input(
                 command_completer,

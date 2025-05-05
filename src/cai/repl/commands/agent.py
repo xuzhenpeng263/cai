@@ -191,9 +191,6 @@ class AgentCommand(Command):
         console.print(table)
         return True
 
-        console.print(table)
-        return True
-
     def handle_select(self, args: Optional[List[str]] = None) -> bool:  # pylint: disable=too-many-branches,line-too-long # noqa: E501
         """Handle /agent select command.
 
@@ -226,16 +223,20 @@ class AgentCommand(Command):
                 return False
         else:
             # Treat as agent key
+            selected_agent_key = None
             for key, agent_obj in agents_to_display.items():
                 if key == agent_id:
                     agent = agent_obj
+                    selected_agent_key = key
                     agent_name = getattr(agent_obj, "name", key)
                     break
             else:
                 console.print(f"[red]Error: Unknown agent key: {agent_id}[/red]")
                 return False
 
-        os.environ["CAI_MODEL"] = agent_name
+        # Set the agent key in environment variable (not the agent name)
+        os.environ["CAI_AGENT_TYPE"] = selected_agent_key
+        
         console.print(
                     f"[green]Switched to agent: {agent_name}[/green]")           
         visualize_agent_graph(agent)
