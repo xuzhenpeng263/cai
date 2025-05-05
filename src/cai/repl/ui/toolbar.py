@@ -18,7 +18,7 @@ toolbar_last_refresh = [datetime.datetime.now()]
 toolbar_cache = {
     'html': "",
     'last_update': datetime.datetime.now(),
-    'refresh_interval': 60  # Refresh every 60 seconds
+    'refresh_interval': 5  # Refresh every 60 seconds
 }
 
 # Cache for system information that rarely changes
