@@ -93,7 +93,7 @@ if TYPE_CHECKING:
 # Suppress debug info from litellm
 litellm.suppress_debug_info = True
 
-if os.getenv('CAI_MODEL') == "o3-mini": 
+if os.getenv('CAI_MODEL') == "o3-mini" or os.getenv('CAI_MODEL') == "gemini-1.5-pro": 
     litellm.drop_params = True
 
 _USER_AGENT = f"Agents/Python {__version__}"
