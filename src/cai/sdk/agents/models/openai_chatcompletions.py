@@ -7,6 +7,7 @@ import os
 import litellm
 import tiktoken
 import inspect
+import hashlib
 
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
@@ -526,6 +527,10 @@ class OpenAIChatCompletionsModel(Model):
                     choices = [{"delta": chunk.delta}]
                 elif isinstance(chunk, dict) and 'choices' in chunk:
                     choices = chunk['choices']
+                # Special handling for Qwen/Ollama chunks 
+                elif isinstance(chunk, dict) and ('content' in chunk or 'function_call' in chunk):
+                    # Qwen direct delta format - convert to standard
+                    choices = [{"delta": chunk}]
                 else:
                     # Skip chunks that don't contain choice data
                     continue
@@ -662,11 +667,7 @@ class OpenAIChatCompletionsModel(Model):
                 # Handle tool calls
                 # Because we don't know the name of the function until the end of the stream, we'll
                 # save everything and yield events at the end
-                tool_calls = None
-                if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                    tool_calls = delta.tool_calls
-                elif isinstance(delta, dict) and 'tool_calls' in delta and delta['tool_calls']:
-                    tool_calls = delta['tool_calls']
+                tool_calls = self._detect_and_format_function_calls(delta)
                 
                 if tool_calls:
                     for tc_delta in tool_calls:
@@ -709,7 +710,12 @@ class OpenAIChatCompletionsModel(Model):
                             call_id = tc_delta.id or ""
                         elif isinstance(tc_delta, dict) and 'id' in tc_delta:
                             call_id = tc_delta.get('id', "") or ""
-                            
+                        else:
+                            # For Qwen models, generate a predictable ID if none is provided
+                            if state.function_calls[tc_index].name:
+                                # Generate a stable ID from the function name and arguments
+                                call_id = f"call_{hashlib.md5(state.function_calls[tc_index].name.encode()).hexdigest()[:8]}"
+
                         state.function_calls[tc_index].call_id += call_id
 
                         # --- Accumulate tool call for message_history ---
@@ -1067,31 +1073,69 @@ class OpenAIChatCompletionsModel(Model):
             "extra_headers": _HEADERS,
         }
 
-        # Model adjustments
-        if any(x in self.model for x in ["claude"]):
-            litellm.drop_params = True
-
-            # Error encountered: Error code: 400 - {'error': {'code': 'invalid_request_error', 
-            #     'message': "'tool_choice' is only allowed when 'tools' are specified", 
-            #     'type': 'invalid_request_error', 'param': None}}
-            #
-            # if has no tools, remove tool_choice
-            if not converted_tools:
-                kwargs.pop("tool_choice", None)
-                        
-            # BadRequestError encountered: litellm.BadRequestError: AnthropicException - 
-            # b'{"type":"error","error":
-            #     {"type":"invalid_request_error","message":"store: Extra inputs are not permitted"}}'
-            #
-            kwargs.pop("store", None)
+        # Determine provider based on model string
+        model_str = str(self.model).lower()
+        
+        # Provider-specific adjustments
+        if "/" in model_str:
+            # Handle provider/model format
+            provider = model_str.split("/")[0]
             
-            # Filter out NotGiven values to avoid JSON serialization issues
-            filtered_kwargs = {}
-            for key, value in kwargs.items():
-                if value is not NOT_GIVEN:
-                    filtered_kwargs[key] = value
-            kwargs = filtered_kwargs
+            # Apply provider-specific configurations
+            if provider == "deepseek":
+                litellm.drop_params = True
+                kwargs.pop("parallel_tool_calls", None)
+                # Remove tool_choice if no tools are specified
+                if not converted_tools:
+                    kwargs.pop("tool_choice", None)
+            elif provider == "claude":
+                litellm.drop_params = True
+                kwargs.pop("store", None)
+                # Remove tool_choice if no tools are specified
+                if not converted_tools:
+                    kwargs.pop("tool_choice", None)
+            elif provider == "gemini":
+                kwargs.pop("parallel_tool_calls", None)
+                # Add any specific gemini settings if needed
+        else:
+            # Handle models without provider prefix
+            if "claude" in model_str:
+                litellm.drop_params = True
+                # Remove store parameter which isn't supported by Anthropic
+                kwargs.pop("store", None)
+                # Remove tool_choice if no tools are specified
+                if not converted_tools:
+                    kwargs.pop("tool_choice", None)
+            elif "gemini" in model_str:
+                kwargs.pop("parallel_tool_calls", None)
+            elif "qwen" in model_str or ":" in model_str:
+                # Handle Ollama-served models with custom formats (e.g., qwen2.5:14b)
+                # These typically need the Ollama provider
+                litellm.drop_params = True
+                kwargs.pop("parallel_tool_calls", None)
+                # These models may not support certain parameters
+                if not converted_tools:
+                    kwargs.pop("tool_choice", None)
+                # Don't add custom_llm_provider here to avoid duplication with Ollama provider
+                if self.is_ollama:
+                    # Clean kwargs for ollama to avoid parameter conflicts
+                    for param in ["custom_llm_provider"]:
+                        kwargs.pop(param, None)
+            elif any(x in model_str for x in ["o1", "o3", "o4"]):
+                # Handle OpenAI reasoning models (o1, o3, o4)
+                kwargs.pop("parallel_tool_calls", None)
+                # Add reasoning effort if provided
+                if hasattr(model_settings, "reasoning_effort"):
+                    kwargs["reasoning_effort"] = model_settings.reasoning_effort
 
+        
+        # Filter out NotGiven values to avoid JSON serialization issues
+        filtered_kwargs = {}
+        for key, value in kwargs.items():
+            if value is not NOT_GIVEN:
+                filtered_kwargs[key] = value
+        kwargs = filtered_kwargs
+        
         try:
             if self.is_ollama:
                 return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
@@ -1101,21 +1145,70 @@ class OpenAIChatCompletionsModel(Model):
         except litellm.exceptions.BadRequestError as e:
             # print(color("BadRequestError encountered: " + str(e), fg="yellow"))
             if "LLM Provider NOT provided" in str(e):
-                # Create a copy of params to avoid overwriting the original
-                # ones
-                try:
-                    return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
-                except litellm.exceptions.BadRequestError as e:  # pylint: disable=W0621,C0301 # noqa: E501
-                    #
-                    # CTRL-C handler for ollama models
-                    #
-                    if "invalid message content type" in str(e):
-                        kwargs["messages"] = fix_message_list(
-                            kwargs["messages"])
+                model_str = str(self.model).lower()
+                provider = None
+                is_qwen = "qwen" in model_str or ":" in model_str
+                
+                # Special handling for Qwen models
+                if is_qwen:
+                    try:
+                        # Use the specialized Qwen approach first
                         return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                    except Exception as qwen_e:
+                        # If that fails, try our direct OpenAI approach
+                        qwen_params = kwargs.copy()
+                        qwen_params["api_base"] = get_ollama_api_base()
+                        qwen_params["custom_llm_provider"] = "openai"  # Use openai provider
+                        
+                        # Make sure tools are passed
+                        if "tools" in kwargs and kwargs["tools"]:
+                            qwen_params["tools"] = kwargs["tools"]
+                        if "tool_choice" in kwargs and kwargs["tool_choice"] is not NOT_GIVEN:
+                            qwen_params["tool_choice"] = kwargs["tool_choice"]
+                        
+                        try:
+                            if stream:
+                                # Streaming case
+                                response = Response(
+                                    id=FAKE_RESPONSES_ID,
+                                    created_at=time.time(),
+                                    model=self.model,
+                                    object="response",
+                                    output=[],
+                                    tool_choice="auto" if tool_choice is None or tool_choice == NOT_GIVEN else cast(Literal["auto", "required", "none"], tool_choice),
+                                    top_p=model_settings.top_p,
+                                    temperature=model_settings.temperature,
+                                    tools=[],
+                                    parallel_tool_calls=parallel_tool_calls or False,
+                                )
+                                stream_obj = await litellm.acompletion(**qwen_params)
+                                return response, stream_obj
+                            else:
+                                # Non-streaming case
+                                ret = litellm.completion(**qwen_params)
+                                return ret
+                        except Exception as direct_e:
+                            # All approaches failed, log and raise the original error
+                            print(f"All Qwen approaches failed. Original error: {str(e)}, Direct error: {str(direct_e)}")
+                            raise e
+                
+                # Try to detect provider from model string
+                if "/" in model_str:
+                    provider = model_str.split("/")[0]
+                
+                if provider:
+                    # Add provider-specific settings based on detected provider
+                    provider_kwargs = kwargs.copy()
+                    if provider == "deepseek":
+                        provider_kwargs["custom_llm_provider"] = "deepseek"
+                    elif provider == "claude" or "claude" in model_str:
+                        provider_kwargs["custom_llm_provider"] = "anthropic"
+                    elif provider == "gemini":
+                        provider_kwargs["custom_llm_provider"] = "gemini"
                     else:
-                        raise e
-
+                        # For unknown providers, try ollama as fallback
+                        return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                        
             elif ("An assistant message with 'tool_calls'" in str(e) or
                 "`tool_use` blocks must be followed by a user message with `tool_result`" in str(e)):  # noqa: E501 # pylint: disable=C0301
                 print(f"Error: {str(e)}")
@@ -1228,25 +1321,48 @@ class OpenAIChatCompletionsModel(Model):
         stream: bool,
         parallel_tool_calls: bool
     ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
-        # Filter out parameters not supported by Ollama
         ollama_supported_params = {
-            "model": kwargs["model"],
-            "messages": kwargs["messages"],
-            "temperature": kwargs["temperature"] if kwargs["temperature"] is not NOT_GIVEN else None,
-            "top_p": kwargs["top_p"] if kwargs["top_p"] is not NOT_GIVEN else None,
-            "max_tokens": kwargs["max_tokens"] if kwargs["max_tokens"] is not NOT_GIVEN else None,
-            "stream": kwargs["stream"],
-            "extra_headers": kwargs["extra_headers"]
+            "model": kwargs.get("model", ""),
+            "messages": kwargs.get("messages", []),
         }
+        
+        # Safely add optional parameters only if they exist in kwargs
+        if "temperature" in kwargs:
+            ollama_supported_params["temperature"] = kwargs["temperature"] if kwargs["temperature"] is not NOT_GIVEN else None
+        if "top_p" in kwargs:
+            ollama_supported_params["top_p"] = kwargs["top_p"] if kwargs["top_p"] is not NOT_GIVEN else None
+        if "max_tokens" in kwargs:
+            ollama_supported_params["max_tokens"] = kwargs["max_tokens"] if kwargs["max_tokens"] is not NOT_GIVEN else None
+        
+        # Add stream parameter - default to False if not present
+        ollama_supported_params["stream"] = kwargs.get("stream", False)
+        
+        # Add extra headers if available
+        if "extra_headers" in kwargs:
+            ollama_supported_params["extra_headers"] = kwargs["extra_headers"]
+            
+        # IMPORTANT: For tool calls with Ollama (especially with Qwen), 
+        # we need to pass the tools and tool_choice as part of the request
+        # This is needed for both streaming and non-streaming modes
+        if "tools" in kwargs and kwargs.get("tools") and kwargs.get("tools") is not NOT_GIVEN:
+            ollama_supported_params["tools"] = kwargs.get("tools")
+            
+        # Include tool_choice if present and not NOT_GIVEN
+        if "tool_choice" in kwargs and kwargs.get("tool_choice") is not NOT_GIVEN:
+            ollama_supported_params["tool_choice"] = kwargs.get("tool_choice")
 
         # Modify the messages to remove system message for Ollama
-        if ollama_supported_params["messages"] and ollama_supported_params["messages"][0].get("role") == "system":
+        if (ollama_supported_params["messages"] and 
+            len(ollama_supported_params["messages"]) > 0 and 
+            ollama_supported_params["messages"][0].get("role") == "system"):
             # Extract the system message
             system_content = ollama_supported_params["messages"][0].get("content", "")
             # Remove it from the messages
             ollama_supported_params["messages"] = ollama_supported_params["messages"][1:]
             # If there are user messages, prepend system to first user
-            if ollama_supported_params["messages"] and ollama_supported_params["messages"][0].get("role") == "user":
+            if (ollama_supported_params["messages"] and 
+                len(ollama_supported_params["messages"]) > 0 and 
+                ollama_supported_params["messages"][0].get("role") == "user"):
                 # Prepend the system instruction to the first user message, with a separator
                 user_content = ollama_supported_params["messages"][0].get("content", "")
                 if isinstance(user_content, str):
@@ -1254,6 +1370,10 @@ class OpenAIChatCompletionsModel(Model):
 
         # Remove None values
         ollama_kwargs = {k: v for k, v in ollama_supported_params.items() if v is not None}
+        
+        # Detect if this is a Qwen model
+        model_str = str(self.model).lower()
+        is_qwen = "qwen" in model_str
 
         if stream:
             # For streaming with Ollama, we need to create a Response object first
@@ -1269,26 +1389,98 @@ class OpenAIChatCompletionsModel(Model):
                 tools=[],
                 parallel_tool_calls=parallel_tool_calls or False,
             )
-            # Get the streaming object
-            stream_obj = await litellm.acompletion(
-                **ollama_kwargs,
-                api_base=get_ollama_api_base().rstrip('/v1'),
-                custom_llm_provider="ollama"
-            )
+            
+            # Special handling for Qwen when streaming to ensure tool calls are properly handled
+            if is_qwen and os.getenv('CAI_STREAM', 'false').lower() == 'true':
+                # Make sure we have the right custom provider in streaming mode
+                stream_obj = await litellm.acompletion(
+                    **ollama_kwargs,
+                    api_base=get_ollama_api_base(),
+                    custom_llm_provider="openai"  # Use openai provider for best compatibility with Qwen
+                )
+            else:
+                # Standard Ollama streaming
+                stream_obj = await litellm.acompletion(
+                    **ollama_kwargs,
+                    api_base=get_ollama_api_base().rstrip('/v1'),
+                    custom_llm_provider="ollama"
+                )
             return response, stream_obj
         else:
             # Non-streaming mode
-            ret = litellm.completion(
-                **ollama_kwargs,
-                api_base=get_ollama_api_base().rstrip('/v1'),
-                custom_llm_provider="ollama"
-            )
+            # For Qwen models, use the openai provider when tools are present
+            if is_qwen and "tools" in ollama_kwargs:
+                ret = litellm.completion(
+                    **ollama_kwargs,
+                    api_base=get_ollama_api_base(),
+                    custom_llm_provider="openai"  # Use openai provider for better tool handling
+                )
+            else:
+                # Standard Ollama completion
+                ret = litellm.completion(
+                    **ollama_kwargs,
+                    api_base=get_ollama_api_base().rstrip('/v1'),
+                    custom_llm_provider="ollama"
+                )
             return ret
 
     def _get_client(self) -> AsyncOpenAI:
         if self._client is None:
             self._client = AsyncOpenAI()
         return self._client
+
+    # Helper function to detect and format function calls from various models
+    def _detect_and_format_function_calls(self, delta):
+        """
+        Helper to detect function calls in different formats and normalize them.
+        Handles Qwen specifics where function calls may be formatted differently.
+        
+        Returns: List of normalized tool calls or None
+        """
+        # Standard OpenAI-style tool_calls format
+        if hasattr(delta, 'tool_calls') and delta.tool_calls:
+            return delta.tool_calls
+        elif isinstance(delta, dict) and 'tool_calls' in delta and delta['tool_calls']:
+            return delta['tool_calls']
+        
+        # Qwen/Ollama function_call format 
+        if isinstance(delta, dict) and 'function_call' in delta:
+            function_call = delta['function_call']
+            return [{
+                'index': 0,
+                'id': f"call_{time.time_ns()}",  # Generate a unique ID
+                'type': 'function',
+                'function': {
+                    'name': function_call.get('name', ''),
+                    'arguments': function_call.get('arguments', '')
+                }
+            }]
+        
+        # Anthropic-style tool_use format
+        if hasattr(delta, 'tool_use') and delta.tool_use:
+            tool_use = delta.tool_use
+            return [{
+                'index': 0,
+                'id': tool_use.get('id', f"tool_{time.time_ns()}"),
+                'type': 'function',
+                'function': {
+                    'name': tool_use.get('name', ''),
+                    'arguments': tool_use.get('input', '{}')
+                }
+            }]
+        elif isinstance(delta, dict) and 'tool_use' in delta and delta['tool_use']:
+            tool_use = delta['tool_use']
+            return [{
+                'index': 0,
+                'id': tool_use.get('id', f"tool_{time.time_ns()}"),
+                'type': 'function',
+                'function': {
+                    'name': tool_use.get('name', ''),
+                    'arguments': tool_use.get('input', '{}')
+                }
+            }]
+            
+        return None
 
 
 class _Converter:
