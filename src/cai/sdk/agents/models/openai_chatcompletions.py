@@ -93,6 +93,9 @@ if TYPE_CHECKING:
 # Suppress debug info from litellm
 litellm.suppress_debug_info = True
 
+if os.getenv('CAI_MODEL') == "o3-mini": 
+    litellm.drop_params = True
+
 _USER_AGENT = f"Agents/Python {__version__}"
 _HEADERS = {"User-Agent": _USER_AGENT}
 
