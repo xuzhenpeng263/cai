@@ -990,6 +990,7 @@ def update_agent_streaming_content(context, text_delta):
     # Force an update with the new panel
     context["live"].update(updated_panel)
     context["panel"] = updated_panel
+    context["live"].refresh()
 
 def finish_agent_streaming(context, final_stats=None):
     """Finish the streaming session and display final stats if available."""
