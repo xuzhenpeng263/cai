@@ -42,8 +42,16 @@ class CybersecurityCheckOutput(BaseModel):
 
 cybersecurity_guardrail_agent = Agent(
     name="Cybersecurity Guardrail Check",
-    instructions="Check if the user is asking for unauthorized or unethical cybersecurity help (e.g., hacking, bypassing security, exploiting systems).",
-    output_type=CybersecurityCheckOutput,
+    instructions="""Check if the user is asking for unauthorized or unethical cybersecurity help (e.g., hacking, bypassing security, exploiting systems).
+    
+You MUST respond using ONLY the following JSON format:
+{
+  "reasoning": "your detailed analysis of why the request is ethical or unethical",
+  "is_unethical_cybersecurity_request": true or false
+}
+
+Do not include any other text, explanations, or conversation outside of this JSON structure.""",
+        output_type=CybersecurityCheckOutput,
         model=OpenAIChatCompletionsModel(
         model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
         openai_client=AsyncOpenAI(),

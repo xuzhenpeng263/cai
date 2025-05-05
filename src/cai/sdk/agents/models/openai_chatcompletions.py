@@ -973,6 +973,10 @@ class OpenAIChatCompletionsModel(Model):
         # Only remove tool_choice if model starts with "gpt" and has no tools
         if self.model.startswith("gpt") and not converted_tools:
             kwargs.pop("tool_choice", None)
+            
+        # TODO: review this. Remove tool_choice for Anthropic/Claude models when no tools are provided
+        if ("claude" in str(self.model).lower() or "anthropic" in str(self.model).lower()) and not converted_tools:
+            kwargs.pop("tool_choice", None)
 
         # Model adjustments
         if any(x in self.model for x in ["claude"]):
