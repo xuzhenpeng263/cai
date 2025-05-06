@@ -4,7 +4,6 @@ import asyncio
 import copy
 from dataclasses import dataclass, field
 from typing import Any, cast
-import os
 
 from openai.types.responses import ResponseCompletedEvent
 
