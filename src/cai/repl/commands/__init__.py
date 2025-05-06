@@ -36,7 +36,8 @@ from cai.repl.commands import (  # pylint: disable=import-error,unused-import,li
     agent,
     history,
     config,
-    flush
+    flush,
+    workspace,
 )
 
 # Define helper functions
