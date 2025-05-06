@@ -779,22 +779,6 @@ class Runner:
         run_config: RunConfig,
         tool_use_tracker: AgentToolUseTracker,
     ) -> SingleStepResult:
-        # Log the raw model response output, focusing on tool calls
-        logger.debug(f"[_get_single_step_result_from_response] Raw new_response.id: {new_response.referenceable_id}")
-        if new_response.output:
-            for i, item in enumerate(new_response.output):
-                item_type = type(item).__name__
-                logger.debug(f"[_get_single_step_result_from_response] Raw output item [{i}] type: {item_type}")
-                if hasattr(item, "name") and hasattr(item, "arguments"): # For ResponseFunctionToolCall
-                    logger.debug(
-                        f"[_get_single_step_result_from_response] Raw ResponseFunctionToolCall item [{i}]: "
-                        f"Name='{getattr(item, 'name', 'N/A')}', "
-                        f"Args='{getattr(item, 'arguments', 'N/A')}', "
-                        f"CallID='{getattr(item, 'call_id', 'N/A')}'"
-                    )
-                elif hasattr(item, "text"): # For ResponseOutputText
-                     logger.debug(f"[_get_single_step_result_from_response] Raw ResponseOutputText item [{i}]: Text='{getattr(item, 'text', '')[:100]}...'")
-
 
         processed_response = RunImpl.process_model_response(
             agent=agent,
@@ -803,26 +787,9 @@ class Runner:
             output_schema=output_schema,
             handoffs=handoffs,
         )
-
-        # Log the processed response, focusing on tools_used
-        logger.debug(f"[_get_single_step_result_from_response] Processed response type: {type(processed_response).__name__}")
-        if hasattr(processed_response, 'is_final_output'):
-            logger.debug(f"[_get_single_step_result_from_response] Processed response: is_final_output={processed_response.is_final_output}")
-        else:
-            logger.debug(f"[_get_single_step_result_from_response] Processed response does not have is_final_output attribute")
-            
-        if hasattr(processed_response, 'final_output_from_llm') and processed_response.final_output_from_llm is not None:
-            logger.debug(f"[_get_single_step_result_from_response] Processed response: final_output_from_llm='{str(processed_response.final_output_from_llm)[:100]}...'")
         
         # Log tools used with robust type checking
         if hasattr(processed_response, 'tools_used') and processed_response.tools_used:
-            # Log summarizing number of tools used first
-            logger.debug(f"[_get_single_step_result_from_response] Found {len(processed_response.tools_used)} tools used")
-            
-            # Add spacing between blocks in terminal output
-            if os.environ.get('CAI_STREAM', 'false').lower() == 'true':
-                print("")  # Visual separator only when streaming is enabled
-                
             for i, tool_call in enumerate(processed_response.tools_used):
                 try:
                     # Safely extract tool name with multiple fallbacks
