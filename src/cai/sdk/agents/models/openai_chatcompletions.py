@@ -1089,10 +1089,6 @@ class OpenAIChatCompletionsModel(Model):
                 direct_stats = final_stats.copy()
                 direct_stats["interaction_cost"] = float(interaction_cost)
                 direct_stats["total_cost"] = float(total_cost)
-                
-                # Add a small delay to avoid overlapping outputs
-                await asyncio.sleep(0.3)
-                
                 # Use the direct copy with guaranteed float costs
                 finish_agent_streaming(streaming_context, direct_stats)
                 
@@ -1103,12 +1099,6 @@ class OpenAIChatCompletionsModel(Model):
                 # Find the assistant message to print
                 for item in final_response.output:
                     if isinstance(item, ResponseOutputMessage) and item.role == 'assistant':
-                        # Add a small delay to avoid overlapping outputs
-                        await asyncio.sleep(0.3)
-                        
-                        # Print clear visual separator before message
-                        print("\n")
-                        
                         cli_print_agent_messages(
                             agent_name=getattr(self, 'agent_name', 'Agent'),
                             message=item,
@@ -1612,7 +1602,6 @@ class OpenAIChatCompletionsModel(Model):
                 }
             }]
             
-        # Handle special Ollama generic_linux_command format
         if isinstance(delta, dict) and 'content' in delta:
             content = delta['content']
             # Try to detect if the content is a JSON string with function call format
