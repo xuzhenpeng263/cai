@@ -853,9 +853,8 @@ class Runner:
                             parsed_args = str(tool_call.parsed_args)
                     except Exception:
                         pass
-        else:
-            logger.debug("[_get_single_step_result_from_response] Processed response: No tools_used.")
-
+                except Exception:
+                    pass        
 
         tool_use_tracker.add_tool_use(agent, processed_response.tools_used)
 
