@@ -102,6 +102,33 @@ _HEADERS = {"User-Agent": _USER_AGENT}
 
 message_history = []
 
+# Function to add a message to history if it's not a duplicate
+def add_to_message_history(msg):
+    """Add a message to history if it's not a duplicate."""
+    if not message_history:
+        message_history.append(msg)
+        return
+
+    is_duplicate = False
+
+    if msg.get("role") in ["system", "user"]:
+        is_duplicate = any(
+            existing.get("role") == msg.get("role") and 
+            existing.get("content") == msg.get("content")
+            for existing in message_history
+        )
+
+    elif msg.get("role") == "assistant" and msg.get("tool_calls"):
+        is_duplicate = any(
+            existing.get("role") == "assistant" and 
+            existing.get("tool_calls") and 
+            existing["tool_calls"][0].get("id") == msg["tool_calls"][0].get("id")
+            for existing in message_history
+        )
+
+    if not is_duplicate:
+        message_history.append(msg)
+
 @dataclass
 class _StreamingState:
     started: bool = False
@@ -243,25 +270,29 @@ class OpenAIChatCompletionsModel(Model):
             # --- Add to message_history: user, system, and assistant tool call messages ---
             # Add system prompt to message_history
             if system_instructions:
-                message_history.append({
+                sys_msg = {
                     "role": "system",
                     "content": system_instructions
-                })
+                }
+                add_to_message_history(sys_msg)
+                
             # Add user prompt(s) to message_history
             if isinstance(input, str):
-                message_history.append({
+                user_msg = {
                     "role": "user",
                     "content": input
-                })
+                }
+                add_to_message_history(user_msg)
             elif isinstance(input, list):
                 for item in input:
                     # Try to extract user messages
                     if isinstance(item, dict):
                         if item.get("role") == "user":
-                            message_history.append({
+                            user_msg = {
                                 "role": "user",
                                 "content": item.get("content", "")
-                            })
+                            }
+                            add_to_message_history(user_msg)
             # Get token count estimate before API call for consistent counting
             estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
             
@@ -381,13 +412,15 @@ class OpenAIChatCompletionsModel(Model):
                             }
                         ]
                     }
-                    message_history.append(tool_call_msg)
+                    
+                    add_to_message_history(tool_call_msg)
             # If the assistant message is just text, add it as well
             elif hasattr(assistant_msg, "content") and assistant_msg.content:
-                message_history.append({
+                asst_msg = {
                     "role": "assistant",
                     "content": assistant_msg.content
-                })
+                }
+                add_to_message_history(asst_msg)
 
             usage = (
                 Usage(
@@ -458,25 +491,29 @@ class OpenAIChatCompletionsModel(Model):
                         "role": "system",
                     },
                 )
-            # --- Add to message_history: user, system prompts ---
+           # --- Add to message_history: user, system prompts ---
             if system_instructions:
-                message_history.append({
+                sys_msg = {
                     "role": "system",
                     "content": system_instructions
-                })
+                }
+                add_to_message_history(sys_msg)
+                
             if isinstance(input, str):
-                message_history.append({
+                user_msg = {
                     "role": "user",
                     "content": input
-                })
+                }
+                add_to_message_history(user_msg)
             elif isinstance(input, list):
                 for item in input:
                     if isinstance(item, dict):
                         if item.get("role") == "user":
-                            message_history.append({
+                            user_msg = {
                                 "role": "user",
                                 "content": item.get("content", "")
-                            })
+                            }
+                            add_to_message_history(user_msg)
             # Get token count estimate before API call for consistent counting
             estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
             
@@ -737,6 +774,7 @@ class OpenAIChatCompletionsModel(Model):
                         # Only add if not already in streamed_tool_calls
                         if tool_call_msg not in streamed_tool_calls:
                             streamed_tool_calls.append(tool_call_msg)
+                            add_to_message_history(tool_call_msg)
 
             function_call_starting_index = 0
             if state.text_content_index_and_output:
@@ -940,13 +978,14 @@ class OpenAIChatCompletionsModel(Model):
 
             # --- Add assistant tool call(s) to message_history at the end of streaming ---
             for tool_call_msg in streamed_tool_calls:
-                message_history.append(tool_call_msg)
-            # If there was only text output, add that as an assistant message
+                add_to_message_history(tool_call_msg)
+           # If there was only text output, add that as an assistant message
             if (not streamed_tool_calls) and state.text_content_index_and_output and state.text_content_index_and_output[1].text:
-                message_history.append({
+                asst_msg = {
                     "role": "assistant",
                     "content": state.text_content_index_and_output[1].text
-                })
+                }
+                add_to_message_history(asst_msg)
 
             if tracing.include_data():
                 span_generation.span_data.output = [final_response.model_dump()]
