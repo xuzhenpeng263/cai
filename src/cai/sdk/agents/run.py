@@ -853,16 +853,6 @@ class Runner:
                             parsed_args = str(tool_call.parsed_args)
                     except Exception:
                         pass
-                    
-                    logger.debug(
-                        f"[_get_single_step_result_from_response] Processed tool_call [{i}]: "
-                        f"Name='{tool_name}', "
-                        f"CallID='{call_id}', "
-                        f"ParsedArgs='{parsed_args}'"
-                    )
-                except Exception as e:
-                    # Last resort fallback for any unexpected structure
-                    logger.debug(f"[_get_single_step_result_from_response] Could not process tool_call [{i}]: {str(e)}")
         else:
             logger.debug("[_get_single_step_result_from_response] Processed response: No tools_used.")
 
