@@ -550,10 +550,6 @@ class OpenAIChatCompletionsModel(Model):
             
             model_str = str(self.model).lower()
             is_ollama = self.is_ollama or "ollama" in model_str or ":" in model_str or "qwen" in model_str
-
-            # Add a small delay to make sure any previous tool outputs are fully rendered
-            # This helps prevent overlapping of panels in the terminal
-            await asyncio.sleep(0.2)
             
             # Add visual separation before agent output
             if streaming_context and should_show_rich_stream:
