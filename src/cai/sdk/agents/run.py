@@ -4,6 +4,7 @@ import asyncio
 import copy
 from dataclasses import dataclass, field
 from typing import Any, cast
+import os
 
 from openai.types.responses import ResponseCompletedEvent
 
@@ -778,6 +779,23 @@ class Runner:
         run_config: RunConfig,
         tool_use_tracker: AgentToolUseTracker,
     ) -> SingleStepResult:
+        # Log the raw model response output, focusing on tool calls
+        logger.debug(f"[_get_single_step_result_from_response] Raw new_response.id: {new_response.referenceable_id}")
+        if new_response.output:
+            for i, item in enumerate(new_response.output):
+                item_type = type(item).__name__
+                logger.debug(f"[_get_single_step_result_from_response] Raw output item [{i}] type: {item_type}")
+                if hasattr(item, "name") and hasattr(item, "arguments"): # For ResponseFunctionToolCall
+                    logger.debug(
+                        f"[_get_single_step_result_from_response] Raw ResponseFunctionToolCall item [{i}]: "
+                        f"Name='{getattr(item, 'name', 'N/A')}', "
+                        f"Args='{getattr(item, 'arguments', 'N/A')}', "
+                        f"CallID='{getattr(item, 'call_id', 'N/A')}'"
+                    )
+                elif hasattr(item, "text"): # For ResponseOutputText
+                     logger.debug(f"[_get_single_step_result_from_response] Raw ResponseOutputText item [{i}]: Text='{getattr(item, 'text', '')[:100]}...'")
+
+
         processed_response = RunImpl.process_model_response(
             agent=agent,
             all_tools=all_tools,
@@ -785,6 +803,69 @@ class Runner:
             output_schema=output_schema,
             handoffs=handoffs,
         )
+
+        # Log the processed response, focusing on tools_used
+        logger.debug(f"[_get_single_step_result_from_response] Processed response type: {type(processed_response).__name__}")
+        if hasattr(processed_response, 'is_final_output'):
+            logger.debug(f"[_get_single_step_result_from_response] Processed response: is_final_output={processed_response.is_final_output}")
+        else:
+            logger.debug(f"[_get_single_step_result_from_response] Processed response does not have is_final_output attribute")
+            
+        if hasattr(processed_response, 'final_output_from_llm') and processed_response.final_output_from_llm is not None:
+            logger.debug(f"[_get_single_step_result_from_response] Processed response: final_output_from_llm='{str(processed_response.final_output_from_llm)[:100]}...'")
+        
+        # Log tools used with robust type checking
+        if hasattr(processed_response, 'tools_used') and processed_response.tools_used:
+            # Log summarizing number of tools used first
+            logger.debug(f"[_get_single_step_result_from_response] Found {len(processed_response.tools_used)} tools used")
+            
+            # Add spacing between blocks in terminal output
+            if os.environ.get('CAI_STREAM', 'false').lower() == 'true':
+                print("")  # Visual separator only when streaming is enabled
+                
+            for i, tool_call in enumerate(processed_response.tools_used):
+                try:
+                    # Safely extract tool name with multiple fallbacks
+                    tool_name = "Unknown"
+                    try:
+                        if hasattr(tool_call, 'tool'):
+                            if isinstance(tool_call.tool, str):
+                                tool_name = tool_call.tool
+                            elif hasattr(tool_call.tool, 'name'):
+                                tool_name = tool_call.tool.name
+                            else:
+                                tool_name = str(tool_call.tool)
+                    except Exception:
+                        pass
+                    
+                    # Safely extract call_id
+                    call_id = "Unknown"
+                    try:
+                        if hasattr(tool_call, 'call_id'):
+                            call_id = str(tool_call.call_id)
+                    except Exception:
+                        pass
+                    
+                    # Safely extract parsed_args
+                    parsed_args = "Unknown"
+                    try:
+                        if hasattr(tool_call, 'parsed_args'):
+                            parsed_args = str(tool_call.parsed_args)
+                    except Exception:
+                        pass
+                    
+                    logger.debug(
+                        f"[_get_single_step_result_from_response] Processed tool_call [{i}]: "
+                        f"Name='{tool_name}', "
+                        f"CallID='{call_id}', "
+                        f"ParsedArgs='{parsed_args}'"
+                    )
+                except Exception as e:
+                    # Last resort fallback for any unexpected structure
+                    logger.debug(f"[_get_single_step_result_from_response] Could not process tool_call [{i}]: {str(e)}")
+        else:
+            logger.debug("[_get_single_step_result_from_response] Processed response: No tools_used.")
+
 
         tool_use_tracker.add_tool_use(agent, processed_response.tools_used)
 

@@ -222,18 +222,41 @@ def terminate_session(session_id):
 
 def _run_ctf(ctf, command, stdout=False, timeout=100, stream=False, call_id=None):
     try:
-        # Ensure the command is executed in a shell that supports command
-        # chaining
-        output = ctf.get_shell(command, timeout=timeout)
-        # exploit_logger.log_ok()
-
-        if stdout:
-            print("\033[32m" + output + "\033[0m")
-        return output  # output if output else result.stder
+        # Check the type of ctf object to handle various formats properly
+        if ctf is None:
+            return f"Error: CTF environment is None"
+        
+        # Handle string CTF values (like "CTF_ENV")
+        if isinstance(ctf, str):
+            # If in local mode, fallback to running local command
+            return _run_local(command, stdout, timeout, stream, call_id)
+        
+        # Handle dict format that might come from Ollama/Qwen models
+        if isinstance(ctf, dict):
+            # Check if this dict has a get_shell key or function
+            if callable(getattr(ctf, 'get_shell', None)):
+                # This is a proper CTF object
+                output = ctf.get_shell(command, timeout=timeout)
+                if stdout:
+                    print("\033[32m" + output + "\033[0m")
+                return output
+            else:
+                # This is a dict but not a proper CTF object, fallback to local
+                return _run_local(command, stdout, timeout, stream, call_id)
+        
+        # Original code path for proper CTF objects
+        if hasattr(ctf, 'get_shell') and callable(ctf.get_shell):
+            output = ctf.get_shell(command, timeout=timeout)
+            if stdout:
+                print("\033[32m" + output + "\033[0m")
+            return output
+            
+        # Fallback for any other case
+        return _run_local(command, stdout, timeout, stream, call_id)
     except Exception as e:  # pylint: disable=broad-except
         print(color(f"Error executing CTF command: {e}", fg="red"))
-        # exploit_logger.log_error(str(e))
-        return f"Error executing CTF command: {str(e)}"
+        # Fallback to local execution
+        return _run_local(command, stdout, timeout, stream, call_id)
 
 
 def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None):
@@ -328,7 +351,7 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
             header.append(")", style="yellow")
             tool_time = 0 
             start_time = time.time()
-            total_time = time.time() - START_TIME
+            total_time = time.time() - START_TIME if START_TIME else 0
             timing_info = []
             if total_time:
                 timing_info.append(f"Total: {format_time(total_time)}")
@@ -339,14 +362,23 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
 
             content = Text()
             
+            # Get console width and calculate appropriate panel width
+            console_width = console.width if hasattr(console, 'width') else 100
+            panel_width = min(int(console_width * 0.95), console_width - 4)  # Use 95% of width or leave 4 chars margin
+            
+            # Create the panel with a specific width to avoid overflow
             panel = Panel(
                 Text.assemble(header, "\n\n", content),
                 title="[bold green]Tool Execution[/bold green]",
                 subtitle="[bold green]Live Output[/bold green]",
                 border_style="green",
                 padding=(1, 2),
-                box=ROUNDED
+                box=ROUNDED,
+                width=panel_width
             )
+            
+            # Print clear separator before panel to avoid overlap with previous content
+            console.print("\n\n")
             
             # Start Live display
             with Live(panel, console=console, refresh_per_second=4) as live:
@@ -364,7 +396,7 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
 
                     # Update tool_time and header with new timing info
                     tool_time = time.time() - start_time
-                    total_time = time.time() - START_TIME 
+                    total_time = time.time() - START_TIME if START_TIME else 0
                     # Remove any previous timing info from header (rebuild header)
                     timing_info = []
                     if total_time:
@@ -386,7 +418,8 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
                         subtitle="[bold green]Live Output[/bold green]",
                         border_style="green",
                         padding=(1, 2),
-                        box=ROUNDED
+                        box=ROUNDED,
+                        width=panel_width
                     )
                     live.update(panel)
                 # Check if process is done
@@ -405,7 +438,8 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
                         subtitle="[bold green]Live Output[/bold green]",
                         border_style="green",
                         padding=(1, 2),
-                        box=ROUNDED
+                        box=ROUNDED,
+                        width=panel_width
                     )
                     live.update(panel)
                 
@@ -415,12 +449,16 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
                     title="[bold green]Tool Execution[/bold green]",
                     border_style="green",
                     padding=(1, 2),
-                    box=ROUNDED
+                    box=ROUNDED,
+                    width=panel_width
                 )
                 live.update(panel)
                 
                 # Wait a moment for the panel to be displayed properly
                 time.sleep(0.5)
+                
+                # Print clear separator after panel to avoid overlap with next content
+                console.print("\n\n")
         else:
             # Fallback to simpler streaming with cli_print_tool_output
             # Parse command into command and args (same as rich mode)
@@ -435,6 +473,9 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
             if args and args.strip():
                 tool_args["args"] = args
             # Note: Omitted empty values and async_mode=False as it's default
+            
+            # Print separator to avoid overlap with previous content
+            print("\n")
             
             # Initial notification - just once
             cli_print_tool_output(tool_name, tool_args, "Command started...", call_id=call_id)
@@ -473,6 +514,9 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None):
                 final_output += f"\nCommand exited with code {return_code}"
                 
             cli_print_tool_output(tool_name, tool_args, final_output, call_id=call_id)
+            
+            # Print separator to avoid overlap with next content
+            print("\n")
         
         # Return the full output
         return ''.join(output_buffer)
@@ -547,7 +591,22 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
     if stream and not call_id:
         call_id = str(uuid.uuid4())[:8]
         
-    # Otherwise, run command normally
-    if ctf:
-        return _run_ctf(ctf, command, stdout, timeout, stream, call_id)
-    return _run_local(command, stdout, timeout, stream, call_id, tool_name)
+    # Determine whether to use CTF or local execution
+    use_ctf = False
+    if ctf is not None:
+        # Check if ctf is a proper object that can handle shell commands
+        if (hasattr(ctf, 'get_shell') and callable(ctf.get_shell)) or isinstance(ctf, dict) or isinstance(ctf, str):
+            use_ctf = True
+    
+    # Run the command using the appropriate method
+    if use_ctf:
+        try:
+            # Try with CTF first
+            return _run_ctf(ctf, command, stdout, timeout, stream, call_id)
+        except Exception as e:  # pylint: disable=broad-except
+            # Fallback to local if CTF fails
+            print(color(f"CTF execution failed, falling back to local: {str(e)}", fg="yellow"))
+            return _run_local(command, stdout, timeout, stream, call_id, tool_name)
+    else:
+        # Use local execution
+        return _run_local(command, stdout, timeout, stream, call_id, tool_name)
