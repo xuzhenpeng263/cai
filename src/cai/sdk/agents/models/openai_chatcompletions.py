@@ -809,154 +809,48 @@ class OpenAIChatCompletionsModel(Model):
                     # Try to extract a JSON object from the content
                     json_start = ollama_full_content.find('{')
                     json_end = ollama_full_content.rfind('}') + 1
-                    
-                    logger.debug(f"Ollama content length: {len(ollama_full_content)}, JSON start: {json_start}, JSON end: {json_end}")
-                    
+                                        
                     if json_start >= 0 and json_end > json_start:
-                        json_str = ollama_full_content[json_start:json_end]
-                        logger.debug(f"Extracted potential JSON: {json_str[:100]}...")
-                        
-                        # Special check for generic_linux_command format
-                        if "generic_linux_command" in json_str and "arguments" in json_str:
-                            logger.debug("Detected generic_linux_command pattern - using special handling")
-                            
-                            # Try regex pattern matching to handle potentially malformed JSON
-                            cmd_pattern = re.search(r'"command"\s*:\s*"([^"]+)"', json_str)
-                            args_pattern = re.search(r'"args"\s*:\s*"([^"]*)"', json_str)
-                            ctf_pattern = re.search(r'"ctf"\s*:\s*"([^"]*)"', json_str)
-                            
-                            if cmd_pattern:
-                                # Create a tool call specifically for generic_linux_command
-                                command = cmd_pattern.group(1)
-                                args = args_pattern.group(1) if args_pattern else ""
-                                ctf = ctf_pattern.group(1) if ctf_pattern else "<CTF_ENV>"
-                                
-                                tool_call_id = f"call_{hashlib.md5(('generic_linux_command' + str(time.time())).encode()).hexdigest()[:8]}"
-                                
-                                # Create a proper arguments object
-                                command_args = {
-                                    "command": command,
-                                    "args": args,
-                                    "ctf": ctf,
-                                    "async_mode": False,
-                                    "session_id": ""
-                                }
-                                
-                                arguments_str = json.dumps(command_args)
-                                logger.debug(f"Created generic_linux_command with args: {arguments_str}")
-                                
-                                # Add it to our function_calls state
-                                state.function_calls[0] = ResponseFunctionToolCall(
-                                    id=FAKE_RESPONSES_ID,
-                                    arguments=arguments_str,
-                                    name="generic_linux_command",
-                                    type="function_call",
-                                    call_id=tool_call_id,
-                                )
-                                
-                                # Display the tool call in CLI
-                                from cai.util import cli_print_agent_messages
-                                try:
-                                    # Create a message-like object to display the function call
-                                    tool_msg = type('ToolCallWrapper', (), {
-                                        'content': None,
-                                        'tool_calls': [
-                                            type('ToolCallDetail', (), {
-                                                'function': type('FunctionDetail', (), {
-                                                    'name': "generic_linux_command",
-                                                    'arguments': arguments_str
-                                                }),
-                                                'id': tool_call_id,
-                                                'type': 'function'
-                                            })
-                                        ]
-                                    })
-                                    
-                                    # Print the tool call using the CLI utility
-                                    cli_print_agent_messages(
-                                        agent_name=getattr(self, 'agent_name', 'Agent'),
-                                        message=tool_msg,
-                                        counter=getattr(self, 'interaction_counter', 0),
-                                        model=str(self.model),
-                                        debug=False,
-                                        interaction_input_tokens=estimated_input_tokens,
-                                        interaction_output_tokens=estimated_output_tokens,
-                                        interaction_reasoning_tokens=0,
-                                        total_input_tokens=getattr(self, 'total_input_tokens', 0) + estimated_input_tokens,
-                                        total_output_tokens=getattr(self, 'total_output_tokens', 0) + estimated_output_tokens,
-                                        total_reasoning_tokens=0,
-                                        interaction_cost=None,
-                                        total_cost=None
-                                    )
-                                except Exception as e:
-                                    logger.error(f"Error displaying tool call in CLI: {e}")
-                                
-                                # Add to message history
-                                tool_call_msg = {
-                                    "role": "assistant",
-                                    "content": None,
-                                    "tool_calls": [
-                                        {
-                                            "id": tool_call_id,
-                                            "type": "function",
-                                            "function": {
-                                                "name": "generic_linux_command",
-                                                "arguments": arguments_str
-                                            }
-                                        }
-                                    ]
-                                }
-                                
-                                streamed_tool_calls.append(tool_call_msg)
-                                add_to_message_history(tool_call_msg)
-                                logger.debug(f"Added generic_linux_command with args: {arguments_str}")
-
-                        
-                        # Standard JSON parsing for other function calls
+                        json_str = ollama_full_content[json_start:json_end]                        
+                        # Try to parse the JSON
                         parsed = json.loads(json_str)
                         
                         # Check if it looks like a function call
-                        if ('name' in parsed and 'arguments' in parsed and 
-                            isinstance(parsed['arguments'], dict)):
-                            
+                        if ('name' in parsed and 'arguments' in parsed):
                             logger.debug(f"Found valid function call in Ollama output: {json_str}")
                             
-                            # Create a tool call from the JSON object
+                            # Create a tool call ID
                             tool_call_id = f"call_{hashlib.md5((parsed['name'] + str(time.time())).encode()).hexdigest()[:8]}"
-                            
-                            # Add it to our function_calls state
-                            state.function_calls[0] = ResponseFunctionToolCall(
-                                id=FAKE_RESPONSES_ID,
-                                arguments=json.dumps(parsed['arguments']),
-                                name=parsed['name'],
-                                type="function_call",
-                                call_id=tool_call_id,
-                            )
                             
                             # Ensure arguments is a valid JSON string
                             arguments_str = ""
                             if isinstance(parsed['arguments'], dict):
+                                # Remove 'ctf' field if it exists
+                                if 'ctf' in parsed['arguments']:
+                                    del parsed['arguments']['ctf']
                                 arguments_str = json.dumps(parsed['arguments'])
                             elif isinstance(parsed['arguments'], str):
                                 # If it's already a string, check if it's valid JSON
                                 try:
-                                    # Try parsing to validate
-                                    json.loads(parsed['arguments'])
-                                    arguments_str = parsed['arguments']
+                                    # Try parsing to validate and remove 'ctf' if present
+                                    args_dict = json.loads(parsed['arguments'])
+                                    if isinstance(args_dict, dict) and 'ctf' in args_dict:
+                                        del args_dict['ctf']
+                                    arguments_str = json.dumps(args_dict)
                                 except:
                                     # If not valid JSON, encode it as a JSON string
                                     arguments_str = json.dumps(parsed['arguments'])
                             else:
                                 # For any other type, convert to string and then JSON
-                                arguments_str = json.dumps(str(parsed['arguments']))
-                            
-                            logger.debug(f"Final arguments string: {arguments_str}")
-                            
-                            # Update with the properly formatted arguments
-                            state.function_calls[0].arguments = arguments_str
-                            
-                            # Log the tool call for development purposes
-                            logger.debug(f"Adding tool call: {parsed['name']} with arguments: {arguments_str}")
+                                arguments_str = json.dumps(str(parsed['arguments']))                            
+                            # Add it to our function_calls state
+                            state.function_calls[0] = ResponseFunctionToolCall(
+                                id=FAKE_RESPONSES_ID,
+                                arguments=arguments_str,
+                                name=parsed['name'],
+                                type="function_call",
+                                call_id=tool_call_id,
+                            )
                             
                             # Display the tool call in CLI
                             from cai.util import cli_print_agent_messages
@@ -1015,106 +909,9 @@ class OpenAIChatCompletionsModel(Model):
                             streamed_tool_calls.append(tool_call_msg)
                             add_to_message_history(tool_call_msg)
                             
-                            logger.debug(f"Added function call: {parsed['name']} with args: {json.dumps(parsed['arguments'])}")
+                            logger.debug(f"Added function call: {parsed['name']} with args: {arguments_str}")
                 except Exception as e:
-                    logger.debug(f"Failed to parse potential Ollama function call: {e}")
-
-                    # Even if JSON parsing fails, try to extract generic_linux_command with regex
-                    if "generic_linux_command" in ollama_full_content:
-                        logger.debug("JSON parsing failed but detected generic_linux_command - trying regex fallback")
-                        try:
-                            # Use regex to extract command components even from malformed output
-                            cmd_pattern = re.search(r'"command"\s*:\s*"([^"]+)"', ollama_full_content)
-                            args_pattern = re.search(r'"args"\s*:\s*"([^"]*)"', ollama_full_content)
-                            ctf_pattern = re.search(r'"ctf"\s*:\s*"([^"]*)"', ollama_full_content)
-                            
-                            if cmd_pattern:
-                                # Create a tool call specifically for generic_linux_command
-                                command = cmd_pattern.group(1)
-                                args = args_pattern.group(1) if args_pattern else ""
-                                ctf = ctf_pattern.group(1) if ctf_pattern else "<CTF_ENV>"
-                                
-                                tool_call_id = f"call_{hashlib.md5(('generic_linux_command' + str(time.time())).encode()).hexdigest()[:8]}"
-                                
-                                # Create a proper arguments object
-                                command_args = {
-                                    "command": command,
-                                    "args": args,
-                                    "ctf": ctf,
-                                    "async_mode": False,
-                                    "session_id": ""
-                                }
-                                
-                                arguments_str = json.dumps(command_args)
-                                logger.debug(f"Fallback created generic_linux_command with args: {arguments_str}")
-                                
-                                # Add it to our function_calls state
-                                state.function_calls[0] = ResponseFunctionToolCall(
-                                    id=FAKE_RESPONSES_ID,
-                                    arguments=arguments_str,
-                                    name="generic_linux_command",
-                                    type="function_call",
-                                    call_id=tool_call_id,
-                                )
-                                
-                                # Display the tool call in CLI
-                                from cai.util import cli_print_agent_messages
-                                try:
-                                    # Create a message-like object for display
-                                    tool_msg = type('ToolCallWrapper', (), {
-                                        'content': None,
-                                        'tool_calls': [
-                                            type('ToolCallDetail', (), {
-                                                'function': type('FunctionDetail', (), {
-                                                    'name': "generic_linux_command",
-                                                    'arguments': arguments_str
-                                                }),
-                                                'id': tool_call_id,
-                                                'type': 'function'
-                                            })
-                                        ]
-                                    })
-                                    
-                                    cli_print_agent_messages(
-                                        agent_name=getattr(self, 'agent_name', 'Agent'),
-                                        message=tool_msg,
-                                        counter=getattr(self, 'interaction_counter', 0),
-                                        model=str(self.model),
-                                        debug=False,
-                                        interaction_input_tokens=estimated_input_tokens,
-                                        interaction_output_tokens=estimated_output_tokens,
-                                        interaction_reasoning_tokens=0,
-                                        total_input_tokens=getattr(self, 'total_input_tokens', 0) + estimated_input_tokens,
-                                        total_output_tokens=getattr(self, 'total_output_tokens', 0) + estimated_output_tokens,
-                                        total_reasoning_tokens=0,
-                                        interaction_cost=None,
-                                        total_cost=None
-                                    )
-                                except Exception as e:
-                                    logger.error(f"Error displaying fallback tool call in CLI: {e}")
-                                
-                                # Add to message history
-                                tool_call_msg = {
-                                    "role": "assistant",
-                                    "content": None,
-                                    "tool_calls": [
-                                        {
-                                            "id": tool_call_id,
-                                            "type": "function",
-                                            "function": {
-                                                "name": "generic_linux_command",
-                                                "arguments": arguments_str
-                                            }
-                                        }
-                                    ]
-                                }
-                                
-                                streamed_tool_calls.append(tool_call_msg)
-                                add_to_message_history(tool_call_msg)
-                                
-                                logger.debug(f"Added fallback generic_linux_command")
-                        except Exception as regex_err:
-                            logger.error(f"Regex fallback also failed: {regex_err}")
+                    pass
 
             function_call_starting_index = 0
             if state.text_content_index_and_output:
