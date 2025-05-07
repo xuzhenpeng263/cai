@@ -73,6 +73,14 @@ def update_toolbar_in_background():
             else:
                 workspace_path = standard_path
         
+        # Get current active container info
+        container_id = os.getenv("CAI_ACTIVE_CONTAINER")
+        if container_id:
+            active_env_name, active_env_icon, active_env_color = get_container_info(container_id)
+        else:
+            active_env_name, active_env_icon, active_env_color = "Host System", "💻", "ansiblue"
+
+
         # Get Ollama information
         ollama_status = "unavailable"
         try:
@@ -104,6 +112,7 @@ def update_toolbar_in_background():
 
         # Update the cache
         toolbar_cache['html'] = HTML(
+            f"<{active_env_color}><b>ENV:</b> {active_env_icon} {active_env_name}</{active_env_color}>|"
             f"<ansired><b>IP:</b></ansired> <ansigreen>{
                 ip_address}</ansigreen> | "
             f"<ansiyellow><b>OS:</b></ansiyellow> <ansiblue>{
@@ -166,3 +175,47 @@ threading.Thread(
     target=update_toolbar_in_background,
     daemon=True
 ).start()
+
+def get_container_info(container_id):
+    """
+    Retrieves information about a Docker container by its ID.
+
+    Args:
+        container_id (str): The ID of the Docker container.
+
+    Returns:
+        tuple: A tuple containing:
+            - container_name (str): The image name (with "(stopped)" suffix if not running).
+            - icon (str): An emoji representing the container type or status.
+            - color (str): A string representing the display color (e.g., for UI rendering).
+    """
+    try:
+        # Get the container's image name.
+        image = subprocess.run(
+            ["docker", "inspect", "--format", "{{.Config.Image}}", container_id],
+            capture_output=True, text=True
+        ).stdout.strip()
+
+        # Determine the appropriate icon and color based on the image type.
+        icon = "🐳"
+        color = "ansigreen"
+
+        if "kali" in image.lower() or "parrot" in image.lower():
+            icon = "🔒"
+        elif "cai" in image.lower():
+            icon = "⭐"
+
+        # Check whether the container is currently running.
+        running = subprocess.run(
+            ["docker", "ps", "--filter", f"id={container_id}", "--format", "{{.Status}}"],
+            capture_output=True, text=True
+        ).stdout.strip()
+
+        if not running:
+            image += " (stopped)"
+            color = "ansiyellow"
+
+        return image, icon, color
+
+    except Exception:
+        return f"Container {container_id[:12]}", "🐳", "ansiyellow"
