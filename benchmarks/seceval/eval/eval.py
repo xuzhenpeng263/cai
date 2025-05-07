@@ -25,6 +25,8 @@ import time
 from langchain.globals import set_llm_cache
 from langchain.cache import SQLiteCache
 
+import litellm
+
 set_llm_cache(
     SQLiteCache(
         database_path=str(Path(__file__).parent.parent / ".langchain.db")
@@ -107,22 +109,25 @@ def init_azure_openai_llm(model_id: str):
 
 
 def init_ollama_llm(model_id: str):
-    import openai
-
-    # Establecer el endpoint de Ollama
-    openai.api_base = os.getenv("OLLAMA_API_BASE", "http://localhost:8000/v1")
-    openai.api_key = "ollama"  # No se usa pero es requerido por el cliente
-
     class OllamaChat:
         async def abatch(self, prompts: List[str]):
             responses = []
             for prompt in prompts:
                 try:
-                    completion = openai.ChatCompletion.create(
+
+                    completion = litellm.completion(
                         model=model_id,
                         messages=[{"role": "user", "content": prompt}],
+                        api_base="http://localhost:8000"  # Ollama API endpoint
                     )
-                    responses.append(AIMessage(content=completion.choices[0].message["content"]))
+                    if hasattr(completion, "choices") and completion.choices:
+                        content = completion.choices[0].message.content
+                        result = self.extract_answer(content)
+                        if result:
+                            print("--DEBUG: result: ", result)
+                            responses.append(result)
+                        else:
+                            print("Incorrect answer format detected. Attempting the question again.")
                 except Exception as e:
                     logging.error(f"Ollama error: {e}")
                     responses.append(f"Error: {e}")
