@@ -2,7 +2,6 @@ import json
 import re
 import time
 from tqdm import tqdm
-import os
 import litellm
 
 
