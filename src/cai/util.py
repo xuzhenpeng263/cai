@@ -899,179 +899,247 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
             console.print(tool_panel)
 
 def create_agent_streaming_context(agent_name, counter, model):
-    """Create a streaming context object that maintains state for streaming agent output."""
-    from rich.live import Live
-    import shutil
+    """
+    Create a streaming context object that maintains state for streaming agent output.
     
-    # Use the model from env if available
-    model_override = os.getenv('CAI_MODEL')
-    if model_override:
-        model = model_override
+    Args:
+        agent_name: The name of the agent to display
+        counter: The interaction counter (turn number)
+        model: The model name
         
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    
-    # Terminal size for better display
-    terminal_width, _ = shutil.get_terminal_size((100, 24))
-    panel_width = min(terminal_width - 4, 120)  # Keep some margin
-    
-    # Create base header for the panel
-    header = Text()
-    header.append(f"[{counter}] ", style="bold cyan")
-    header.append(f"Agent: {agent_name} ", style="bold green")
-    header.append(f">> ", style="yellow")
-    
-    # Create the content area for streaming text
-    content = Text("")
-    
-    # Add timestamp and model info
-    footer = Text()
-    footer.append(f"\n[{timestamp}", style="dim")
-    if model:
-        footer.append(f" ({model})", style="bold magenta")
-    footer.append("]", style="dim")
-    
-    # Create the panel (initial state)
-    panel = Panel(
-        Text.assemble(header, content, footer),
-        border_style="blue",
-        box=ROUNDED,
-        padding=(1, 2),  
-        title="[bold]Agent Streaming Response[/bold]",
-        title_align="left",
-        width=panel_width,
-        expand=True 
-    )
-    
-    # Create Live display object but don't start it until we have content
-    live = Live(panel, refresh_per_second=20, console=console, auto_refresh=False)
-    
-    return {
-        "live": live,
-        "panel": panel,
-        "header": header,
-        "content": content,
-        "footer": footer,
-        "timestamp": timestamp,
-        "model": model,
-        "agent_name": agent_name,
-        "panel_width": panel_width,
-        "is_started": False  # Track if we've started the display
-    }
+    Returns:
+        A dictionary with the streaming context
+    """
+    try:
+        from rich.live import Live
+        import shutil
+        
+        # Use the model from env if available
+        model_override = os.getenv('CAI_MODEL')
+        if model_override:
+            model = model_override
+            
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        
+        # Terminal size for better display
+        terminal_width, _ = shutil.get_terminal_size((100, 24))
+        panel_width = min(terminal_width - 4, 120)  # Keep some margin
+        
+        # Create base header for the panel
+        header = Text()
+        header.append(f"[{counter}] ", style="bold cyan")
+        header.append(f"Agent: {agent_name} ", style="bold green")
+        header.append(f">> ", style="yellow")
+        
+        # Create the content area for streaming text
+        content = Text("")
+        
+        # Add timestamp and model info
+        footer = Text()
+        footer.append(f"\n[{timestamp}", style="dim")
+        if model:
+            footer.append(f" ({model})", style="bold magenta")
+        footer.append("]", style="dim")
+        
+        # Create the panel (initial state)
+        panel = Panel(
+            Text.assemble(header, content, footer),
+            border_style="blue",
+            box=ROUNDED,
+            padding=(1, 2),  
+            title="[bold]Agent Streaming Response[/bold]",
+            title_align="left",
+            width=panel_width,
+            expand=True 
+        )
+        
+        # Create Live display object but don't start it until we have content
+        live = Live(panel, refresh_per_second=20, console=console, auto_refresh=False)
+        
+        return {
+            "live": live,
+            "panel": panel,
+            "header": header,
+            "content": content,
+            "footer": footer,
+            "timestamp": timestamp,
+            "model": model,
+            "agent_name": agent_name,
+            "panel_width": panel_width,
+            "is_started": False,  # Track if we've started the display
+            "error": None,  # Track any errors
+        }
+    except Exception as e:
+        # If rich display fails, return None and log the error
+        import sys
+        print(f"Error creating streaming context: {e}", file=sys.stderr)
+        return None
 
 def update_agent_streaming_content(context, text_delta):
-    """Update the streaming content with new text."""
-    # Parse the text_delta to get just the content if needed
-    parsed_delta = parse_message_content(text_delta)
+    """
+    Update the streaming content with new text.
     
-    # Skip empty updates to avoid showing an empty panel
-    if not parsed_delta or parsed_delta.strip() == "":
-        return
-    
-    # Add the parsed text to the content
-    context["content"].append(parsed_delta)
-    
-    # Update the live display with the latest content
-    updated_panel = Panel(
-        Text.assemble(context["header"], context["content"], context["footer"]),
-        border_style="blue",
-        box=ROUNDED,
-        padding=(1, 2), 
-        title="[bold]Agent Streaming Response[/bold]",
-        title_align="left",
-        width=context.get("panel_width", 100),
-        expand=True
-    )
-    
-    # Check if we need to start the display
-    if not context.get("is_started", False):
-        context["live"].start()
-        context["is_started"] = True
-    
-    # Force an update with the new panel
-    context["live"].update(updated_panel)
-    context["panel"] = updated_panel
-    context["live"].refresh()
+    Args:
+        context: The streaming context created by create_agent_streaming_context
+        text_delta: The new text to add
+    """
+    if not context:
+        return False
+        
+    try:
+        # Parse the text_delta to get just the content if needed
+        parsed_delta = parse_message_content(text_delta)
+        
+        # Skip empty updates to avoid showing an empty panel
+        if not parsed_delta or parsed_delta.strip() == "":
+            return True
+        
+        # Add the parsed text to the content
+        context["content"].append(parsed_delta)
+        
+        # Update the live display with the latest content
+        updated_panel = Panel(
+            Text.assemble(context["header"], context["content"], context["footer"]),
+            border_style="blue",
+            box=ROUNDED,
+            padding=(1, 2), 
+            title="[bold]Agent Streaming Response[/bold]",
+            title_align="left",
+            width=context.get("panel_width", 100),
+            expand=True
+        )
+        
+        # Check if we need to start the display
+        if not context.get("is_started", False):
+            try:
+                context["live"].start()
+                context["is_started"] = True
+            except Exception as e:
+                context["error"] = str(e)
+                return False
+        
+        # Force an update with the new panel
+        context["live"].update(updated_panel)
+        context["panel"] = updated_panel
+        context["live"].refresh()
+        return True
+    except Exception as e:
+        # If there's an error, set it in the context
+        context["error"] = str(e)
+        return False
 
 def finish_agent_streaming(context, final_stats=None):
-    """Finish the streaming session and display final stats if available."""
-    # Check if there's actual content to display - don't show empty panels
-    if not context["content"] or context["content"].plain == "":
-        # If the display was never started, nothing to do
-        if not context.get("is_started", False):
-            return
-        # Otherwise, stop the display without showing final panel
-        context["live"].stop()
-        return
+    """
+    Finish the streaming session and display final stats if available.
     
-    # If we have token stats, add them
-    tokens_text = None
-    if final_stats:
-        interaction_input_tokens = final_stats.get("interaction_input_tokens")
-        interaction_output_tokens = final_stats.get("interaction_output_tokens")
-        interaction_reasoning_tokens = final_stats.get("interaction_reasoning_tokens")
-        total_input_tokens = final_stats.get("total_input_tokens")
-        total_output_tokens = final_stats.get("total_output_tokens")
-        total_reasoning_tokens = final_stats.get("total_reasoning_tokens")
+    Args:
+        context: The streaming context to finish
+        final_stats: Optional dictionary with token statistics and costs
+    """
+    if not context:
+        return False
         
-        # Ensure costs are properly extracted and preserved as floats
-        interaction_cost = float(final_stats.get("interaction_cost", 0.0))
-        total_cost = float(final_stats.get("total_cost", 0.0))
+    try:
+        # Check if there's actual content to display - don't show empty panels
+        if not context["content"] or context["content"].plain == "":
+            # If the display was never started, nothing to do
+            if not context.get("is_started", False):
+                return True
+            # Otherwise, stop the display without showing final panel
+            try:
+                context["live"].stop()
+            except Exception:
+                pass
+            return True
         
-        model_name = context.get("model", "")
-        # If model is not a string, use env
-        if not isinstance(model_name, str):
-            model_name = os.environ.get('CAI_MODEL', 'gpt-4o-mini')
-        
-        if (interaction_input_tokens is not None and
-                interaction_output_tokens is not None and
-                interaction_reasoning_tokens is not None and
-                total_input_tokens is not None and
-                total_output_tokens is not None and
-                total_reasoning_tokens is not None):
+        # If we have token stats, add them
+        tokens_text = None
+        if final_stats:
+            interaction_input_tokens = final_stats.get("interaction_input_tokens")
+            interaction_output_tokens = final_stats.get("interaction_output_tokens")
+            interaction_reasoning_tokens = final_stats.get("interaction_reasoning_tokens")
+            total_input_tokens = final_stats.get("total_input_tokens")
+            total_output_tokens = final_stats.get("total_output_tokens")
+            total_reasoning_tokens = final_stats.get("total_reasoning_tokens")
             
-            # Only calculate costs if they weren't provided or are zero
-            if interaction_cost is None or interaction_cost == 0.0:
-                interaction_cost = calculate_model_cost(model_name, interaction_input_tokens, interaction_output_tokens)
-            if total_cost is None or total_cost == 0.0:
-                total_cost = calculate_model_cost(model_name, total_input_tokens, total_output_tokens)
+            # Ensure costs are properly extracted and preserved as floats
+            interaction_cost = float(final_stats.get("interaction_cost", 0.0))
+            total_cost = float(final_stats.get("total_cost", 0.0))
             
-            tokens_text = _create_token_display(
-                interaction_input_tokens,
-                interaction_output_tokens,
-                interaction_reasoning_tokens,
-                total_input_tokens,
-                total_output_tokens,
-                total_reasoning_tokens,
-                model_name,  # string model name!
-                interaction_cost,
-                total_cost
-            )
-    
-    final_panel = Panel(
-        Text.assemble(
-            context["header"], 
-            context["content"], 
-            Text("\n\n"), 
-            tokens_text if tokens_text else Text(""),
-            context["footer"]
-        ),
-        border_style="blue",
-        box=ROUNDED,
-        padding=(1, 2), 
-        title="[bold]Agent Streaming Response[/bold]",
-        title_align="left",
-        width=context.get("panel_width", 100),
-        expand=True
-    )
-    
-    # Update one last time
-    context["live"].update(final_panel)
-    
-    # Ensure updates are displayed before stopping
-    time.sleep(0.5)
-    
-    # Stop the live display
-    context["live"].stop()
+            model_name = context.get("model", "")
+            # If model is not a string, use env
+            if not isinstance(model_name, str):
+                model_name = os.environ.get('CAI_MODEL', 'gpt-4o-mini')
+            
+            if (interaction_input_tokens is not None and
+                    interaction_output_tokens is not None and
+                    interaction_reasoning_tokens is not None and
+                    total_input_tokens is not None and
+                    total_output_tokens is not None and
+                    total_reasoning_tokens is not None):
+                
+                # Only calculate costs if they weren't provided or are zero
+                if interaction_cost is None or interaction_cost == 0.0:
+                    interaction_cost = calculate_model_cost(model_name, interaction_input_tokens, interaction_output_tokens)
+                if total_cost is None or total_cost == 0.0:
+                    total_cost = calculate_model_cost(model_name, total_input_tokens, total_output_tokens)
+                
+                tokens_text = _create_token_display(
+                    interaction_input_tokens,
+                    interaction_output_tokens,
+                    interaction_reasoning_tokens,
+                    total_input_tokens,
+                    total_output_tokens,
+                    total_reasoning_tokens,
+                    model_name,  # string model name!
+                    interaction_cost,
+                    total_cost
+                )
+        
+        final_panel = Panel(
+            Text.assemble(
+                context["header"], 
+                context["content"], 
+                Text("\n\n"), 
+                tokens_text if tokens_text else Text(""),
+                context["footer"]
+            ),
+            border_style="blue",
+            box=ROUNDED,
+            padding=(1, 2), 
+            title="[bold]Agent Streaming Response[/bold]",
+            title_align="left",
+            width=context.get("panel_width", 100),
+            expand=True
+        )
+        
+        # Update one last time
+        context["live"].update(final_panel)
+        
+        # Ensure updates are displayed before stopping
+        time.sleep(0.1)
+        
+        # Stop the live display
+        try:
+            context["live"].stop()
+        except Exception as e:
+            context["error"] = str(e)
+            return False
+            
+        return True
+    except Exception as e:
+        # If there's an error, print it if the context hasn't already tracked one
+        if not context.get("error"):
+            context["error"] = str(e)
+            
+        # Try to stop the live display even if there was an error
+        try:
+            if context.get("is_started", False) and context.get("live"):
+                context["live"].stop()
+        except Exception:
+            pass
+            
+        return False
 
 def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execution_info=None, token_info=None):
     """

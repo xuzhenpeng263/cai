@@ -477,678 +477,654 @@ class OpenAIChatCompletionsModel(Model):
                 model=str(self.model)
             )
         
-        with generation_span(
-            model=str(self.model),
-            model_config=dataclasses.asdict(model_settings)
-            | {"base_url": str(self._client.base_url)},
-            disabled=tracing.is_disabled(),
-        ) as span_generation:
-            # Prepare messages for consistent token counting
-            converted_messages = _Converter.items_to_messages(input)
-            if system_instructions:
-                converted_messages.insert(
-                    0,
-                    {
-                        "content": system_instructions,
+        try:
+            with generation_span(
+                model=str(self.model),
+                model_config=dataclasses.asdict(model_settings)
+                | {"base_url": str(self._client.base_url)},
+                disabled=tracing.is_disabled(),
+            ) as span_generation:
+                # Prepare messages for consistent token counting
+                converted_messages = _Converter.items_to_messages(input)
+                if system_instructions:
+                    converted_messages.insert(
+                        0,
+                        {
+                            "content": system_instructions,
+                            "role": "system",
+                        },
+                    )
+               # --- Add to message_history: user, system prompts ---
+                if system_instructions:
+                    sys_msg = {
                         "role": "system",
+                        "content": system_instructions
+                    }
+                    add_to_message_history(sys_msg)
+                    
+                if isinstance(input, str):
+                    user_msg = {
+                        "role": "user",
+                        "content": input
+                    }
+                    add_to_message_history(user_msg)
+                elif isinstance(input, list):
+                    for item in input:
+                        if isinstance(item, dict):
+                            if item.get("role") == "user":
+                                user_msg = {
+                                    "role": "user",
+                                    "content": item.get("content", "")
+                                }
+                                add_to_message_history(user_msg)
+                # Get token count estimate before API call for consistent counting
+                estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
+                
+                response, stream = await self._fetch_response(
+                    system_instructions,
+                    input,
+                    model_settings,
+                    tools,
+                    output_schema,
+                    handoffs,
+                    span_generation,
+                    tracing,
+                    stream=True,
+                )
+
+                usage: CompletionUsage | None = None
+                state = _StreamingState()
+                
+                # Manual token counting (when API doesn't provide it)
+                output_text = ""
+                estimated_output_tokens = 0
+                
+                # Initialize a streaming text accumulator for rich display
+                streaming_text_buffer = ""
+                # For tool call streaming, accumulate tool_calls to add to message_history at the end
+                streamed_tool_calls = []
+                
+                # Ollama specific: accumulate full content to check for function calls at the end
+                # Some Ollama models output the function call as JSON in the text content
+                ollama_full_content = ""
+                is_ollama = False
+                
+                model_str = str(self.model).lower()
+                is_ollama = self.is_ollama or "ollama" in model_str or ":" in model_str or "qwen" in model_str
+                
+                # Add visual separation before agent output
+                if streaming_context and should_show_rich_stream:
+                    # If we're using rich context, we'll add separation through that
+                    pass
+                else:
+                    # Print clear visual separator
+                    print("\n")
+                
+                try:
+                    async for chunk in stream:
+                        if not state.started:
+                            state.started = True
+                            yield ResponseCreatedEvent(
+                                response=response,
+                                type="response.created",
+                            )
+
+                        # The usage is only available in the last chunk
+                        if hasattr(chunk, 'usage'):
+                            usage = chunk.usage
+                        # For Ollama/LiteLLM streams that don't have usage attribute
+                        else:
+                            usage = None
+
+                        # Handle different stream chunk formats
+                        if hasattr(chunk, 'choices') and chunk.choices:
+                            choices = chunk.choices
+                        elif hasattr(chunk, 'delta') and chunk.delta:
+                            # Some providers might return delta directly
+                            choices = [{"delta": chunk.delta}]
+                        elif isinstance(chunk, dict) and 'choices' in chunk:
+                            choices = chunk['choices']
+                        # Special handling for Qwen/Ollama chunks 
+                        elif isinstance(chunk, dict) and ('content' in chunk or 'function_call' in chunk):
+                            # Qwen direct delta format - convert to standard
+                            choices = [{"delta": chunk}]
+                        else:
+                            # Skip chunks that don't contain choice data
+                            continue
+                        
+                        if not choices or len(choices) == 0:
+                            continue
+                        
+                        # Get the delta content
+                        delta = None
+                        if hasattr(choices[0], 'delta'):
+                            delta = choices[0].delta
+                        elif isinstance(choices[0], dict) and 'delta' in choices[0]:
+                            delta = choices[0]['delta']
+                        
+                        if not delta:
+                            continue
+
+                        # Handle text
+                        content = None
+                        if hasattr(delta, 'content') and delta.content is not None:
+                            content = delta.content
+                        elif isinstance(delta, dict) and 'content' in delta and delta['content'] is not None:
+                            content = delta['content']
+                        
+                        if content:
+                            # For Ollama, we need to accumulate the full content to check for function calls
+                            if is_ollama:
+                                ollama_full_content += content
+                            
+                            # Add to the streaming text buffer
+                            streaming_text_buffer += content
+                            
+                            # Update streaming display if enabled - always do this for text content
+                            if streaming_context:
+                                update_agent_streaming_content(streaming_context, content)
+                            
+                            # More accurate token counting for text content
+                            output_text += content
+                            token_count, _ = count_tokens_with_tiktoken(output_text)
+                            estimated_output_tokens = token_count
+                            
+                            if not state.text_content_index_and_output:
+                                # Initialize a content tracker for streaming text
+                                state.text_content_index_and_output = (
+                                    0 if not state.refusal_content_index_and_output else 1,
+                                    ResponseOutputText(
+                                        text="",
+                                        type="output_text",
+                                        annotations=[],
+                                    ),
+                                )
+                                # Start a new assistant message stream
+                                assistant_item = ResponseOutputMessage(
+                                    id=FAKE_RESPONSES_ID,
+                                    content=[],
+                                    role="assistant",
+                                    type="message",
+                                    status="in_progress",
+                                )
+                                # Notify consumers of the start of a new output message + first content part
+                                yield ResponseOutputItemAddedEvent(
+                                    item=assistant_item,
+                                    output_index=0,
+                                    type="response.output_item.added",
+                                )
+                                yield ResponseContentPartAddedEvent(
+                                    content_index=state.text_content_index_and_output[0],
+                                    item_id=FAKE_RESPONSES_ID,
+                                    output_index=0,
+                                    part=ResponseOutputText(
+                                        text="",
+                                        type="output_text",
+                                        annotations=[],
+                                    ),
+                                    type="response.content_part.added",
+                                )
+                            # Emit the delta for this segment of content
+                            yield ResponseTextDeltaEvent(
+                                content_index=state.text_content_index_and_output[0],
+                                delta=content,
+                                item_id=FAKE_RESPONSES_ID,
+                                output_index=0,
+                                type="response.output_text.delta",
+                            )
+                            # Accumulate the text into the response part
+                            state.text_content_index_and_output[1].text += content
+
+                        # Handle refusals (model declines to answer)
+                        refusal_content = None
+                        if hasattr(delta, 'refusal') and delta.refusal:
+                            refusal_content = delta.refusal
+                        elif isinstance(delta, dict) and 'refusal' in delta and delta['refusal']:
+                            refusal_content = delta['refusal']
+                        
+                        if refusal_content:
+                            if not state.refusal_content_index_and_output:
+                                # Initialize a content tracker for streaming refusal text
+                                state.refusal_content_index_and_output = (
+                                    0 if not state.text_content_index_and_output else 1,
+                                    ResponseOutputRefusal(refusal="", type="refusal"),
+                                )
+                                # Start a new assistant message if one doesn't exist yet (in-progress)
+                                assistant_item = ResponseOutputMessage(
+                                    id=FAKE_RESPONSES_ID,
+                                    content=[],
+                                    role="assistant",
+                                    type="message",
+                                    status="in_progress",
+                                )
+                                # Notify downstream that assistant message + first content part are starting
+                                yield ResponseOutputItemAddedEvent(
+                                    item=assistant_item,
+                                    output_index=0,
+                                    type="response.output_item.added",
+                                )
+                                yield ResponseContentPartAddedEvent(
+                                    content_index=state.refusal_content_index_and_output[0],
+                                    item_id=FAKE_RESPONSES_ID,
+                                    output_index=0,
+                                    part=ResponseOutputText(
+                                        text="",
+                                        type="output_text",
+                                        annotations=[],
+                                    ),
+                                    type="response.content_part.added",
+                                )
+                            # Emit the delta for this segment of refusal
+                            yield ResponseRefusalDeltaEvent(
+                                content_index=state.refusal_content_index_and_output[0],
+                                delta=refusal_content,
+                                item_id=FAKE_RESPONSES_ID,
+                                output_index=0,
+                                type="response.refusal.delta",
+                            )
+                            # Accumulate the refusal string in the output part
+                            state.refusal_content_index_and_output[1].refusal += refusal_content
+
+                        # Handle tool calls
+                        # Because we don't know the name of the function until the end of the stream, we'll
+                        # save everything and yield events at the end
+                        tool_calls = self._detect_and_format_function_calls(delta)
+                        
+                        if tool_calls:
+                            for tc_delta in tool_calls:
+                                tc_index = tc_delta.index if hasattr(tc_delta, 'index') else tc_delta.get('index', 0)
+                                if tc_index not in state.function_calls:
+                                    state.function_calls[tc_index] = ResponseFunctionToolCall(
+                                        id=FAKE_RESPONSES_ID,
+                                        arguments="",
+                                        name="",
+                                        type="function_call",
+                                        call_id="",
+                                    )
+                                
+                                tc_function = None
+                                if hasattr(tc_delta, 'function'):
+                                    tc_function = tc_delta.function
+                                elif isinstance(tc_delta, dict) and 'function' in tc_delta:
+                                    tc_function = tc_delta['function']
+                                    
+                                if tc_function:
+                                    # Handle both object and dict formats
+                                    args = ""
+                                    if hasattr(tc_function, 'arguments'):
+                                        args = tc_function.arguments or ""
+                                    elif isinstance(tc_function, dict) and 'arguments' in tc_function:
+                                        args = tc_function.get('arguments', "") or ""
+                                        
+                                    name = ""
+                                    if hasattr(tc_function, 'name'):
+                                        name = tc_function.name or ""
+                                    elif isinstance(tc_function, dict) and 'name' in tc_function:
+                                        name = tc_function.get('name', "") or ""
+                                        
+                                    state.function_calls[tc_index].arguments += args
+                                    state.function_calls[tc_index].name += name
+                                
+                                # Handle call_id in both formats
+                                call_id = ""
+                                if hasattr(tc_delta, 'id'):
+                                    call_id = tc_delta.id or ""
+                                elif isinstance(tc_delta, dict) and 'id' in tc_delta:
+                                    call_id = tc_delta.get('id', "") or ""
+                                else:
+                                    # For Qwen models, generate a predictable ID if none is provided
+                                    if state.function_calls[tc_index].name:
+                                        # Generate a stable ID from the function name and arguments
+                                        call_id = f"call_{hashlib.md5(state.function_calls[tc_index].name.encode()).hexdigest()[:8]}"
+
+                                state.function_calls[tc_index].call_id += call_id
+
+                                # --- Accumulate tool call for message_history ---
+                                # Only add if not already present (avoid duplicates in streaming)
+                                tool_call_msg = {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [
+                                        {
+                                            "id": state.function_calls[tc_index].call_id,
+                                            "type": "function",
+                                            "function": {
+                                                "name": state.function_calls[tc_index].name,
+                                                "arguments": state.function_calls[tc_index].arguments
+                                            }
+                                        }
+                                    ]
+                                }
+                                # Only add if not already in streamed_tool_calls
+                                if tool_call_msg not in streamed_tool_calls:
+                                    streamed_tool_calls.append(tool_call_msg)
+                                    add_to_message_history(tool_call_msg)
+
+                except Exception as e:
+                    # Ensure streaming context is cleaned up in case of errors
+                    if streaming_context:
+                        try:
+                            finish_agent_streaming(streaming_context, None)
+                        except Exception:
+                            pass
+                    raise e
+
+                # Special handling for Ollama - check if accumulated text contains a valid function call
+                if is_ollama and ollama_full_content and len(state.function_calls) == 0:
+                    # Look for JSON object that might be a function call
+                    try:
+                        # Try to extract a JSON object from the content
+                        json_start = ollama_full_content.find('{')
+                        json_end = ollama_full_content.rfind('}') + 1
+                                            
+                        if json_start >= 0 and json_end > json_start:
+                            json_str = ollama_full_content[json_start:json_end]                        
+                            # Try to parse the JSON
+                            parsed = json.loads(json_str)
+                            
+                            # Check if it looks like a function call
+                            if ('name' in parsed and 'arguments' in parsed):
+                                logger.debug(f"Found valid function call in Ollama output: {json_str}")
+                                
+                                # Create a tool call ID
+                                tool_call_id = f"call_{hashlib.md5((parsed['name'] + str(time.time())).encode()).hexdigest()[:8]}"
+                                
+                                # Ensure arguments is a valid JSON string
+                                arguments_str = ""
+                                if isinstance(parsed['arguments'], dict):
+                                    # Remove 'ctf' field if it exists
+                                    if 'ctf' in parsed['arguments']:
+                                        del parsed['arguments']['ctf']
+                                    arguments_str = json.dumps(parsed['arguments'])
+                                elif isinstance(parsed['arguments'], str):
+                                    # If it's already a string, check if it's valid JSON
+                                    try:
+                                        # Try parsing to validate and remove 'ctf' if present
+                                        args_dict = json.loads(parsed['arguments'])
+                                        if isinstance(args_dict, dict) and 'ctf' in args_dict:
+                                            del args_dict['ctf']
+                                        arguments_str = json.dumps(args_dict)
+                                    except:
+                                        # If not valid JSON, encode it as a JSON string
+                                        arguments_str = json.dumps(parsed['arguments'])
+                                else:
+                                    # For any other type, convert to string and then JSON
+                                    arguments_str = json.dumps(str(parsed['arguments']))                            
+                                # Add it to our function_calls state
+                                state.function_calls[0] = ResponseFunctionToolCall(
+                                    id=FAKE_RESPONSES_ID,
+                                    arguments=arguments_str,
+                                    name=parsed['name'],
+                                    type="function_call",
+                                    call_id=tool_call_id,
+                                )
+                                
+                                # Display the tool call in CLI
+                                from cai.util import cli_print_agent_messages
+                                try:
+                                    # Create a message-like object to display the function call
+                                    tool_msg = type('ToolCallWrapper', (), {
+                                        'content': None,
+                                        'tool_calls': [
+                                            type('ToolCallDetail', (), {
+                                                'function': type('FunctionDetail', (), {
+                                                    'name': parsed['name'],
+                                                    'arguments': arguments_str
+                                                }),
+                                                'id': tool_call_id,
+                                                'type': 'function'
+                                            })
+                                        ]
+                                    })
+                                    
+                                    # Print the tool call using the CLI utility
+                                    cli_print_agent_messages(
+                                        agent_name=getattr(self, 'agent_name', 'Agent'),
+                                        message=tool_msg,
+                                        counter=getattr(self, 'interaction_counter', 0),
+                                        model=str(self.model),
+                                        debug=False,
+                                        interaction_input_tokens=estimated_input_tokens,
+                                        interaction_output_tokens=estimated_output_tokens,
+                                        interaction_reasoning_tokens=0,  # Not available for Ollama
+                                        total_input_tokens=getattr(self, 'total_input_tokens', 0) + estimated_input_tokens,
+                                        total_output_tokens=getattr(self, 'total_output_tokens', 0) + estimated_output_tokens,
+                                        total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
+                                        interaction_cost=None,
+                                        total_cost=None,
+                                        tool_output=None  # Will be shown once the tool is executed
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Error displaying tool call in CLI: {e}")
+                                
+                                # Add to message history
+                                tool_call_msg = {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [
+                                        {
+                                            "id": tool_call_id,
+                                            "type": "function",
+                                            "function": {
+                                                "name": parsed['name'],
+                                                "arguments": arguments_str
+                                            }
+                                        }
+                                    ]
+                                }
+                                
+                                streamed_tool_calls.append(tool_call_msg)
+                                add_to_message_history(tool_call_msg)
+                                
+                                logger.debug(f"Added function call: {parsed['name']} with args: {arguments_str}")
+                    except Exception as e:
+                        pass
+
+                function_call_starting_index = 0
+                if state.text_content_index_and_output:
+                    function_call_starting_index += 1
+                    # Send end event for this content part
+                    yield ResponseContentPartDoneEvent(
+                        content_index=state.text_content_index_and_output[0],
+                        item_id=FAKE_RESPONSES_ID,
+                        output_index=0,
+                        part=state.text_content_index_and_output[1],
+                        type="response.content_part.done",
+                    )
+
+                if state.refusal_content_index_and_output:
+                    function_call_starting_index += 1
+                    # Send end event for this content part
+                    yield ResponseContentPartDoneEvent(
+                        content_index=state.refusal_content_index_and_output[0],
+                        item_id=FAKE_RESPONSES_ID,
+                        output_index=0,
+                        part=state.refusal_content_index_and_output[1],
+                        type="response.content_part.done",
+                    )
+
+                # Actually send events for the function calls
+                for function_call in state.function_calls.values():
+                    # First, a ResponseOutputItemAdded for the function call
+                    yield ResponseOutputItemAddedEvent(
+                        item=ResponseFunctionToolCall(
+                            id=FAKE_RESPONSES_ID,
+                            call_id=function_call.call_id,
+                            arguments=function_call.arguments,
+                            name=function_call.name,
+                            type="function_call",
+                        ),
+                        output_index=function_call_starting_index,
+                        type="response.output_item.added",
+                    )
+                    # Then, yield the args
+                    yield ResponseFunctionCallArgumentsDeltaEvent(
+                        delta=function_call.arguments,
+                        item_id=FAKE_RESPONSES_ID,
+                        output_index=function_call_starting_index,
+                        type="response.function_call_arguments.delta",
+                    )
+                    # Finally, the ResponseOutputItemDone
+                    yield ResponseOutputItemDoneEvent(
+                        item=ResponseFunctionToolCall(
+                            id=FAKE_RESPONSES_ID,
+                            call_id=function_call.call_id,
+                            arguments=function_call.arguments,
+                            name=function_call.name,
+                            type="function_call",
+                        ),
+                        output_index=function_call_starting_index,
+                        type="response.output_item.done",
+                    )
+
+                # Finally, send the Response completed event
+                outputs: list[ResponseOutputItem] = []
+                if state.text_content_index_and_output or state.refusal_content_index_and_output:
+                    assistant_msg = ResponseOutputMessage(
+                        id=FAKE_RESPONSES_ID,
+                        content=[],
+                        role="assistant",
+                        type="message",
+                        status="completed",
+                    )
+                    if state.text_content_index_and_output:
+                        assistant_msg.content.append(state.text_content_index_and_output[1])
+                    if state.refusal_content_index_and_output:
+                        assistant_msg.content.append(state.refusal_content_index_and_output[1])
+                    outputs.append(assistant_msg)
+
+                    # send a ResponseOutputItemDone for the assistant message
+                    yield ResponseOutputItemDoneEvent(
+                        item=assistant_msg,
+                        output_index=0,
+                        type="response.output_item.done",
+                    )
+
+                for function_call in state.function_calls.values():
+                    outputs.append(function_call)
+
+                final_response = response.model_copy()
+                final_response.output = outputs
+
+                # Get final token counts using consistent method
+                input_tokens = estimated_input_tokens
+                output_tokens = estimated_output_tokens
+                
+                # Use API token counts if available and reasonable
+                if usage and hasattr(usage, 'prompt_tokens') and usage.prompt_tokens > 0:
+                    input_tokens = usage.prompt_tokens
+                if usage and hasattr(usage, 'completion_tokens') and usage.completion_tokens > 0:
+                    output_tokens = usage.completion_tokens
+                
+                # Create a proper usage object with our token counts
+                final_response.usage = ResponseUsage(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    total_tokens=input_tokens + output_tokens,
+                    output_tokens_details=OutputTokensDetails(
+                        reasoning_tokens=usage.completion_tokens_details.reasoning_tokens
+                        if usage and hasattr(usage, 'completion_tokens_details') 
+                        and usage.completion_tokens_details
+                        and hasattr(usage.completion_tokens_details, 'reasoning_tokens')
+                        and usage.completion_tokens_details.reasoning_tokens
+                        else 0
+                    ),
+                    input_tokens_details={
+                        "prompt_tokens": input_tokens,
+                        "cached_tokens": usage.prompt_tokens_details.cached_tokens
+                        if usage and hasattr(usage, 'prompt_tokens_details')
+                        and usage.prompt_tokens_details
+                        and hasattr(usage.prompt_tokens_details, 'cached_tokens')
+                        and usage.prompt_tokens_details.cached_tokens
+                        else 0
                     },
                 )
-           # --- Add to message_history: user, system prompts ---
-            if system_instructions:
-                sys_msg = {
-                    "role": "system",
-                    "content": system_instructions
-                }
-                add_to_message_history(sys_msg)
-                
-            if isinstance(input, str):
-                user_msg = {
-                    "role": "user",
-                    "content": input
-                }
-                add_to_message_history(user_msg)
-            elif isinstance(input, list):
-                for item in input:
-                    if isinstance(item, dict):
-                        if item.get("role") == "user":
-                            user_msg = {
-                                "role": "user",
-                                "content": item.get("content", "")
-                            }
-                            add_to_message_history(user_msg)
-            # Get token count estimate before API call for consistent counting
-            estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
-            
-            response, stream = await self._fetch_response(
-                system_instructions,
-                input,
-                model_settings,
-                tools,
-                output_schema,
-                handoffs,
-                span_generation,
-                tracing,
-                stream=True,
-            )
 
-            usage: CompletionUsage | None = None
-            state = _StreamingState()
-            
-            # Manual token counting (when API doesn't provide it)
-            output_text = ""
-            estimated_output_tokens = 0
-            
-            # Initialize a streaming text accumulator for rich display
-            streaming_text_buffer = ""
-            # For tool call streaming, accumulate tool_calls to add to message_history at the end
-            streamed_tool_calls = []
-            
-            # Ollama specific: accumulate full content to check for function calls at the end
-            # Some Ollama models output the function call as JSON in the text content
-            ollama_full_content = ""
-            is_ollama = False
-            
-            model_str = str(self.model).lower()
-            is_ollama = self.is_ollama or "ollama" in model_str or ":" in model_str or "qwen" in model_str
-            
-            # Add visual separation before agent output
-            if streaming_context and should_show_rich_stream:
-                # If we're using rich context, we'll add separation through that
-                pass
-            else:
-                # Print clear visual separator
-                print("\n")
-                
-            async for chunk in stream:
-                if not state.started:
-                    state.started = True
-                    yield ResponseCreatedEvent(
-                        response=response,
-                        type="response.created",
-                    )
-
-                # The usage is only available in the last chunk
-                if hasattr(chunk, 'usage'):
-                    usage = chunk.usage
-                # For Ollama/LiteLLM streams that don't have usage attribute
-                else:
-                    usage = None
-
-                # Handle different stream chunk formats
-                if hasattr(chunk, 'choices') and chunk.choices:
-                    choices = chunk.choices
-                elif hasattr(chunk, 'delta') and chunk.delta:
-                    # Some providers might return delta directly
-                    choices = [{"delta": chunk.delta}]
-                elif isinstance(chunk, dict) and 'choices' in chunk:
-                    choices = chunk['choices']
-                # Special handling for Qwen/Ollama chunks 
-                elif isinstance(chunk, dict) and ('content' in chunk or 'function_call' in chunk):
-                    # Qwen direct delta format - convert to standard
-                    choices = [{"delta": chunk}]
-                else:
-                    # Skip chunks that don't contain choice data
-                    continue
-                
-                if not choices or len(choices) == 0:
-                    continue
-                
-                # Get the delta content
-                delta = None
-                if hasattr(choices[0], 'delta'):
-                    delta = choices[0].delta
-                elif isinstance(choices[0], dict) and 'delta' in choices[0]:
-                    delta = choices[0]['delta']
-                
-                if not delta:
-                    continue
-
-                # Handle text
-                content = None
-                if hasattr(delta, 'content') and delta.content is not None:
-                    content = delta.content
-                elif isinstance(delta, dict) and 'content' in delta and delta['content'] is not None:
-                    content = delta['content']
-                
-                if content:
-                    # For Ollama, we need to accumulate the full content to check for function calls
-                    if is_ollama:
-                        ollama_full_content += content
-                    
-                    # Add to the streaming text buffer
-                    streaming_text_buffer += content
-                    
-                    # Update streaming display if enabled - always do this for text content
-                    if streaming_context:
-                        update_agent_streaming_content(streaming_context, content)
-                    
-                    # More accurate token counting for text content
-                    output_text += content
-                    token_count, _ = count_tokens_with_tiktoken(output_text)
-                    estimated_output_tokens = token_count
-                    
-                    if not state.text_content_index_and_output:
-                        # Initialize a content tracker for streaming text
-                        state.text_content_index_and_output = (
-                            0 if not state.refusal_content_index_and_output else 1,
-                            ResponseOutputText(
-                                text="",
-                                type="output_text",
-                                annotations=[],
-                            ),
-                        )
-                        # Start a new assistant message stream
-                        assistant_item = ResponseOutputMessage(
-                            id=FAKE_RESPONSES_ID,
-                            content=[],
-                            role="assistant",
-                            type="message",
-                            status="in_progress",
-                        )
-                        # Notify consumers of the start of a new output message + first content part
-                        yield ResponseOutputItemAddedEvent(
-                            item=assistant_item,
-                            output_index=0,
-                            type="response.output_item.added",
-                        )
-                        yield ResponseContentPartAddedEvent(
-                            content_index=state.text_content_index_and_output[0],
-                            item_id=FAKE_RESPONSES_ID,
-                            output_index=0,
-                            part=ResponseOutputText(
-                                text="",
-                                type="output_text",
-                                annotations=[],
-                            ),
-                            type="response.content_part.added",
-                        )
-                    # Emit the delta for this segment of content
-                    yield ResponseTextDeltaEvent(
-                        content_index=state.text_content_index_and_output[0],
-                        delta=content,
-                        item_id=FAKE_RESPONSES_ID,
-                        output_index=0,
-                        type="response.output_text.delta",
-                    )
-                    # Accumulate the text into the response part
-                    state.text_content_index_and_output[1].text += content
-
-                # Handle refusals (model declines to answer)
-                refusal_content = None
-                if hasattr(delta, 'refusal') and delta.refusal:
-                    refusal_content = delta.refusal
-                elif isinstance(delta, dict) and 'refusal' in delta and delta['refusal']:
-                    refusal_content = delta['refusal']
-                
-                if refusal_content:
-                    if not state.refusal_content_index_and_output:
-                        # Initialize a content tracker for streaming refusal text
-                        state.refusal_content_index_and_output = (
-                            0 if not state.text_content_index_and_output else 1,
-                            ResponseOutputRefusal(refusal="", type="refusal"),
-                        )
-                        # Start a new assistant message if one doesn't exist yet (in-progress)
-                        assistant_item = ResponseOutputMessage(
-                            id=FAKE_RESPONSES_ID,
-                            content=[],
-                            role="assistant",
-                            type="message",
-                            status="in_progress",
-                        )
-                        # Notify downstream that assistant message + first content part are starting
-                        yield ResponseOutputItemAddedEvent(
-                            item=assistant_item,
-                            output_index=0,
-                            type="response.output_item.added",
-                        )
-                        yield ResponseContentPartAddedEvent(
-                            content_index=state.refusal_content_index_and_output[0],
-                            item_id=FAKE_RESPONSES_ID,
-                            output_index=0,
-                            part=ResponseOutputText(
-                                text="",
-                                type="output_text",
-                                annotations=[],
-                            ),
-                            type="response.content_part.added",
-                        )
-                    # Emit the delta for this segment of refusal
-                    yield ResponseRefusalDeltaEvent(
-                        content_index=state.refusal_content_index_and_output[0],
-                        delta=refusal_content,
-                        item_id=FAKE_RESPONSES_ID,
-                        output_index=0,
-                        type="response.refusal.delta",
-                    )
-                    # Accumulate the refusal string in the output part
-                    state.refusal_content_index_and_output[1].refusal += refusal_content
-
-                # Handle tool calls
-                # Because we don't know the name of the function until the end of the stream, we'll
-                # save everything and yield events at the end
-                tool_calls = self._detect_and_format_function_calls(delta)
-                
-                if tool_calls:
-                    for tc_delta in tool_calls:
-                        tc_index = tc_delta.index if hasattr(tc_delta, 'index') else tc_delta.get('index', 0)
-                        if tc_index not in state.function_calls:
-                            state.function_calls[tc_index] = ResponseFunctionToolCall(
-                                id=FAKE_RESPONSES_ID,
-                                arguments="",
-                                name="",
-                                type="function_call",
-                                call_id="",
-                            )
-                        
-                        tc_function = None
-                        if hasattr(tc_delta, 'function'):
-                            tc_function = tc_delta.function
-                        elif isinstance(tc_delta, dict) and 'function' in tc_delta:
-                            tc_function = tc_delta['function']
-                            
-                        if tc_function:
-                            # Handle both object and dict formats
-                            args = ""
-                            if hasattr(tc_function, 'arguments'):
-                                args = tc_function.arguments or ""
-                            elif isinstance(tc_function, dict) and 'arguments' in tc_function:
-                                args = tc_function.get('arguments', "") or ""
-                                
-                            name = ""
-                            if hasattr(tc_function, 'name'):
-                                name = tc_function.name or ""
-                            elif isinstance(tc_function, dict) and 'name' in tc_function:
-                                name = tc_function.get('name', "") or ""
-                                
-                            state.function_calls[tc_index].arguments += args
-                            state.function_calls[tc_index].name += name
-                        
-                        # Handle call_id in both formats
-                        call_id = ""
-                        if hasattr(tc_delta, 'id'):
-                            call_id = tc_delta.id or ""
-                        elif isinstance(tc_delta, dict) and 'id' in tc_delta:
-                            call_id = tc_delta.get('id', "") or ""
-                        else:
-                            # For Qwen models, generate a predictable ID if none is provided
-                            if state.function_calls[tc_index].name:
-                                # Generate a stable ID from the function name and arguments
-                                call_id = f"call_{hashlib.md5(state.function_calls[tc_index].name.encode()).hexdigest()[:8]}"
-
-                        state.function_calls[tc_index].call_id += call_id
-
-                        # --- Accumulate tool call for message_history ---
-                        # Only add if not already present (avoid duplicates in streaming)
-                        tool_call_msg = {
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [
-                                {
-                                    "id": state.function_calls[tc_index].call_id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": state.function_calls[tc_index].name,
-                                        "arguments": state.function_calls[tc_index].arguments
-                                    }
-                                }
-                            ]
-                        }
-                        # Only add if not already in streamed_tool_calls
-                        if tool_call_msg not in streamed_tool_calls:
-                            streamed_tool_calls.append(tool_call_msg)
-                            add_to_message_history(tool_call_msg)
-
-            # Special handling for Ollama - check if accumulated text contains a valid function call
-            if is_ollama and ollama_full_content and len(state.function_calls) == 0:
-                # Look for JSON object that might be a function call
-                try:
-                    # Try to extract a JSON object from the content
-                    json_start = ollama_full_content.find('{')
-                    json_end = ollama_full_content.rfind('}') + 1
-                                        
-                    if json_start >= 0 and json_end > json_start:
-                        json_str = ollama_full_content[json_start:json_end]                        
-                        # Try to parse the JSON
-                        parsed = json.loads(json_str)
-                        
-                        # Check if it looks like a function call
-                        if ('name' in parsed and 'arguments' in parsed):
-                            logger.debug(f"Found valid function call in Ollama output: {json_str}")
-                            
-                            # Create a tool call ID
-                            tool_call_id = f"call_{hashlib.md5((parsed['name'] + str(time.time())).encode()).hexdigest()[:8]}"
-                            
-                            # Ensure arguments is a valid JSON string
-                            arguments_str = ""
-                            if isinstance(parsed['arguments'], dict):
-                                # Remove 'ctf' field if it exists
-                                if 'ctf' in parsed['arguments']:
-                                    del parsed['arguments']['ctf']
-                                arguments_str = json.dumps(parsed['arguments'])
-                            elif isinstance(parsed['arguments'], str):
-                                # If it's already a string, check if it's valid JSON
-                                try:
-                                    # Try parsing to validate and remove 'ctf' if present
-                                    args_dict = json.loads(parsed['arguments'])
-                                    if isinstance(args_dict, dict) and 'ctf' in args_dict:
-                                        del args_dict['ctf']
-                                    arguments_str = json.dumps(args_dict)
-                                except:
-                                    # If not valid JSON, encode it as a JSON string
-                                    arguments_str = json.dumps(parsed['arguments'])
-                            else:
-                                # For any other type, convert to string and then JSON
-                                arguments_str = json.dumps(str(parsed['arguments']))                            
-                            # Add it to our function_calls state
-                            state.function_calls[0] = ResponseFunctionToolCall(
-                                id=FAKE_RESPONSES_ID,
-                                arguments=arguments_str,
-                                name=parsed['name'],
-                                type="function_call",
-                                call_id=tool_call_id,
-                            )
-                            
-                            # Display the tool call in CLI
-                            from cai.util import cli_print_agent_messages
-                            try:
-                                # Create a message-like object to display the function call
-                                tool_msg = type('ToolCallWrapper', (), {
-                                    'content': None,
-                                    'tool_calls': [
-                                        type('ToolCallDetail', (), {
-                                            'function': type('FunctionDetail', (), {
-                                                'name': parsed['name'],
-                                                'arguments': arguments_str
-                                            }),
-                                            'id': tool_call_id,
-                                            'type': 'function'
-                                        })
-                                    ]
-                                })
-                                
-                                # Print the tool call using the CLI utility
-                                cli_print_agent_messages(
-                                    agent_name=getattr(self, 'agent_name', 'Agent'),
-                                    message=tool_msg,
-                                    counter=getattr(self, 'interaction_counter', 0),
-                                    model=str(self.model),
-                                    debug=False,
-                                    interaction_input_tokens=estimated_input_tokens,
-                                    interaction_output_tokens=estimated_output_tokens,
-                                    interaction_reasoning_tokens=0,  # Not available for Ollama
-                                    total_input_tokens=getattr(self, 'total_input_tokens', 0) + estimated_input_tokens,
-                                    total_output_tokens=getattr(self, 'total_output_tokens', 0) + estimated_output_tokens,
-                                    total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
-                                    interaction_cost=None,
-                                    total_cost=None,
-                                    tool_output=None  # Will be shown once the tool is executed
-                                )
-                            except Exception as e:
-                                logger.error(f"Error displaying tool call in CLI: {e}")
-                            
-                            # Add to message history
-                            tool_call_msg = {
-                                "role": "assistant",
-                                "content": None,
-                                "tool_calls": [
-                                    {
-                                        "id": tool_call_id,
-                                        "type": "function",
-                                        "function": {
-                                            "name": parsed['name'],
-                                            "arguments": arguments_str
-                                        }
-                                    }
-                                ]
-                            }
-                            
-                            streamed_tool_calls.append(tool_call_msg)
-                            add_to_message_history(tool_call_msg)
-                            
-                            logger.debug(f"Added function call: {parsed['name']} with args: {arguments_str}")
-                except Exception as e:
-                    pass
-
-            function_call_starting_index = 0
-            if state.text_content_index_and_output:
-                function_call_starting_index += 1
-                # Send end event for this content part
-                yield ResponseContentPartDoneEvent(
-                    content_index=state.text_content_index_and_output[0],
-                    item_id=FAKE_RESPONSES_ID,
-                    output_index=0,
-                    part=state.text_content_index_and_output[1],
-                    type="response.content_part.done",
+                yield ResponseCompletedEvent(
+                    response=final_response,
+                    type="response.completed",
                 )
-
-            if state.refusal_content_index_and_output:
-                function_call_starting_index += 1
-                # Send end event for this content part
-                yield ResponseContentPartDoneEvent(
-                    content_index=state.refusal_content_index_and_output[0],
-                    item_id=FAKE_RESPONSES_ID,
-                    output_index=0,
-                    part=state.refusal_content_index_and_output[1],
-                    type="response.content_part.done",
-                )
-
-            # Actually send events for the function calls
-            for function_call in state.function_calls.values():
-                # First, a ResponseOutputItemAdded for the function call
-                yield ResponseOutputItemAddedEvent(
-                    item=ResponseFunctionToolCall(
-                        id=FAKE_RESPONSES_ID,
-                        call_id=function_call.call_id,
-                        arguments=function_call.arguments,
-                        name=function_call.name,
-                        type="function_call",
+                
+                # Update token totals for CLI display
+                if final_response.usage:
+                    # Always update the total counters with the best available counts
+                    self.total_input_tokens += final_response.usage.input_tokens
+                    self.total_output_tokens += final_response.usage.output_tokens
+                    if (final_response.usage.output_tokens_details and 
+                        hasattr(final_response.usage.output_tokens_details, 'reasoning_tokens')):
+                        self.total_reasoning_tokens += final_response.usage.output_tokens_details.reasoning_tokens
+                
+                # Prepare final statistics for display
+                interaction_input = final_response.usage.input_tokens if final_response.usage else 0
+                interaction_output = final_response.usage.output_tokens if final_response.usage else 0
+                total_input = getattr(self, 'total_input_tokens', 0)
+                total_output = getattr(self, 'total_output_tokens', 0)
+                
+                # Calculate costs using the same token counts - ensure model is a string
+                model_name = str(self.model)
+                interaction_cost = calculate_model_cost(model_name, interaction_input, interaction_output)
+                total_cost = calculate_model_cost(model_name, total_input, total_output)
+                
+                # Explicit conversion to float with fallback to ensure they're never None or 0
+                interaction_cost = max(float(interaction_cost if interaction_cost is not None else 0.0), 0.00001)
+                total_cost = max(float(total_cost if total_cost is not None else 0.0), 0.00001)
+                
+                
+                # Create final stats with explicit type conversion for all values
+                final_stats = {
+                    "interaction_input_tokens": int(interaction_input),
+                    "interaction_output_tokens": int(interaction_output),
+                    "interaction_reasoning_tokens": int(
+                        final_response.usage.output_tokens_details.reasoning_tokens 
+                        if final_response.usage and final_response.usage.output_tokens_details
+                        and hasattr(final_response.usage.output_tokens_details, 'reasoning_tokens')
+                        else 0
                     ),
-                    output_index=function_call_starting_index,
-                    type="response.output_item.added",
-                )
-                # Then, yield the args
-                yield ResponseFunctionCallArgumentsDeltaEvent(
-                    delta=function_call.arguments,
-                    item_id=FAKE_RESPONSES_ID,
-                    output_index=function_call_starting_index,
-                    type="response.function_call_arguments.delta",
-                )
-                # Finally, the ResponseOutputItemDone
-                yield ResponseOutputItemDoneEvent(
-                    item=ResponseFunctionToolCall(
-                        id=FAKE_RESPONSES_ID,
-                        call_id=function_call.call_id,
-                        arguments=function_call.arguments,
-                        name=function_call.name,
-                        type="function_call",
-                    ),
-                    output_index=function_call_starting_index,
-                    type="response.output_item.done",
-                )
-
-            # Finally, send the Response completed event
-            outputs: list[ResponseOutputItem] = []
-            if state.text_content_index_and_output or state.refusal_content_index_and_output:
-                assistant_msg = ResponseOutputMessage(
-                    id=FAKE_RESPONSES_ID,
-                    content=[],
-                    role="assistant",
-                    type="message",
-                    status="completed",
-                )
-                if state.text_content_index_and_output:
-                    assistant_msg.content.append(state.text_content_index_and_output[1])
-                if state.refusal_content_index_and_output:
-                    assistant_msg.content.append(state.refusal_content_index_and_output[1])
-                outputs.append(assistant_msg)
-
-                # send a ResponseOutputItemDone for the assistant message
-                yield ResponseOutputItemDoneEvent(
-                    item=assistant_msg,
-                    output_index=0,
-                    type="response.output_item.done",
-                )
-
-            for function_call in state.function_calls.values():
-                outputs.append(function_call)
-
-            final_response = response.model_copy()
-            final_response.output = outputs
-
-            # Get final token counts using consistent method
-            input_tokens = estimated_input_tokens
-            output_tokens = estimated_output_tokens
-            
-            # Use API token counts if available and reasonable
-            if usage and hasattr(usage, 'prompt_tokens') and usage.prompt_tokens > 0:
-                input_tokens = usage.prompt_tokens
-            if usage and hasattr(usage, 'completion_tokens') and usage.completion_tokens > 0:
-                output_tokens = usage.completion_tokens
+                    "total_input_tokens": int(total_input),
+                    "total_output_tokens": int(total_output),
+                    "total_reasoning_tokens": int(getattr(self, 'total_reasoning_tokens', 0)),
+                    "interaction_cost": float(interaction_cost),
+                    "total_cost": float(total_cost),
+                }
                 
-            # # Debug information
-            # print(f"\nDEBUG CONSISTENT TOKEN COUNTS - Streaming final tokens: input={input_tokens}, output={output_tokens}, total={input_tokens + output_tokens}")
+                # At the end of streaming, finish the streaming context if we were using it
+                if streaming_context:
+                    # Create a direct copy of the costs to ensure they remain as floats
+                    direct_stats = final_stats.copy()
+                    direct_stats["interaction_cost"] = float(interaction_cost)
+                    direct_stats["total_cost"] = float(total_cost)
+                    # Use the direct copy with guaranteed float costs
+                    finish_agent_streaming(streaming_context, direct_stats)
+                    
+                    # Add visual separation after agent output completes
+                    print("\n")
 
-            # Create a proper usage object with our token counts
-            final_response.usage = ResponseUsage(
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=input_tokens + output_tokens,
-                output_tokens_details=OutputTokensDetails(
-                    reasoning_tokens=usage.completion_tokens_details.reasoning_tokens
-                    if usage and hasattr(usage, 'completion_tokens_details') 
-                    and usage.completion_tokens_details
-                    and hasattr(usage.completion_tokens_details, 'reasoning_tokens')
-                    and usage.completion_tokens_details.reasoning_tokens
-                    else 0
-                ),
-                input_tokens_details={
-                    "prompt_tokens": input_tokens,
-                    "cached_tokens": usage.prompt_tokens_details.cached_tokens
-                    if usage and hasattr(usage, 'prompt_tokens_details')
-                    and usage.prompt_tokens_details
-                    and hasattr(usage.prompt_tokens_details, 'cached_tokens')
-                    and usage.prompt_tokens_details.cached_tokens
-                    else 0
-                },
-            )
+                if tracing.include_data():
+                    span_generation.span_data.output = [final_response.model_dump()]
 
-            yield ResponseCompletedEvent(
-                response=final_response,
-                type="response.completed",
-            )
-            
-            # Update token totals for CLI display
-            if final_response.usage:
-                # Always update the total counters with the best available counts
-                self.total_input_tokens += final_response.usage.input_tokens
-                self.total_output_tokens += final_response.usage.output_tokens
-                if (final_response.usage.output_tokens_details and 
-                    hasattr(final_response.usage.output_tokens_details, 'reasoning_tokens')):
-                    self.total_reasoning_tokens += final_response.usage.output_tokens_details.reasoning_tokens
-            
-            # Prepare final statistics for display
-            interaction_input = final_response.usage.input_tokens if final_response.usage else 0
-            interaction_output = final_response.usage.output_tokens if final_response.usage else 0
-            total_input = getattr(self, 'total_input_tokens', 0)
-            total_output = getattr(self, 'total_output_tokens', 0)
-            
-            # Calculate costs using the same token counts - ensure model is a string
-            model_name = str(self.model)
-            interaction_cost = calculate_model_cost(model_name, interaction_input, interaction_output)
-            total_cost = calculate_model_cost(model_name, total_input, total_output)
-            
-            # Explicit conversion to float with fallback to ensure they're never None or 0
-            interaction_cost = max(float(interaction_cost if interaction_cost is not None else 0.0), 0.00001)
-            total_cost = max(float(total_cost if total_cost is not None else 0.0), 0.00001)
-            
-            
-            # Create final stats with explicit type conversion for all values
-            final_stats = {
-                "interaction_input_tokens": int(interaction_input),
-                "interaction_output_tokens": int(interaction_output),
-                "interaction_reasoning_tokens": int(
-                    final_response.usage.output_tokens_details.reasoning_tokens 
-                    if final_response.usage and final_response.usage.output_tokens_details
-                    and hasattr(final_response.usage.output_tokens_details, 'reasoning_tokens')
-                    else 0
-                ),
-                "total_input_tokens": int(total_input),
-                "total_output_tokens": int(total_output),
-                "total_reasoning_tokens": int(getattr(self, 'total_reasoning_tokens', 0)),
-                "interaction_cost": float(interaction_cost),
-                "total_cost": float(total_cost),
-            }
-            
-            # At the end of streaming, finish the streaming context if we were using it
+                span_generation.span_data.usage = {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                }
+
+                # --- Add assistant tool call(s) to message_history at the end of streaming ---
+                for tool_call_msg in streamed_tool_calls:
+                    add_to_message_history(tool_call_msg)
+               # If there was only text output, add that as an assistant message
+                if (not streamed_tool_calls) and state.text_content_index_and_output and state.text_content_index_and_output[1].text:
+                    asst_msg = {
+                        "role": "assistant",
+                        "content": state.text_content_index_and_output[1].text
+                    }
+                    add_to_message_history(asst_msg)
+        except Exception as e:
+            # Ensure streaming context is cleaned up in case of errors
             if streaming_context:
-                # Create a direct copy of the costs to ensure they remain as floats
-                direct_stats = final_stats.copy()
-                direct_stats["interaction_cost"] = float(interaction_cost)
-                direct_stats["total_cost"] = float(total_cost)
-                # Use the direct copy with guaranteed float costs
-                finish_agent_streaming(streaming_context, direct_stats)
-                
-                # Add visual separation after agent output completes
-                print("\n")
-            # If we're not using rich streaming and not suppressing output, use old method
-            elif not self.suppress_final_output and final_response.output and any(isinstance(item, ResponseOutputMessage) for item in final_response.output):
-                # Find the assistant message to print
-                for item in final_response.output:
-                    if isinstance(item, ResponseOutputMessage) and item.role == 'assistant':
-                        cli_print_agent_messages(
-                            agent_name=getattr(self, 'agent_name', 'Agent'),
-                            message=item,
-                            counter=getattr(self, 'interaction_counter', 0),
-                            model=str(self.model),
-                            debug=False,
-                            interaction_input_tokens=interaction_input,
-                            interaction_output_tokens=interaction_output,
-                            interaction_reasoning_tokens=final_stats["interaction_reasoning_tokens"],
-                            total_input_tokens=total_input,
-                            total_output_tokens=total_output,
-                            total_reasoning_tokens=final_stats["total_reasoning_tokens"],
-                            interaction_cost=interaction_cost,
-                            total_cost=total_cost,
-                        )
-                        
-                        # Add visual separation after message
-                        print("\n")
-                        break
-
-            # --- Add assistant tool call(s) to message_history at the end of streaming ---
-            for tool_call_msg in streamed_tool_calls:
-                add_to_message_history(tool_call_msg)
-           # If there was only text output, add that as an assistant message
-            if (not streamed_tool_calls) and state.text_content_index_and_output and state.text_content_index_and_output[1].text:
-                asst_msg = {
-                    "role": "assistant",
-                    "content": state.text_content_index_and_output[1].text
-                }
-                add_to_message_history(asst_msg)
-
-            if tracing.include_data():
-                span_generation.span_data.output = [final_response.model_dump()]
-
-            span_generation.span_data.usage = {
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-            }
-
-            # To avoid duplicate tool output display, we need to track tool calls
-            # Add this after the completion response is received
-            
-            if not stream and hasattr(response, 'choices') and len(response.choices) > 0:
-                # For non-streaming responses, make sure we capture tool call IDs
-                # to prevent duplicate printing
-                choice = response.choices[0]
-                if hasattr(choice, 'message') and hasattr(choice.message, 'tool_calls'):
-                    for tool_call in choice.message.tool_calls:
-                        if hasattr(tool_call, 'id'):
-                            # Register this tool call ID as already seen
-                            from cai.util import cli_print_tool_output
-                            if not hasattr(cli_print_tool_output, '_seen_calls'):
-                                cli_print_tool_output._seen_calls = {}
-                            cli_print_tool_output._seen_calls[tool_call.id] = True
+                try:
+                    finish_agent_streaming(streaming_context, None)
+                except Exception:
+                    pass
+            raise e
 
     @overload
     async def _fetch_response(
