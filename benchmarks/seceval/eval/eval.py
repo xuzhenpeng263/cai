@@ -297,7 +297,7 @@ def main():
         elif args.backend == "azure":
             llm = init_azure_openai_llm(model_id)
         elif args.backend == "ollama":
-            if not args.model:
+            if not args.models:
                 raise RuntimeError("Please specify --model for Ollama backend")
             llm = init_ollama_llm(args.model)
         else:
