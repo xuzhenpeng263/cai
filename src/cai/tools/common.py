@@ -184,12 +184,12 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                     else:
                         self.is_running = False
                         break
-                except Exception as e: 
+                except Exception as read_err: 
                      self.output_buffer.append(f"Error reading output buffer: {str(read_err)}")
                      self.is_running = False
                      break
                 # Add a small sleep to prevent busy-waiting if no output
-                if is_process_running(self):
+                if self.is_process_running():
                      time.sleep(0.05)
         except Exception as e:
             self.output_buffer.append(f"Error in read_output loop: {str(e)}")
@@ -245,6 +245,8 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
     def terminate(self):
         """Terminate the session"""
         session_id_short = self.session_id[:8]
+        termination_message = f"Session {session_id_short} terminated"
+        
         if not self.is_running:
              if self.process and self.process.poll() is None:
                  pass # Process is running, proceed with termination
@@ -257,7 +259,8 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
             if self.process:
                 # Try to terminate the process group
                 try:
-                    os.killpg(os.getpgid(self.process.pid), signal.SIGTERM) 
+                    pgid = os.getpgid(self.process.pid)
+                    os.killpg(pgid, signal.SIGTERM) 
                 except ProcessLookupError:
                      pass # Process already gone
                 except subprocess.TimeoutExpired:
@@ -294,7 +297,7 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                 except OSError: pass
                 self.slave = None
                 
-            return termination_message or f"Session {self.session_id} terminated"
+            return termination_message
         except Exception as e:  # pylint: disable=broad-except
             return f"Error terminating session {session_id_short}: {str(e)}"
 
@@ -529,7 +532,9 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None, workspace
             header.append(")", style="yellow")
             tool_time = 0 
             start_time = time.time()
-            total_time = time.time() - START_TIME 
+            total_time = 0
+            if START_TIME is not None:
+                total_time = time.time() - START_TIME 
             timing_info = []
             if total_time:
                 timing_info.append(f"Total: {format_time(total_time)}")
@@ -565,7 +570,9 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None, workspace
 
                     # Update tool_time and header with new timing info
                     tool_time = time.time() - start_time
-                    total_time = time.time() - START_TIME 
+                    total_time = 0
+                    if START_TIME is not None:
+                        total_time = time.time() - START_TIME 
                     # Remove any previous timing info from header (rebuild header)
                     timing_info = []
                     if total_time:
