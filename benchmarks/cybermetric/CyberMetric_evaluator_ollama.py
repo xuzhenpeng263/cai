@@ -2,13 +2,15 @@ import json
 import re
 import time
 from tqdm import tqdm
-from openai import OpenAI
 import os
+import litellm
+
 
 class CyberMetricEvaluator:
-    def __init__(self, api_key, file_path):
-        self.client = OpenAI(api_key=api_key)
+    def __init__(self, model_name, file_path):
+        self.model_name = model_name  # E.g., "ollama/llama3"
         self.file_path = file_path
+        print("--DEBUG: model_name: ", self.model_name)
 
     def read_json_file(self):
         with open(self.file_path, 'r') as file:
@@ -16,27 +18,35 @@ class CyberMetricEvaluator:
 
     @staticmethod
     def extract_answer(response):
-        if response.strip():  # Checks if the response is not empty and not just whitespace
+        if response.strip():
             match = re.search(r"ANSWER:?\s*([A-D])", response, re.IGNORECASE)
             if match:
-                return match.group(1).upper()  # Return the matched letter in uppercase
+                return match.group(1).upper()
         return None
 
     def ask_llm(self, question, answers, max_retries=5):
         options = ', '.join([f"{key}) {value}" for key, value in answers.items()])
-        prompt = f"Question: {question}\nOptions: {options}\n\nChoose the correct answer (A, B, C, or D) only. Always return in this format: 'ANSWER: X' "
+        prompt = (
+            f"Question: {question}\n"
+            f"Options: {options}\n\n"
+            "Choose the correct answer (A, B, C, or D) only. Always return in this format: 'ANSWER: X'"
+        )
+        print("--DEBUG: prompt: ", prompt)
         for attempt in range(max_retries):
             try:
-                response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo-0125",
+                response = litellm.completion(
+                    model=self.model_name,
                     messages=[
                         {"role": "system", "content": "You are a security expert who answers questions."},
                         {"role": "user", "content": prompt},
-                    ]
+                    ],
+                    api_base="http://localhost:8000"  #"http://localhost:11434"  # Ollama API endpoint
                 )
-                if response.choices:
-                    result = self.extract_answer(response.choices[0].message.content)
+                if hasattr(response, "choices") and response.choices:
+                    content = response.choices[0].message.content
+                    result = self.extract_answer(content)
                     if result:
+                        print("--DEBUG: result: ", result)
                         return result
                     else:
                         print("Incorrect answer format detected. Attempting the question again.")
@@ -72,7 +82,7 @@ class CyberMetricEvaluator:
                 progress_bar.set_postfix_str(f"Accuracy: {accuracy_rate:.2f}%")
                 progress_bar.update(1)
 
-        print(f"Final Accuracy: {correct_count / len(questions_data) * 100}%")
+        print(f"\nFinal Accuracy: {correct_count / len(questions_data) * 100:.2f}%")
 
         if incorrect_answers:
             print("\nIncorrect Answers:")
@@ -80,9 +90,14 @@ class CyberMetricEvaluator:
                 print(f"Question: {item['question']}")
                 print(f"Expected Answer: {item['correct_answer']}, LLM Answer: {item['llm_answer']}\n")
 
-# Example usage:
 if __name__ == "__main__":
-    API_KEY="<YOUR-APKI-KEY-HERE>"
-    file_path='CyberMetric-500-v1.json'
-    evaluator = CyberMetricEvaluator(api_key=API_KEY, file_path=file_path)
+    # Enable debug logging for litellm
+    #litellm._turn_on_debug()
+    
+    file_path = 'CyberMetric-10-v1.json' #small set for testing
+    
+    # Use the exact model name as it appears in Ollama
+    # For Ollama models, you should use "ollama/model_name"
+    # The "ollama/" prefix tells litellm to use Ollama
+    evaluator = CyberMetricEvaluator(model_name="ollama/qwen2.5:14b", file_path=file_path)
     evaluator.run_evaluation()

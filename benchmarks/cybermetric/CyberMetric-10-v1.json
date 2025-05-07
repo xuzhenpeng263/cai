@@ -1,0 +1,104 @@
+{
+    "questions": [
+        {
+            "question": "Which of the following is a desirable property of a biometric system?",
+            "answers": {
+                "A": "Permanent",
+                "B": "Transferability",
+                "C": "Uniformity",
+                "D": "Forgiveness"
+            },
+            "solution": "A"
+        },
+        {
+            "question": "In TCP/IP networking, which protocol is used to hold network addresses and routing information in a packet?",
+            "answers": {
+                "A": "HTTP",
+                "B": "IP",
+                "C": "Routing Information Protocol (RIP)",
+                "D": "TCP"
+            },
+            "solution": "B"
+        },
+        {
+            "question": "In the context of unexpected negative outcomes in personal privacy policies, what responsibility lies with both the provider and the consumer regarding the retention time of private information?",
+            "answers": {
+                "A": "Both the provider and the consumer are responsible for setting the appropriate retention time",
+                "B": "Neither the provider nor the consumer has a responsibility for setting the appropriate retention time",
+                "C": "Only the consumer is responsible for setting an appropriate retention time",
+                "D": "Only the provider is responsible for ensuring the appropriate retention time"
+            },
+            "solution": "A"
+        },
+        {
+            "question": "What type of attack involves an attacker behaving as a store-and-forward or proxy mechanism between two communicating systems?",
+            "answers": {
+                "A": "Buffer overflow attack",
+                "B": "Man-in-the-Middle attack",
+                "C": "DDoS attack",
+                "D": "Sniffer attack"
+            },
+            "solution": "B"
+        },
+        {
+            "question": "What is the fundamental purpose of logging and monitoring in an organization's security measures?",
+            "answers": {
+                "A": "To store backups of critical data",
+                "B": "To track, record, and review activity to detect and respond to security incidents",
+                "C": "To manage and enforce user access controls",
+                "D": "To create a record of all employee activities"
+            },
+            "solution": "B"
+        },
+        {
+            "question": "What is the benefit of structured walk-throughs in disaster recovery testing?",
+            "answers": {
+                "A": "Observe live actions in a controlled environment",
+                "B": "Conduct a full shut-down and restoration at the primary site",
+                "C": "Test operational response to disaster scenarios",
+                "D": "Interrupt real operations at the primary site"
+            },
+            "solution": "C"
+        },
+        {
+            "question": "Which security process metric would most assist in determining an appropriate backup frequency for a database server?",
+            "answers": {
+                "A": "RTO",
+                "B": "MTBF",
+                "C": "RPO",
+                "D": "MTD"
+            },
+            "solution": "C"
+        },
+        {
+            "question": "What constitutional amendment outlines the burden placed on investigators to have a valid search warrant before conducting certain searches?",
+            "answers": {
+                "A": "Third Amendment",
+                "B": "First Amendment",
+                "C": "Second Amendment",
+                "D": "Fourth Amendment"
+            },
+            "solution": "D"
+        },
+        {
+            "question": "Which tool is frequently used to directly access websites without a browser and is often utilized for testing and identifying potential API vulnerabilities?",
+            "answers": {
+                "A": "SSH",
+                "B": "cURL",
+                "C": "FTP",
+                "D": "Telnet"
+            },
+            "solution": "B"
+        },        
+        {
+            "question": "What is the distinguishing characteristic of symmetric-key cryptography?",
+            "answers": {
+                "A": "It tends to be CPU intensive",
+                "B": "It uses the same key for encryption and decryption",
+                "C": "It provides integrity protection to data",
+                "D": "It uses different but related keys for encryption and decryption"
+            },
+            "solution": "B"
+        }
+    ]
+}
