@@ -99,5 +99,5 @@ if __name__ == "__main__":
     # Use the exact model name as it appears in Ollama
     # For Ollama models, you should use "ollama/model_name"
     # The "ollama/" prefix tells litellm to use Ollama
-    evaluator = CyberMetricEvaluator(model_name="ollama/qwen2.5:14b", file_path=file_path)
+    evaluator = CyberMetricEvaluator(model_name="ollama/qwen3:32b-q8_0-ctx-32768", file_path=file_path)
     evaluator.run_evaluation()
