@@ -1,0 +1,125 @@
+{
+  "questions": [
+
+{
+  "question": "What is the primary requirement for an Random Bit Generator's (RBG) output to be used for generating cryptographic keys?",
+  "answers": {
+    "A": "The RBG's output should have a length that matches the target data to be protected",
+    "B": "The RBG's output should be computationally indistinguishable from random bits and provide sufficient entropy to support the security strength required for the target data",
+    "C": "The RBG's output should be as long as possible to ensure maximal randomness",
+    "D": "The RBG's output should have precisely the same length as the symmetric key to be generated"
+  },
+  "solution": "B"
+},
+{
+  "question": "In cryptography, what is the purpose of using a key-derivation function (KDF)?",
+  "answers": {
+    "A": "Generate public keys",
+    "B": "Authenticate digital signatures",
+    "C": "Encrypt data using a password",
+    "D": "KDF are algorithms used to transform a secret into crucial parameters like keys and Initialization Vectors (IVs)"
+  },
+  "solution": "D"
+},
+{
+      "question": "What is the primary purpose of segmentation in the context of PCI DSS?",
+      "answers": {
+        "A": "To reduce the number of PCI DSS requirements applicable to an entity",
+        "B": "To limit the scope of the PCI DSS assessment and minimize the potential for security breaches",
+        "C": "To completely remove the applicability of PCI DSS for a merchant's cardholder data environment",
+        "D": "To eliminate the need for implementing PCI DSS controls"
+      },
+      "solution": "B"
+},
+{
+      "question": "What is the purpose of using strong cryptography to protect cardholder data during transmission over open, public networks?",
+      "answers": {
+        "A": "To ensure the data is secured from unauthorized access or interception during transmission",
+        "B": "To increase the speed of data transmission over open, public networks",
+        "C": "To provide access to authorized individuals to monitor the transmission process",
+        "D": "To improve the efficiency of network routing protocols"
+      },
+      "solution": "A"
+},
+{
+      "question": "What is the purpose of periodic reviews of user accounts and access privileges?",
+      "answers": {
+        "A": "To ensure all user accounts have access to the highest privileges",
+        "B": "To demonstrate adherence to regulatory requirements",
+        "C": "To create a record of all user accounts",
+        "D": "To identify and remove any inappropriate access and privileges"
+      },
+      "solution": "D"
+},
+{
+      "question": "Which of the following is a purpose of having synchronized system clocks?",
+      "answers": {
+        "A": "To compare log files from different systems",
+        "B": "To accelerate system performance",
+        "C": "To standardize file naming conventions",
+        "D": "To reduce power consumption"
+      },
+      "solution": "A"
+},
+{
+  "question": "What is physical security?",
+  "answers": {
+    "A": "The protection of data from hacker attacks",
+    "B": "The prevention of natural disasters caused by environmental factors",
+    "C": "The act of securing a building or location to prevent unauthorized access, theft, or damage to physical assets",
+    "D": "The enforcement of technical security controls to prevent data breaches"
+  },
+  "solution": "C"
+},
+ {
+      "question": "What does the abbreviation 'SDK' stand for in the context of software security?",
+      "answers": {
+        "A": "Software Development Kit",
+        "B": "System Deflection Key",
+        "C": "Software Delegation Kernel",
+        "D": "System Development Key"
+      },
+      "solution": "A"
+},
+{
+      "question": "What is the main purpose of multi-factor authentication in cybersecurity?",
+      "answers": {
+        "A": "To limit user privileges within the network",
+        "B": "To ensure compliance with government regulations",
+        "C": "To adds an extra layer of security by requiring multiple forms of verification",
+        "D": "To monitor network traffic for security threats"
+      },
+      "solution": "C"
+}, 
+{
+      "question": "What is the primary objective of a Web Application Firewall (WAF) in cybersecurity?",
+      "answers": {
+        "A": "To encrypt network traffic between web servers",
+        "B": "To prevent unauthorized access to network services",
+        "C": "To protect web applications from security threats",
+        "D": "To manage user authentication and authorization for web services"
+      },
+      "solution": "C"
+},
+{
+      "question": "What is the purpose of periodically changing passwords or passphrases?",
+      "answers": {
+        "A": "To provide more time for a malicious individual to crack the password/passphrase",
+        "B": "To allow for more rapid detection and response to address potentially compromised credentials",
+        "C": "To prevent unauthorized users from gaining access to the user account through use of a shared authentication factor",
+        "D": "To offer less time for a malicious individual to crack a password/passphrase and less time to use a compromised password"
+      },
+      "solution": "D"
+},
+{
+  "question": "Which of the following defines the entity’s security objectives and principles?",
+  "answers": {
+    "A": "Security policies",
+    "B": "Operational procedures",
+    "C": "Risk assessment framework",
+    "D": "Incident response plan"
+  },
+  "solution": "A"
+}
+  ]
+}
