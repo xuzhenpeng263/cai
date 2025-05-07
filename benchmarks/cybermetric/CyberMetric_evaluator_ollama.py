@@ -7,7 +7,7 @@ import litellm
 
 class CyberMetricEvaluator:
     def __init__(self, model_name, file_path):
-        self.model_name = model_name  # E.g., "ollama/llama3"
+        self.model_name = model_name  
         self.file_path = file_path
         self.report_file = f"report_failed_questions.json"
         self.failed_questions = []
@@ -19,7 +19,6 @@ class CyberMetricEvaluator:
             return json.load(file)
 
     def save_failed_questions(self):
-        # Create the report with the same format as original file
         report_data = {"questions": self.failed_questions}
         
         with open(self.report_file, 'w') as file:
@@ -51,7 +50,7 @@ class CyberMetricEvaluator:
                         {"role": "system", "content": "You are a security expert who answers questions."},
                         {"role": "user", "content": prompt},
                     ],
-                    api_base="http://localhost:8000"  #"http://localhost:11434"  # Ollama API endpoint
+                    api_base="http://localhost:8000" 
                 )
                 if hasattr(response, "choices") and response.choices:
                     content = response.choices[0].message.content
@@ -83,7 +82,6 @@ class CyberMetricEvaluator:
                 if llm_answer == correct_answer:
                     correct_count += 1
                 else:
-                    # Add the question to our failed questions list
                     self.failed_questions.append({
                         'question': question,
                         'answers': answers,
@@ -92,7 +90,6 @@ class CyberMetricEvaluator:
                     })
                     self.failed_count += 1
                     
-                    # Save failed questions to JSON file every 2 failures
                     if self.failed_count % 2 == 0:
                         self.save_failed_questions()
                     
@@ -108,9 +105,8 @@ class CyberMetricEvaluator:
 
         print(f"\nFinal Accuracy: {correct_count / len(questions_data) * 100:.2f}%")
         
-        # Final save of failed questions
         if self.failed_questions:
-            self.save_failed_questions()
+            self.save_failed_questions() #final failed questions
 
         if incorrect_answers:
             print("\nIncorrect Answers:")
@@ -119,13 +115,9 @@ class CyberMetricEvaluator:
                 print(f"Expected Answer: {item['correct_answer']}, LLM Answer: {item['llm_answer']}\n")
 
 if __name__ == "__main__":
-    # Enable debug logging for litellm
     #litellm._turn_on_debug()
     
-    file_path = 'CyberMetric-10000-v1.json' #small set for testing
+    file_path = 'CyberMetric-10000-v1.json'
     
-    # Use the exact model name as it appears in Ollama
-    # For Ollama models, you should use "ollama/model_name"
-    # The "ollama/" prefix tells litellm to use Ollama
     evaluator = CyberMetricEvaluator(model_name="ollama/qwen3:32b-q8_0-ctx-32768", file_path=file_path) # ollama/qwen3:32b-q8_0-ctx-32768"
     evaluator.run_evaluation()
