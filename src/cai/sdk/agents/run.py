@@ -778,6 +778,7 @@ class Runner:
         run_config: RunConfig,
         tool_use_tracker: AgentToolUseTracker,
     ) -> SingleStepResult:
+
         processed_response = RunImpl.process_model_response(
             agent=agent,
             all_tools=all_tools,
@@ -785,6 +786,41 @@ class Runner:
             output_schema=output_schema,
             handoffs=handoffs,
         )
+        
+        # Log tools used with robust type checking
+        if hasattr(processed_response, 'tools_used') and processed_response.tools_used:
+            for i, tool_call in enumerate(processed_response.tools_used):
+                try:
+                    # Safely extract tool name with multiple fallbacks
+                    tool_name = "Unknown"
+                    try:
+                        if hasattr(tool_call, 'tool'):
+                            if isinstance(tool_call.tool, str):
+                                tool_name = tool_call.tool
+                            elif hasattr(tool_call.tool, 'name'):
+                                tool_name = tool_call.tool.name
+                            else:
+                                tool_name = str(tool_call.tool)
+                    except Exception:
+                        pass
+                    
+                    # Safely extract call_id
+                    call_id = "Unknown"
+                    try:
+                        if hasattr(tool_call, 'call_id'):
+                            call_id = str(tool_call.call_id)
+                    except Exception:
+                        pass
+                    
+                    # Safely extract parsed_args
+                    parsed_args = "Unknown"
+                    try:
+                        if hasattr(tool_call, 'parsed_args'):
+                            parsed_args = str(tool_call.parsed_args)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass        
 
         tool_use_tracker.add_tool_use(agent, processed_response.tools_used)
 

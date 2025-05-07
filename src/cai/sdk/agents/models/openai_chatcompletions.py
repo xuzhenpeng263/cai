@@ -7,6 +7,9 @@ import os
 import litellm
 import tiktoken
 import inspect
+import hashlib
+import re
+import asyncio
 
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
@@ -93,9 +96,40 @@ if TYPE_CHECKING:
 # Suppress debug info from litellm
 litellm.suppress_debug_info = True
 
+if os.getenv('CAI_MODEL') == "o3-mini" or os.getenv('CAI_MODEL') == "gemini-1.5-pro": 
+    litellm.drop_params = True
+
 _USER_AGENT = f"Agents/Python {__version__}"
 _HEADERS = {"User-Agent": _USER_AGENT}
 
+message_history = []
+
+# Function to add a message to history if it's not a duplicate
+def add_to_message_history(msg):
+    """Add a message to history if it's not a duplicate."""
+    if not message_history:
+        message_history.append(msg)
+        return
+
+    is_duplicate = False
+
+    if msg.get("role") in ["system", "user"]:
+        is_duplicate = any(
+            existing.get("role") == msg.get("role") and 
+            existing.get("content") == msg.get("content")
+            for existing in message_history
+        )
+
+    elif msg.get("role") == "assistant" and msg.get("tool_calls"):
+        is_duplicate = any(
+            existing.get("role") == "assistant" and 
+            existing.get("tool_calls") and 
+            existing["tool_calls"][0].get("id") == msg["tool_calls"][0].get("id")
+            for existing in message_history
+        )
+
+    if not is_duplicate:
+        message_history.append(msg)
 
 @dataclass
 class _StreamingState:
@@ -235,7 +269,32 @@ class OpenAIChatCompletionsModel(Model):
                         "role": "system",
                     },
                 )
+            # --- Add to message_history: user, system, and assistant tool call messages ---
+            # Add system prompt to message_history
+            if system_instructions:
+                sys_msg = {
+                    "role": "system",
+                    "content": system_instructions
+                }
+                add_to_message_history(sys_msg)
                 
+            # Add user prompt(s) to message_history
+            if isinstance(input, str):
+                user_msg = {
+                    "role": "user",
+                    "content": input
+                }
+                add_to_message_history(user_msg)
+            elif isinstance(input, list):
+                for item in input:
+                    # Try to extract user messages
+                    if isinstance(item, dict):
+                        if item.get("role") == "user":
+                            user_msg = {
+                                "role": "user",
+                                "content": item.get("content", "")
+                            }
+                            add_to_message_history(user_msg)
             # Get token count estimate before API call for consistent counting
             estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
             
@@ -335,6 +394,36 @@ class OpenAIChatCompletionsModel(Model):
                     tool_output=None,  # Don't pass tool output here, we're using direct display
                 )
 
+            # --- Add assistant tool call to message_history if present ---
+            # If the response contains tool_calls, add them to message_history as assistant messages
+            assistant_msg = response.choices[0].message
+            if hasattr(assistant_msg, "tool_calls") and assistant_msg.tool_calls:
+                for tool_call in assistant_msg.tool_calls:
+                    # Compose a message for the tool call
+                    tool_call_msg = {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": tool_call.id,
+                                "type": tool_call.type,
+                                "function": {
+                                    "name": tool_call.function.name,
+                                    "arguments": tool_call.function.arguments
+                                }
+                            }
+                        ]
+                    }
+                    
+                    add_to_message_history(tool_call_msg)
+            # If the assistant message is just text, add it as well
+            elif hasattr(assistant_msg, "content") and assistant_msg.content:
+                asst_msg = {
+                    "role": "assistant",
+                    "content": assistant_msg.content
+                }
+                add_to_message_history(asst_msg)
+
             usage = (
                 Usage(
                     requests=1,
@@ -404,7 +493,29 @@ class OpenAIChatCompletionsModel(Model):
                         "role": "system",
                     },
                 )
+           # --- Add to message_history: user, system prompts ---
+            if system_instructions:
+                sys_msg = {
+                    "role": "system",
+                    "content": system_instructions
+                }
+                add_to_message_history(sys_msg)
                 
+            if isinstance(input, str):
+                user_msg = {
+                    "role": "user",
+                    "content": input
+                }
+                add_to_message_history(user_msg)
+            elif isinstance(input, list):
+                for item in input:
+                    if isinstance(item, dict):
+                        if item.get("role") == "user":
+                            user_msg = {
+                                "role": "user",
+                                "content": item.get("content", "")
+                            }
+                            add_to_message_history(user_msg)
             # Get token count estimate before API call for consistent counting
             estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
             
@@ -429,7 +540,25 @@ class OpenAIChatCompletionsModel(Model):
             
             # Initialize a streaming text accumulator for rich display
             streaming_text_buffer = ""
+            # For tool call streaming, accumulate tool_calls to add to message_history at the end
+            streamed_tool_calls = []
             
+            # Ollama specific: accumulate full content to check for function calls at the end
+            # Some Ollama models output the function call as JSON in the text content
+            ollama_full_content = ""
+            is_ollama = False
+            
+            model_str = str(self.model).lower()
+            is_ollama = self.is_ollama or "ollama" in model_str or ":" in model_str or "qwen" in model_str
+            
+            # Add visual separation before agent output
+            if streaming_context and should_show_rich_stream:
+                # If we're using rich context, we'll add separation through that
+                pass
+            else:
+                # Print clear visual separator
+                print("\n")
+                
             async for chunk in stream:
                 if not state.started:
                     state.started = True
@@ -453,6 +582,10 @@ class OpenAIChatCompletionsModel(Model):
                     choices = [{"delta": chunk.delta}]
                 elif isinstance(chunk, dict) and 'choices' in chunk:
                     choices = chunk['choices']
+                # Special handling for Qwen/Ollama chunks 
+                elif isinstance(chunk, dict) and ('content' in chunk or 'function_call' in chunk):
+                    # Qwen direct delta format - convert to standard
+                    choices = [{"delta": chunk}]
                 else:
                     # Skip chunks that don't contain choice data
                     continue
@@ -478,6 +611,10 @@ class OpenAIChatCompletionsModel(Model):
                     content = delta['content']
                 
                 if content:
+                    # For Ollama, we need to accumulate the full content to check for function calls
+                    if is_ollama:
+                        ollama_full_content += content
+                    
                     # Add to the streaming text buffer
                     streaming_text_buffer += content
                     
@@ -589,11 +726,7 @@ class OpenAIChatCompletionsModel(Model):
                 # Handle tool calls
                 # Because we don't know the name of the function until the end of the stream, we'll
                 # save everything and yield events at the end
-                tool_calls = None
-                if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                    tool_calls = delta.tool_calls
-                elif isinstance(delta, dict) and 'tool_calls' in delta and delta['tool_calls']:
-                    tool_calls = delta['tool_calls']
+                tool_calls = self._detect_and_format_function_calls(delta)
                 
                 if tool_calls:
                     for tc_delta in tool_calls:
@@ -636,8 +769,145 @@ class OpenAIChatCompletionsModel(Model):
                             call_id = tc_delta.id or ""
                         elif isinstance(tc_delta, dict) and 'id' in tc_delta:
                             call_id = tc_delta.get('id', "") or ""
-                            
+                        else:
+                            # For Qwen models, generate a predictable ID if none is provided
+                            if state.function_calls[tc_index].name:
+                                # Generate a stable ID from the function name and arguments
+                                call_id = f"call_{hashlib.md5(state.function_calls[tc_index].name.encode()).hexdigest()[:8]}"
+
                         state.function_calls[tc_index].call_id += call_id
+
+                        # --- Accumulate tool call for message_history ---
+                        # Only add if not already present (avoid duplicates in streaming)
+                        tool_call_msg = {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": state.function_calls[tc_index].call_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": state.function_calls[tc_index].name,
+                                        "arguments": state.function_calls[tc_index].arguments
+                                    }
+                                }
+                            ]
+                        }
+                        # Only add if not already in streamed_tool_calls
+                        if tool_call_msg not in streamed_tool_calls:
+                            streamed_tool_calls.append(tool_call_msg)
+                            add_to_message_history(tool_call_msg)
+
+            # Special handling for Ollama - check if accumulated text contains a valid function call
+            if is_ollama and ollama_full_content and len(state.function_calls) == 0:
+                # Look for JSON object that might be a function call
+                try:
+                    # Try to extract a JSON object from the content
+                    json_start = ollama_full_content.find('{')
+                    json_end = ollama_full_content.rfind('}') + 1
+                                        
+                    if json_start >= 0 and json_end > json_start:
+                        json_str = ollama_full_content[json_start:json_end]                        
+                        # Try to parse the JSON
+                        parsed = json.loads(json_str)
+                        
+                        # Check if it looks like a function call
+                        if ('name' in parsed and 'arguments' in parsed):
+                            logger.debug(f"Found valid function call in Ollama output: {json_str}")
+                            
+                            # Create a tool call ID
+                            tool_call_id = f"call_{hashlib.md5((parsed['name'] + str(time.time())).encode()).hexdigest()[:8]}"
+                            
+                            # Ensure arguments is a valid JSON string
+                            arguments_str = ""
+                            if isinstance(parsed['arguments'], dict):
+                                # Remove 'ctf' field if it exists
+                                if 'ctf' in parsed['arguments']:
+                                    del parsed['arguments']['ctf']
+                                arguments_str = json.dumps(parsed['arguments'])
+                            elif isinstance(parsed['arguments'], str):
+                                # If it's already a string, check if it's valid JSON
+                                try:
+                                    # Try parsing to validate and remove 'ctf' if present
+                                    args_dict = json.loads(parsed['arguments'])
+                                    if isinstance(args_dict, dict) and 'ctf' in args_dict:
+                                        del args_dict['ctf']
+                                    arguments_str = json.dumps(args_dict)
+                                except:
+                                    # If not valid JSON, encode it as a JSON string
+                                    arguments_str = json.dumps(parsed['arguments'])
+                            else:
+                                # For any other type, convert to string and then JSON
+                                arguments_str = json.dumps(str(parsed['arguments']))                            
+                            # Add it to our function_calls state
+                            state.function_calls[0] = ResponseFunctionToolCall(
+                                id=FAKE_RESPONSES_ID,
+                                arguments=arguments_str,
+                                name=parsed['name'],
+                                type="function_call",
+                                call_id=tool_call_id,
+                            )
+                            
+                            # Display the tool call in CLI
+                            from cai.util import cli_print_agent_messages
+                            try:
+                                # Create a message-like object to display the function call
+                                tool_msg = type('ToolCallWrapper', (), {
+                                    'content': None,
+                                    'tool_calls': [
+                                        type('ToolCallDetail', (), {
+                                            'function': type('FunctionDetail', (), {
+                                                'name': parsed['name'],
+                                                'arguments': arguments_str
+                                            }),
+                                            'id': tool_call_id,
+                                            'type': 'function'
+                                        })
+                                    ]
+                                })
+                                
+                                # Print the tool call using the CLI utility
+                                cli_print_agent_messages(
+                                    agent_name=getattr(self, 'agent_name', 'Agent'),
+                                    message=tool_msg,
+                                    counter=getattr(self, 'interaction_counter', 0),
+                                    model=str(self.model),
+                                    debug=False,
+                                    interaction_input_tokens=estimated_input_tokens,
+                                    interaction_output_tokens=estimated_output_tokens,
+                                    interaction_reasoning_tokens=0,  # Not available for Ollama
+                                    total_input_tokens=getattr(self, 'total_input_tokens', 0) + estimated_input_tokens,
+                                    total_output_tokens=getattr(self, 'total_output_tokens', 0) + estimated_output_tokens,
+                                    total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
+                                    interaction_cost=None,
+                                    total_cost=None,
+                                    tool_output=None  # Will be shown once the tool is executed
+                                )
+                            except Exception as e:
+                                logger.error(f"Error displaying tool call in CLI: {e}")
+                            
+                            # Add to message history
+                            tool_call_msg = {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [
+                                    {
+                                        "id": tool_call_id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": parsed['name'],
+                                            "arguments": arguments_str
+                                        }
+                                    }
+                                ]
+                            }
+                            
+                            streamed_tool_calls.append(tool_call_msg)
+                            add_to_message_history(tool_call_msg)
+                            
+                            logger.debug(f"Added function call: {parsed['name']} with args: {arguments_str}")
+                except Exception as e:
+                    pass
 
             function_call_starting_index = 0
             if state.text_content_index_and_output:
@@ -817,6 +1087,9 @@ class OpenAIChatCompletionsModel(Model):
                 direct_stats["total_cost"] = float(total_cost)
                 # Use the direct copy with guaranteed float costs
                 finish_agent_streaming(streaming_context, direct_stats)
+                
+                # Add visual separation after agent output completes
+                print("\n")
             # If we're not using rich streaming and not suppressing output, use old method
             elif not self.suppress_final_output and final_response.output and any(isinstance(item, ResponseOutputMessage) for item in final_response.output):
                 # Find the assistant message to print
@@ -837,8 +1110,22 @@ class OpenAIChatCompletionsModel(Model):
                             interaction_cost=interaction_cost,
                             total_cost=total_cost,
                         )
+                        
+                        # Add visual separation after message
+                        print("\n")
                         break
-            
+
+            # --- Add assistant tool call(s) to message_history at the end of streaming ---
+            for tool_call_msg in streamed_tool_calls:
+                add_to_message_history(tool_call_msg)
+           # If there was only text output, add that as an assistant message
+            if (not streamed_tool_calls) and state.text_content_index_and_output and state.text_content_index_and_output[1].text:
+                asst_msg = {
+                    "role": "assistant",
+                    "content": state.text_content_index_and_output[1].text
+                }
+                add_to_message_history(asst_msg)
+
             if tracing.include_data():
                 span_generation.span_data.output = [final_response.model_dump()]
 
@@ -964,36 +1251,69 @@ class OpenAIChatCompletionsModel(Model):
             "extra_headers": _HEADERS,
         }
 
-      
-
-        # Error encountered: Error code: 400 - {'error': {'code': 'invalid_request_error', 
-        #     'message': "'tool_choice' is only allowed when 'tools' are specified", 
-        #     'type': 'invalid_request_error', 'param': None}}
-        #
-        # Only remove tool_choice if model starts with "gpt" and has no tools
-        if self.model.startswith("gpt") and not converted_tools:
-            kwargs.pop("tool_choice", None)
+        # Determine provider based on model string
+        model_str = str(self.model).lower()
+        
+        # Provider-specific adjustments
+        if "/" in model_str:
+            # Handle provider/model format
+            provider = model_str.split("/")[0]
             
-        # TODO: review this. Remove tool_choice for Anthropic/Claude models when no tools are provided
-        if ("claude" in str(self.model).lower() or "anthropic" in str(self.model).lower()) and not converted_tools:
-            kwargs.pop("tool_choice", None)
+            # Apply provider-specific configurations
+            if provider == "deepseek":
+                litellm.drop_params = True
+                kwargs.pop("parallel_tool_calls", None)
+                # Remove tool_choice if no tools are specified
+                if not converted_tools:
+                    kwargs.pop("tool_choice", None)
+            elif provider == "claude":
+                litellm.drop_params = True
+                kwargs.pop("store", None)
+                # Remove tool_choice if no tools are specified
+                if not converted_tools:
+                    kwargs.pop("tool_choice", None)
+            elif provider == "gemini":
+                kwargs.pop("parallel_tool_calls", None)
+                # Add any specific gemini settings if needed
+        else:
+            # Handle models without provider prefix
+            if "claude" in model_str:
+                litellm.drop_params = True
+                # Remove store parameter which isn't supported by Anthropic
+                kwargs.pop("store", None)
+                # Remove tool_choice if no tools are specified
+                if not converted_tools:
+                    kwargs.pop("tool_choice", None)
+            elif "gemini" in model_str:
+                kwargs.pop("parallel_tool_calls", None)
+            elif "qwen" in model_str or ":" in model_str:
+                # Handle Ollama-served models with custom formats (e.g., qwen2.5:14b)
+                # These typically need the Ollama provider
+                litellm.drop_params = True
+                kwargs.pop("parallel_tool_calls", None)
+                # These models may not support certain parameters
+                if not converted_tools:
+                    kwargs.pop("tool_choice", None)
+                # Don't add custom_llm_provider here to avoid duplication with Ollama provider
+                if self.is_ollama:
+                    # Clean kwargs for ollama to avoid parameter conflicts
+                    for param in ["custom_llm_provider"]:
+                        kwargs.pop(param, None)
+            elif any(x in model_str for x in ["o1", "o3", "o4"]):
+                # Handle OpenAI reasoning models (o1, o3, o4)
+                kwargs.pop("parallel_tool_calls", None)
+                # Add reasoning effort if provided
+                if hasattr(model_settings, "reasoning_effort"):
+                    kwargs["reasoning_effort"] = model_settings.reasoning_effort
 
-        # Model adjustments
-        if any(x in self.model for x in ["claude"]):
-            litellm.drop_params = True
-            # BadRequestError encountered: litellm.BadRequestError: AnthropicException - 
-            # b'{"type":"error","error":
-            #     {"type":"invalid_request_error","message":"store: Extra inputs are not permitted"}}'
-            #
-            kwargs.pop("store", None)
-            
-            # Filter out NotGiven values to avoid JSON serialization issues
-            filtered_kwargs = {}
-            for key, value in kwargs.items():
-                if value is not NOT_GIVEN:
-                    filtered_kwargs[key] = value
-            kwargs = filtered_kwargs
-
+        
+        # Filter out NotGiven values to avoid JSON serialization issues
+        filtered_kwargs = {}
+        for key, value in kwargs.items():
+            if value is not NOT_GIVEN:
+                filtered_kwargs[key] = value
+        kwargs = filtered_kwargs
+        
         try:
             if self.is_ollama:
                 return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
@@ -1003,21 +1323,71 @@ class OpenAIChatCompletionsModel(Model):
         except litellm.exceptions.BadRequestError as e:
             # print(color("BadRequestError encountered: " + str(e), fg="yellow"))
             if "LLM Provider NOT provided" in str(e):
-                # Create a copy of params to avoid overwriting the original
-                # ones
-                try:
-                    return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
-                except litellm.exceptions.BadRequestError as e:  # pylint: disable=W0621,C0301 # noqa: E501
-                    #
-                    # CTRL-C handler for ollama models
-                    #
-                    if "invalid message content type" in str(e):
-                        kwargs["messages"] = fix_message_list(
-                            kwargs["messages"])
+                model_str = str(self.model).lower()
+                provider = None
+                is_qwen = "qwen" in model_str or ":" in model_str
+                
+                # Special handling for Qwen models
+                if is_qwen:
+                    try:
+                        # Use the specialized Qwen approach first
                         return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                    except Exception as qwen_e:
+                        print(qwen_e)
+                        # If that fails, try our direct OpenAI approach
+                        qwen_params = kwargs.copy()
+                        qwen_params["api_base"] = get_ollama_api_base()
+                        qwen_params["custom_llm_provider"] = "openai"  # Use openai provider
+                        
+                        # Make sure tools are passed
+                        if "tools" in kwargs and kwargs["tools"]:
+                            qwen_params["tools"] = kwargs["tools"]
+                        if "tool_choice" in kwargs and kwargs["tool_choice"] is not NOT_GIVEN:
+                            qwen_params["tool_choice"] = kwargs["tool_choice"]
+                        
+                        try:
+                            if stream:
+                                # Streaming case
+                                response = Response(
+                                    id=FAKE_RESPONSES_ID,
+                                    created_at=time.time(),
+                                    model=self.model,
+                                    object="response",
+                                    output=[],
+                                    tool_choice="auto" if tool_choice is None or tool_choice == NOT_GIVEN else cast(Literal["auto", "required", "none"], tool_choice),
+                                    top_p=model_settings.top_p,
+                                    temperature=model_settings.temperature,
+                                    tools=[],
+                                    parallel_tool_calls=parallel_tool_calls or False,
+                                )
+                                stream_obj = await litellm.acompletion(**qwen_params)
+                                return response, stream_obj
+                            else:
+                                # Non-streaming case
+                                ret = litellm.completion(**qwen_params)
+                                return ret
+                        except Exception as direct_e:
+                            # All approaches failed, log and raise the original error
+                            print(f"All Qwen approaches failed. Original error: {str(e)}, Direct error: {str(direct_e)}")
+                            raise e
+                
+                # Try to detect provider from model string
+                if "/" in model_str:
+                    provider = model_str.split("/")[0]
+                
+                if provider:
+                    # Add provider-specific settings based on detected provider
+                    provider_kwargs = kwargs.copy()
+                    if provider == "deepseek":
+                        provider_kwargs["custom_llm_provider"] = "deepseek"
+                    elif provider == "claude" or "claude" in model_str:
+                        provider_kwargs["custom_llm_provider"] = "anthropic"
+                    elif provider == "gemini":
+                        provider_kwargs["custom_llm_provider"] = "gemini"
                     else:
-                        raise e
-
+                        # For unknown providers, try ollama as fallback
+                        return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                        
             elif ("An assistant message with 'tool_calls'" in str(e) or
                 "`tool_use` blocks must be followed by a user message with `tool_result`" in str(e)):  # noqa: E501 # pylint: disable=C0301
                 print(f"Error: {str(e)}")
@@ -1121,76 +1491,164 @@ class OpenAIChatCompletionsModel(Model):
             # Standard OpenAI handling for non-streaming
             ret = litellm.completion(**kwargs)
             return ret
-
+            
     async def _fetch_response_litellm_ollama(
         self,
         kwargs: dict,
         model_settings: ModelSettings,
         tool_choice: ChatCompletionToolChoiceOptionParam | NotGiven,
         stream: bool,
-        parallel_tool_calls: bool
+        parallel_tool_calls: bool,
+        provider="ollama"
     ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
-        # Filter out parameters not supported by Ollama
+        # Extract only supported parameters for Ollama
         ollama_supported_params = {
-            "model": kwargs["model"],
-            "messages": kwargs["messages"],
-            "temperature": kwargs["temperature"] if kwargs["temperature"] is not NOT_GIVEN else None,
-            "top_p": kwargs["top_p"] if kwargs["top_p"] is not NOT_GIVEN else None,
-            "max_tokens": kwargs["max_tokens"] if kwargs["max_tokens"] is not NOT_GIVEN else None,
-            "stream": kwargs["stream"],
-            "extra_headers": kwargs["extra_headers"]
+            "model": kwargs.get("model", ""),
+            "messages": kwargs.get("messages", []),
+            "stream": kwargs.get("stream", False)
         }
-
-        # Modify the messages to remove system message for Ollama
-        if ollama_supported_params["messages"] and ollama_supported_params["messages"][0].get("role") == "system":
-            # Extract the system message
-            system_content = ollama_supported_params["messages"][0].get("content", "")
-            # Remove it from the messages
-            ollama_supported_params["messages"] = ollama_supported_params["messages"][1:]
-            # If there are user messages, prepend system to first user
-            if ollama_supported_params["messages"] and ollama_supported_params["messages"][0].get("role") == "user":
-                # Prepend the system instruction to the first user message, with a separator
-                user_content = ollama_supported_params["messages"][0].get("content", "")
-                if isinstance(user_content, str):
-                    ollama_supported_params["messages"][0]["content"] = f"System: {system_content}\n\nUser: {user_content}"
+        
+        # Add optional parameters if they exist and are not NOT_GIVEN
+        for param in ["temperature", "top_p", "max_tokens"]:
+            if param in kwargs and kwargs[param] is not NOT_GIVEN:
+                ollama_supported_params[param] = kwargs[param]
+        
+        # Add extra headers if available
+        if "extra_headers" in kwargs:
+            ollama_supported_params["extra_headers"] = kwargs["extra_headers"]
+            
+        # Add tools and tool_choice for compatibility with Qwen
+        if "tools" in kwargs and kwargs.get("tools") and kwargs.get("tools") is not NOT_GIVEN:
+            ollama_supported_params["tools"] = kwargs.get("tools")
+            
+        if "tool_choice" in kwargs and kwargs.get("tool_choice") is not NOT_GIVEN:
+            ollama_supported_params["tool_choice"] = kwargs.get("tool_choice")
 
         # Remove None values
         ollama_kwargs = {k: v for k, v in ollama_supported_params.items() if v is not None}
-
+        
+        # Check if this is a Qwen model
+        model_str = str(self.model).lower()
+        is_qwen = "qwen" in model_str
+                
+        api_base = get_ollama_api_base()
+        if "ollama" in provider:
+            api_base = api_base.rstrip('/v1')
+        # Create response object for streaming
         if stream:
-            # For streaming with Ollama, we need to create a Response object first
             response = Response(
                 id=FAKE_RESPONSES_ID,
                 created_at=time.time(),
                 model=self.model,
                 object="response",
                 output=[],
-                tool_choice="auto" if tool_choice is None or tool_choice == NOT_GIVEN else cast(Literal["auto", "required", "none"], tool_choice),
+                tool_choice="auto" if tool_choice is None or tool_choice == NOT_GIVEN else 
+                    cast(Literal["auto", "required", "none"], tool_choice),
                 top_p=model_settings.top_p,
                 temperature=model_settings.temperature,
                 tools=[],
                 parallel_tool_calls=parallel_tool_calls or False,
             )
-            # Get the streaming object
+            # Get streaming response
             stream_obj = await litellm.acompletion(
                 **ollama_kwargs,
-                api_base=get_ollama_api_base().rstrip('/v1'),
-                custom_llm_provider="ollama"
+                api_base=api_base,
+                custom_llm_provider=provider,
             )
             return response, stream_obj
         else:
-            # Non-streaming mode
-            ret = litellm.completion(
+
+        
+            # Get completion response
+            return litellm.completion(
                 **ollama_kwargs,
-                api_base=get_ollama_api_base().rstrip('/v1'),
-                custom_llm_provider="ollama"
+                api_base=api_base,
+                custom_llm_provider=provider,
             )
-            return ret
 
     def _get_client(self) -> AsyncOpenAI:
         if self._client is None:
             self._client = AsyncOpenAI()
         return self._client
+
+    # Helper function to detect and format function calls from various models
+    def _detect_and_format_function_calls(self, delta):
+        """
+        Helper to detect function calls in different formats and normalize them.
+        Handles Qwen specifics where function calls may be formatted differently.
+        
+        Returns: List of normalized tool calls or None
+        """
+        # Standard OpenAI-style tool_calls format
+        if hasattr(delta, 'tool_calls') and delta.tool_calls:
+            return delta.tool_calls
+        elif isinstance(delta, dict) and 'tool_calls' in delta and delta['tool_calls']:
+            return delta['tool_calls']
+        
+        # Qwen/Ollama function_call format 
+        if isinstance(delta, dict) and 'function_call' in delta:
+            function_call = delta['function_call']
+            return [{
+                'index': 0,
+                'id': f"call_{time.time_ns()}",  # Generate a unique ID
+                'type': 'function',
+                'function': {
+                    'name': function_call.get('name', ''),
+                    'arguments': function_call.get('arguments', '')
+                }
+            }]
+            
+        if isinstance(delta, dict) and 'content' in delta:
+            content = delta['content']
+            # Try to detect if the content is a JSON string with function call format
+            try:
+                if isinstance(content, str) and '{' in content and '}' in content:
+                    # Try to extract JSON from the content (it might be embedded in text)
+                    json_start = content.find('{')
+                    json_end = content.rfind('}') + 1
+                    if json_start >= 0 and json_end > json_start:
+                        json_str = content[json_start:json_end]
+                        parsed = json.loads(json_str)
+                        if 'name' in parsed and 'arguments' in parsed:
+                            # This looks like a function call in JSON format
+                            return [{
+                                'index': 0,
+                                'id': f"call_{time.time_ns()}",  # Generate a unique ID
+                                'type': 'function',
+                                'function': {
+                                    'name': parsed['name'],
+                                    'arguments': json.dumps(parsed['arguments']) if isinstance(parsed['arguments'], dict) else parsed['arguments']
+                                }
+                            }]
+            except Exception:
+                # If JSON parsing fails, just continue with normal processing
+                pass
+        
+        # Anthropic-style tool_use format
+        if hasattr(delta, 'tool_use') and delta.tool_use:
+            tool_use = delta.tool_use
+            return [{
+                'index': 0,
+                'id': tool_use.get('id', f"tool_{time.time_ns()}"),
+                'type': 'function',
+                'function': {
+                    'name': tool_use.get('name', ''),
+                    'arguments': tool_use.get('input', '{}')
+                }
+            }]
+        elif isinstance(delta, dict) and 'tool_use' in delta and delta['tool_use']:
+            tool_use = delta['tool_use']
+            return [{
+                'index': 0,
+                'id': tool_use.get('id', f"tool_{time.time_ns()}"),
+                'type': 'function',
+                'function': {
+                    'name': tool_use.get('name', ''),
+                    'arguments': tool_use.get('input', '{}')
+                }
+            }]
+            
+        return None
 
 
 class _Converter:

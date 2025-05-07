@@ -18,7 +18,7 @@ toolbar_last_refresh = [datetime.datetime.now()]
 toolbar_cache = {
     'html': "",
     'last_update': datetime.datetime.now(),
-    'refresh_interval': 60  # Refresh every 60 seconds
+    'refresh_interval': 5  # Refresh every 60 seconds
 }
 
 # Cache for system information that rarely changes
@@ -57,7 +57,22 @@ def update_toolbar_in_background():
         ip_address = sys_info['ip_address']
         os_name = sys_info['os_name']
         os_version = sys_info['os_version']
+       
+        # Get the current workspace and base directory
+        workspace_name = os.getenv("CAI_WORKSPACE")
+        base_dir = os.getenv("CAI_WORKSPACE_DIR", "workspaces")
 
+        # Construct the workspace path 
+        standard_path = os.path.join(base_dir, workspace_name) if workspace_name else ""
+        workspace_path = ""
+        if workspace_name:
+            if os.path.isdir(standard_path):
+                workspace_path = standard_path
+            elif os.path.isdir(workspace_name):
+                workspace_path = os.path.abspath(workspace_name)
+            else:
+                workspace_path = standard_path
+        
         # Get Ollama information
         ollama_status = "unavailable"
         try:

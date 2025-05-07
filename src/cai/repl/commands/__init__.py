@@ -25,7 +25,6 @@ from cai.repl.commands.base import (
 # Import all command modules
 # These imports will register the commands with the registry
 from cai.repl.commands import (  # pylint: disable=import-error,unused-import,line-too-long,redefined-builtin # noqa: E501,F401
-    memory,
     help,
     graph,
     exit,
@@ -34,10 +33,11 @@ from cai.repl.commands import (  # pylint: disable=import-error,unused-import,li
     platform,
     kill,
     model,
-    turns,
     agent,
     history,
-    config
+    config,
+    flush,
+    workspace,
 )
 
 # Define helper functions

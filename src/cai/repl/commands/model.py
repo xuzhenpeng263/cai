@@ -145,6 +145,9 @@ class ModelCommand(Command):
                 {"name": "gpt-4-turbo",
                  "description": "Fast and powerful GPT-4 model"}
             ],
+            "OpenAI GPT-4o-mini": [
+                {"name": "gpt-4o-mini", "description": " GPT-4o mini model"}
+            ],
             "OpenAI GPT-4.5": [
                 {
                     "name": "gpt-4.5-preview",

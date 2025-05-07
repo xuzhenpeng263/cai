@@ -155,45 +155,37 @@ class AgentCommand(Command):
         table = Table(title="Available Agents")
         table.add_column("#", style="dim")
         table.add_column("Name", style="cyan")
-        table.add_column("Module", style="magenta")
+        table.add_column("Key", style="magenta")
+        table.add_column("Module", style="green")
         table.add_column("Description", style="green")
-        table.add_column("Pattern", style="blue")
-        table.add_column("Model", style="yellow")
 
-        # Scan all agents from the agents folder
+        # Retrieve all registered agents
         agents_to_display = get_available_agents()
 
-        # Display all agents
-        for i, (name, agent) in enumerate(agents_to_display.items(), 1):
-            description = agent.description
-            if not description and hasattr(agent, 'instructions'):
-                if callable(agent.instructions):
-                    description = agent.instructions(context_variables={})
-                else:
-                    description = agent.instructions
-            # Clean up description - remove newlines and strip spaces
+        for idx, (agent_key, agent) in enumerate(agents_to_display.items(), start=1):
+            # Human-friendly name (falls back to the dict key)
+            display_name = getattr(agent, "name", agent_key)
+
+            # Use provided description, otherwise derive from instructions
+            description = getattr(agent, "description", "") or ""
+            if not description and hasattr(agent, "instructions"):
+                instr = agent.instructions
+                description = instr(context_variables={}) if callable(instr) else instr
             if isinstance(description, str):
                 description = " ".join(description.split())
                 if len(description) > 50:
                     description = description[:47] + "..."
 
-            # Get the module name for the agent
-            module_name = get_agent_module(name)
+            # Module where this agent lives
+            module_name = get_agent_module(agent_key)
 
-            # Get the pattern if it exists
-            pattern = getattr(agent, 'pattern', '')
-            if pattern:
-                pattern = pattern.capitalize()
-
-            # Handle model display based on agent type
-            model_display = self._get_model_display(name, agent)
+            # Add a row with all collected info
             table.add_row(
-                str(i),
-                name,
+                str(idx),
+                display_name,
+                agent_key,
                 module_name,
-                description,
-                pattern,
-                model_display
+                description
             )
 
         console.print(table)
@@ -210,76 +202,45 @@ class AgentCommand(Command):
         """
         if not args:
             console.print("[red]Error: No agent specified[/red]")
-            console.print("Usage: /agent select <name|number>")
+            console.print("Usage: /agent select <agent_key|number>")
             return False
 
         agent_id = args[0]
 
-        # Get the list of available agents
         agents_to_display = get_available_agents()
+        agent_list = list(agents_to_display.items())  
 
         # Check if agent_id is a number
         if agent_id.isdigit():
             index = int(agent_id)
-            if 1 <= index <= len(agents_to_display):
-                agent_name = list(agents_to_display.keys())[index - 1]
+            if 1 <= index <= len(agent_list):
+                # Get the agent tuple from the list
+                selected_agent_key, selected_agent = agent_list[index - 1]
+                agent_name = getattr(selected_agent, "name", selected_agent_key)
+                agent = selected_agent
             else:
-                console.print(
-                    f"[red]Error: Invalid agent number: {agent_id}[/red]")
+                console.print(f"[red]Error: Invalid agent number: {agent_id}[/red]")
                 return False
         else:
-            # Treat as agent name
-            agent_name = agent_id
-            if agent_name not in agents_to_display:
-                console.print(f"[red]Error: Unknown agent: {agent_name}[/red]")
+            # Treat as agent key
+            selected_agent_key = None
+            for key, agent_obj in agents_to_display.items():
+                if key == agent_id:
+                    agent = agent_obj
+                    selected_agent_key = key
+                    agent_name = getattr(agent_obj, "name", key)
+                    break
+            else:
+                console.print(f"[red]Error: Unknown agent key: {agent_id}[/red]")
                 return False
 
-        # Get the agent
-        agent = agents_to_display[agent_name]
-
-        # Set the agent as the current agent in the REPL
-        # We need to avoid circular imports, so we'll use a different approach
-        # to access the client and current_agent variables
-
-        # Import the module dynamically to avoid circular imports
-        if 'cai.repl.repl' in sys.modules:
-            repl_module = sys.modules['cai.repl.repl']
-
-            # Check if client is initialized
-            if hasattr(repl_module, 'client') and repl_module.client:
-                # Update the active_agent in the client
-                repl_module.client.active_agent = agent
-
-                # Update the global current_agent variable if it exists
-                if hasattr(repl_module, 'current_agent'):
-                    repl_module.current_agent = agent
-
-                # Update the global agent variable if it exists
-                if hasattr(repl_module, 'agent'):
-                    repl_module.agent = agent
-
-                # Also update the agent variable in the run_demo_loop
-                # function's frame if possible
-                try:
-                    for frame_info in inspect.stack():
-                        frame = frame_info.frame
-                        if ('run_demo_loop' in frame.f_code.co_name and
-                                'agent' in frame.f_locals):
-                            frame.f_locals['agent'] = agent
-                            break
-                except Exception:  # pylint: disable=broad-except # nosec
-                    # If this fails, we still have the global current_agent as
-                    # a fallback
-                    pass
-
-                console.print(
-                    f"[green]Switched to agent: {agent_name}[/green]")
-                visualize_agent_graph(agent)
-                return True
-            console.print("[red]Error: CAI client not initialized[/red]")
-            return False
-        console.print("[red]Error: REPL module not initialized[/red]")
-        return False
+        # Set the agent key in environment variable (not the agent name)
+        os.environ["CAI_AGENT_TYPE"] = selected_agent_key
+        
+        console.print(
+                    f"[green]Switched to agent: {agent_name}[/green]")           
+        visualize_agent_graph(agent)
+        return True
 
     def handle_info(self, args: Optional[List[str]] = None) -> bool:
         """Handle /agent info command.
@@ -292,57 +253,74 @@ class AgentCommand(Command):
         """
         if not args:
             console.print("[red]Error: No agent specified[/red]")
-            console.print("Usage: /agent info <name|number>")
+            console.print("Usage: /agent info <agent_key|number>")
             return False
 
         agent_id = args[0]
 
-        # Get the list of available agents
+        # Get available agents
         agents_to_display = get_available_agents()
 
-        # Check if agent_id is a number
+        # Resolve agent_id to an agent key (by index or name)
         if agent_id.isdigit():
-            index = int(agent_id)
-            if 1 <= index <= len(agents_to_display):
-                agent_name = list(agents_to_display.keys())[index - 1]
-            else:
-                console.print(
-                    f"[red]Error: Invalid agent number: {agent_id}[/red]")
+            idx = int(agent_id)
+            if not (1 <= idx <= len(agents_to_display)):
+                console.print(f"[red]Error: Invalid agent number: {agent_id}[/red]")
                 return False
+            agent_key = list(agents_to_display.keys())[idx - 1]
         else:
-            # Treat as agent name
-            agent_name = agent_id
-            if agent_name not in agents_to_display:
-                console.print(f"[red]Error: Unknown agent: {agent_name}[/red]")
+            agent_key = None
+            for key, ag in agents_to_display.items():
+                if key == agent_id or getattr(ag, "name", "").lower() == agent_id.lower():
+                    agent_key = key
+                    break
+            if agent_key is None:
+                console.print(f"[red]Error: Unknown agent key: {agent_id}[/red]")
                 return False
 
-        # Get the agent
-        agent = agents_to_display[agent_name]
+        agent = agents_to_display[agent_key]
 
-        # Display agent information
+       # Display agent information
         instructions = agent.instructions
         if callable(instructions):
             instructions = instructions()
+        # Prepare agent properties
+        name = agent.name or agent_key
+        description = getattr(agent, "description", None) or "N/A"
+        clean_description = " ".join(line.strip() for line in description.splitlines())
+        functions = getattr(agent, "functions", [])
+        parallel = getattr(agent, "parallel_tool_calls", False)
+        handoff_desc = getattr(agent, "handoff_description", None) or "N/A"
+        handoffs = getattr(agent, "handoffs", [])
+        tools = getattr(agent, "tools", [])
+        guardrails_in = getattr(agent, "input_guardrails", [])
+        guardrails_out = getattr(agent, "output_guardrails", [])
+        output_type = getattr(agent, "output_type", None) or "N/A"
+        hooks = getattr(agent, "hooks", []) or []
 
-        # Handle model display based on agent type
-        model_display = self._get_model_display_for_info(agent_name, agent)
-
-        # Create a markdown table for agent details
+        # Build markdown content for agent info
         markdown_content = f"""
-# Agent: {agent_name}
+# Agent Info: {name}
 
-| Property | Value |
-|----------|-------|
-| Name | {agent.name} |
-| Model | {model_display} |
-| Functions | {len(agent.functions)} |
-| Parallel Tool Calls | {'Yes' if agent.parallel_tool_calls else 'No'} |
+| Property               | Value                         |
+|------------------------|-------------------------------|
+| Key                    | {agent_key}                   |
+| Name                   | {name}                        |
+| Description            | {clean_description}           |
+| Functions              | {len(functions)}              |
+| Parallel Tool Calls    | {"Yes" if parallel else "No"} |
+| Handoff Description    | {handoff_desc}                |
+| Handoffs               | {len(handoffs)}               |
+| Tools                  | {len(tools)}                  |
+| Input Guardrails       | {len(guardrails_in)}          |
+| Output Guardrails      | {len(guardrails_out)}         |
+| Output Type            | {output_type}                 |
+| Hooks                  | {len(hooks)}                  |
 
 ## Instructions
-
 {instructions}
-"""
 
+"""
         console.print(Markdown(markdown_content))
         return True
 
