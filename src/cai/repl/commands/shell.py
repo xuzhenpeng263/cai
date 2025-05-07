@@ -12,6 +12,7 @@ from typing import (
 from rich.console import Console  # pylint: disable=import-error
 
 from cai.repl.commands.base import Command, register_command
+from cai.tools.common import _get_workspace_dir, _get_container_workspace_path
 
 console = Console()
 
@@ -43,96 +44,83 @@ class ShellCommand(Command):
         return self.handle_shell_command(args)
 
     def handle_shell_command(self, command_args: List[str]) -> bool:
-        """Execute a shell command that can be interrupted with CTRL+C.
-
-        Args:
-            command_args: The shell command and its arguments
-
-        Returns:
-            bool: True if the command was executed successfully
-        """
         if not command_args:
             console.print("[red]Error: No command specified[/red]")
             return False
 
-        shell_command = " ".join(command_args)
-        console.print(f"[blue]Executing:[/blue] {shell_command}")
+        original_command = " ".join(command_args)
+        active_container = os.getenv("CAI_ACTIVE_CONTAINER", "")
 
-        # Save original signal handler
-        original_sigint_handler = signal.getsignal(signal.SIGINT)
+        # List of known async-style commands
+        is_async = any(cmd in original_command for cmd in ['nc', 'netcat', 'ncat', 'telnet', 'ssh', 'python -m http.server'])
 
-        try:
-            # Set temporary handler for SIGINT that only affects shell command
-            def shell_sigint_handler(sig, frame):  # pylint: disable=unused-argument
-                # Just allow KeyboardInterrupt to propagate
-                signal.signal(signal.SIGINT, original_sigint_handler)
-                raise KeyboardInterrupt
+        def run_command(command, cwd=None):
+            """Execute the given command, optionally in a different working directory (cwd).
+            Handles output, async vs sync execution, and user interrupts (Ctrl+C).
+            """
+            try:
+                # Temporary SIGINT handler to allow Ctrl+C to interrupt only this process
+                signal.signal(signal.SIGINT, lambda s, f: (_ for _ in ()).throw(KeyboardInterrupt()))
 
-            signal.signal(signal.SIGINT, shell_sigint_handler)
+                if is_async:
+                    console.print("[yellow]Running in async mode (Ctrl+C to return to REPL)[/yellow]")
+                    os.system(command)
+                    console.print("[green]Async command completed or detached[/green]")
+                    return True
 
-            # Check if this is a command that should run asynchronously
-            async_commands = [
-                'nc',
-                'netcat',
-                'ncat',
-                'telnet',
-                'ssh',
-                'python -m http.server']
-            is_async = any(cmd in shell_command for cmd in async_commands)
+                # Run synchronously and stream output
+                process = subprocess.Popen(
+                    command, shell=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, universal_newlines=True,
+                    bufsize=1, cwd=cwd
+                )
+                for line in iter(process.stdout.readline, ''):
+                    print(line, end='')
 
-            if is_async:
-                # For async commands, use os.system to allow terminal
-                # interaction
-                console.print(
-                    "[yellow]Running in async mode "
-                    "(Ctrl+C to return to REPL)[/yellow]")
-                os.system(shell_command)  # nosec B605
-                console.print(
-                    "[green]Async command completed or detached[/green]")
+                process.wait()
+
+                if process.returncode == 0:
+                    console.print("[green]Command completed successfully[/green]")
+                else:
+                    console.print(f"[yellow]Command exited with code {process.returncode}[/yellow]")
                 return True
 
-            # For regular commands, use the standard approach
-            process = subprocess.Popen(  # nosec B602 # pylint: disable=consider-using-with # noqa: E501
-                shell_command,
-                shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                universal_newlines=True,
-                bufsize=1
-            )
-
-            # Show output in real time
-            for line in iter(process.stdout.readline, ''):
-                print(line, end='')
-
-            # Wait for process to finish
-            process.wait()
-
-            if process.returncode == 0:
-                console.print(
-                    "[green]Command completed successfully[/green]")
-            else:
-                console.print(
-                    f"[yellow]Command exited with code {
-                        process.returncode}"
-                    f"[/yellow]")
-            return True
-
-        except KeyboardInterrupt:
-            # Handle CTRL+C only for this command
-            try:
+            except KeyboardInterrupt:
+                # Terminate process on user interrupt
                 if not is_async:
                     process.terminate()
                 console.print("\n[yellow]Command interrupted by user[/yellow]")
-            except Exception:  # pylint: disable=broad-except # nosec
-                pass
-            return True
-        except Exception as e:  # pylint: disable=broad-except
-            console.print(f"[red]Error executing command: {str(e)}[/red]")
-            return False
-        finally:
-            # Restore original signal handler
-            signal.signal(signal.SIGINT, original_sigint_handler)
+                return True
+            except Exception as e:
+                # Handle general execution errors
+                console.print(f"[red]Execution error: {e}[/red]")
+                return False
+            finally:
+                # Restore original SIGINT behavior
+                signal.signal(signal.SIGINT, signal.getsignal(signal.SIGINT))
+
+        if active_container:
+            # If running in a Docker container
+            container_workspace = _get_container_workspace_path()
+            console.print(f"[dim]Running in container: {active_container[:12]}...[/dim]")
+            docker_cmd = f"docker exec -w '{container_workspace}' {active_container} sh -c {original_command!r}"
+            console.print(f"[blue]Executing in container workspace '{container_workspace}':[/blue] {original_command}")
+
+            success = run_command(docker_cmd)
+
+            # Retry on host if container execution fails
+            if not success and "Error response from daemon" in original_command:
+                console.print("[yellow]Container error. Executing on local host.[/yellow]")
+                os.environ.pop("CAI_ACTIVE_CONTAINER", None)
+                return self.handle_shell_command(command_args)
+
+            return success
+
+        # If no container, run command in local workspace
+        host_workspace = _get_workspace_dir()
+        console.print(f"[dim]Running in workspace: {host_workspace}[/dim]")
+
+        return run_command(original_command, cwd=host_workspace)
 
 
 # Register the command
