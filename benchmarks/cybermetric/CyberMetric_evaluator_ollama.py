@@ -10,7 +10,7 @@ class CyberMetricEvaluator:
     def __init__(self, model_name, file_path):
         self.model_name = model_name  # E.g., "ollama/llama3"
         self.file_path = file_path
-        self.report_file = "report_failed_questions.json"
+        self.report_file = f"report_failed_questions.json"
         self.failed_questions = []
         self.failed_count = 0
         print("--DEBUG: model_name: ", self.model_name)
@@ -123,10 +123,10 @@ if __name__ == "__main__":
     # Enable debug logging for litellm
     #litellm._turn_on_debug()
     
-    file_path = 'CyberMetric-10-v1.json' #small set for testing
+    file_path = 'CyberMetric-10000-v1.json' #small set for testing
     
     # Use the exact model name as it appears in Ollama
     # For Ollama models, you should use "ollama/model_name"
     # The "ollama/" prefix tells litellm to use Ollama
-    evaluator = CyberMetricEvaluator(model_name="ollama/qwen2.5:14b", file_path=file_path) # ollama/qwen3:32b-q8_0-ctx-32768"
+    evaluator = CyberMetricEvaluator(model_name="ollama/qwen3:32b-q8_0-ctx-32768", file_path=file_path) # ollama/qwen3:32b-q8_0-ctx-32768"
     evaluator.run_evaluation()

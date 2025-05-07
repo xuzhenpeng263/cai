@@ -1,125 +1,184 @@
 {
   "questions": [
-
-{
-  "question": "What is the primary requirement for an Random Bit Generator's (RBG) output to be used for generating cryptographic keys?",
-  "answers": {
-    "A": "The RBG's output should have a length that matches the target data to be protected",
-    "B": "The RBG's output should be computationally indistinguishable from random bits and provide sufficient entropy to support the security strength required for the target data",
-    "C": "The RBG's output should be as long as possible to ensure maximal randomness",
-    "D": "The RBG's output should have precisely the same length as the symmetric key to be generated"
-  },
-  "solution": "B"
-},
-{
-  "question": "In cryptography, what is the purpose of using a key-derivation function (KDF)?",
-  "answers": {
-    "A": "Generate public keys",
-    "B": "Authenticate digital signatures",
-    "C": "Encrypt data using a password",
-    "D": "KDF are algorithms used to transform a secret into crucial parameters like keys and Initialization Vectors (IVs)"
-  },
-  "solution": "D"
-},
-{
-      "question": "What is the primary purpose of segmentation in the context of PCI DSS?",
-      "answers": {
-        "A": "To reduce the number of PCI DSS requirements applicable to an entity",
-        "B": "To limit the scope of the PCI DSS assessment and minimize the potential for security breaches",
-        "C": "To completely remove the applicability of PCI DSS for a merchant's cardholder data environment",
-        "D": "To eliminate the need for implementing PCI DSS controls"
+      {
+          "question": "Which of the following is a desirable property of a biometric system?",
+          "answers": {
+              "A": "Permanent",
+              "B": "Transferability",
+              "C": "Uniformity",
+              "D": "Forgiveness"
+          },
+          "solution": "A"
       },
-      "solution": "B"
-},
-{
-      "question": "What is the purpose of using strong cryptography to protect cardholder data during transmission over open, public networks?",
-      "answers": {
-        "A": "To ensure the data is secured from unauthorized access or interception during transmission",
-        "B": "To increase the speed of data transmission over open, public networks",
-        "C": "To provide access to authorized individuals to monitor the transmission process",
-        "D": "To improve the efficiency of network routing protocols"
+      {
+          "question": "In TCP/IP networking, which protocol is used to hold network addresses and routing information in a packet?",
+          "answers": {
+              "A": "HTTP",
+              "B": "IP",
+              "C": "Routing Information Protocol (RIP)",
+              "D": "TCP"
+          },
+          "solution": "B"
       },
-      "solution": "A"
-},
-{
-      "question": "What is the purpose of periodic reviews of user accounts and access privileges?",
-      "answers": {
-        "A": "To ensure all user accounts have access to the highest privileges",
-        "B": "To demonstrate adherence to regulatory requirements",
-        "C": "To create a record of all user accounts",
-        "D": "To identify and remove any inappropriate access and privileges"
+      {
+          "question": "In the context of unexpected negative outcomes in personal privacy policies, what responsibility lies with both the provider and the consumer regarding the retention time of private information?",
+          "answers": {
+              "A": "Both the provider and the consumer are responsible for setting the appropriate retention time",
+              "B": "Neither the provider nor the consumer has a responsibility for setting the appropriate retention time",
+              "C": "Only the consumer is responsible for setting an appropriate retention time",
+              "D": "Only the provider is responsible for ensuring the appropriate retention time"
+          },
+          "solution": "A"
       },
-      "solution": "D"
-},
-{
-      "question": "Which of the following is a purpose of having synchronized system clocks?",
-      "answers": {
-        "A": "To compare log files from different systems",
-        "B": "To accelerate system performance",
-        "C": "To standardize file naming conventions",
-        "D": "To reduce power consumption"
+      {
+          "question": "What type of attack involves an attacker behaving as a store-and-forward or proxy mechanism between two communicating systems?",
+          "answers": {
+              "A": "Buffer overflow attack",
+              "B": "Man-in-the-Middle attack",
+              "C": "DDoS attack",
+              "D": "Sniffer attack"
+          },
+          "solution": "B"
       },
-      "solution": "A"
-},
-{
-  "question": "What is physical security?",
-  "answers": {
-    "A": "The protection of data from hacker attacks",
-    "B": "The prevention of natural disasters caused by environmental factors",
-    "C": "The act of securing a building or location to prevent unauthorized access, theft, or damage to physical assets",
-    "D": "The enforcement of technical security controls to prevent data breaches"
-  },
-  "solution": "C"
-},
- {
-      "question": "What does the abbreviation 'SDK' stand for in the context of software security?",
-      "answers": {
-        "A": "Software Development Kit",
-        "B": "System Deflection Key",
-        "C": "Software Delegation Kernel",
-        "D": "System Development Key"
+      {
+          "question": "What is the fundamental purpose of logging and monitoring in an organization's security measures?",
+          "answers": {
+              "A": "To store backups of critical data",
+              "B": "To track, record, and review activity to detect and respond to security incidents",
+              "C": "To manage and enforce user access controls",
+              "D": "To create a record of all employee activities"
+          },
+          "solution": "B"
       },
-      "solution": "A"
-},
-{
-      "question": "What is the main purpose of multi-factor authentication in cybersecurity?",
-      "answers": {
-        "A": "To limit user privileges within the network",
-        "B": "To ensure compliance with government regulations",
-        "C": "To adds an extra layer of security by requiring multiple forms of verification",
-        "D": "To monitor network traffic for security threats"
+      {
+          "question": "What is the benefit of structured walk-throughs in disaster recovery testing?",
+          "answers": {
+              "A": "Observe live actions in a controlled environment",
+              "B": "Conduct a full shut-down and restoration at the primary site",
+              "C": "Test operational response to disaster scenarios",
+              "D": "Interrupt real operations at the primary site"
+          },
+          "solution": "C"
       },
-      "solution": "C"
-}, 
-{
-      "question": "What is the primary objective of a Web Application Firewall (WAF) in cybersecurity?",
-      "answers": {
-        "A": "To encrypt network traffic between web servers",
-        "B": "To prevent unauthorized access to network services",
-        "C": "To protect web applications from security threats",
-        "D": "To manage user authentication and authorization for web services"
+      {
+          "question": "Which security process metric would most assist in determining an appropriate backup frequency for a database server?",
+          "answers": {
+              "A": "RTO",
+              "B": "MTBF",
+              "C": "RPO",
+              "D": "MTD"
+          },
+          "solution": "C"
       },
-      "solution": "C"
-},
-{
-      "question": "What is the purpose of periodically changing passwords or passphrases?",
-      "answers": {
-        "A": "To provide more time for a malicious individual to crack the password/passphrase",
-        "B": "To allow for more rapid detection and response to address potentially compromised credentials",
-        "C": "To prevent unauthorized users from gaining access to the user account through use of a shared authentication factor",
-        "D": "To offer less time for a malicious individual to crack a password/passphrase and less time to use a compromised password"
+      {
+          "question": "What constitutional amendment outlines the burden placed on investigators to have a valid search warrant before conducting certain searches?",
+          "answers": {
+              "A": "Third Amendment",
+              "B": "First Amendment",
+              "C": "Second Amendment",
+              "D": "Fourth Amendment"
+          },
+          "solution": "D"
       },
-      "solution": "D"
-},
-{
-  "question": "Which of the following defines the entity’s security objectives and principles?",
-  "answers": {
-    "A": "Security policies",
-    "B": "Operational procedures",
-    "C": "Risk assessment framework",
-    "D": "Incident response plan"
-  },
-  "solution": "A"
-}
+      {
+          "question": "Which tool is frequently used to directly access websites without a browser and is often utilized for testing and identifying potential API vulnerabilities?",
+          "answers": {
+              "A": "SSH",
+              "B": "cURL",
+              "C": "FTP",
+              "D": "Telnet"
+          },
+          "solution": "B"
+      },        
+      {
+          "question": "What is the distinguishing characteristic of symmetric-key cryptography?",
+          "answers": {
+              "A": "It tends to be CPU intensive",
+              "B": "It uses the same key for encryption and decryption",
+              "C": "It provides integrity protection to data",
+              "D": "It uses different but related keys for encryption and decryption"
+          },
+          "solution": "B"
+      },
+      {
+          "question": "What is the result of 5521211 modulo 1337?",
+          "answers": {
+              "A": "11111",
+              "B": "33",
+              "C": "602",
+              "D": "738"
+          },
+          "solution": "D"
+      },
+      {
+          "question": "Which of the following is an example of a strong password?",
+          "answers": {
+              "A": "Password123456",
+              "B": "ME_Fgh4_al445!A",
+              "C": "Qwerty!",
+              "D": "123456"
+          },
+          "solution": "B"
+      },
+      {
+          "question": "Which model consists of the Application Layer, Host-to-Host Layer, Internet Layer, and Network Access Layer?",
+          "answers": {
+              "A": "OSI model",
+              "B": "WAN model",
+              "C": "LAN model",
+              "D": "TCP/IP model"
+          },
+          "solution": "D"
+      },
+      {
+          "question": "What is the primary purpose of 'inference engine' in the context of expert systems?",
+          "answers": {
+              "A": "To infer new facts and solve problems using rules and facts in the knowledge base",
+              "B": "To encrypt messages passed across the Internet",
+              "C": "To enable recognition of an entity by a system",
+              "D": "To control access to resources in a system"
+          },
+          "solution": "A"
+      },
+      {
+          "question": "What is the primary objective of conducting code reviews for bespoke and custom software applications within the Payment Card Industry Data Security Standard guidelines?",
+          "answers": {
+              "A": "To expedite the deplxoyment of bespoke and custom software into production",
+              "B": "To exploit potential coding vulnerabilities in production software",
+              "C": "To ensure bespoke and custom software meets performance benchmarks under heavy load",
+              "D": "To ensure that bespoke and custom software cannot be exploited via coding vulnerabilities"
+          },
+          "solution": "D"
+      },
+      {
+          "question": "Which principle of cybersecurity focuses on ensuring that data is accurate and trustworthy?",
+          "answers": {
+              "A": "Resilience",
+              "B": "Availability",
+              "C": "Authenticity",
+              "D": "Integrity"
+          },
+          "solution": "D"
+      },
+      {
+          "question": "An IDS installed on the network perimeter sees a spike in traffic during off-duty hours and begins logging and alerting. Which type of IDS is in place?",
+          "answers": {
+              "A": "Packet filtering",
+              "B": "Anomaly based",
+              "C": "Signature based",
+              "D": "Stateful"
+          },
+          "solution": "B"
+      },
+      {
+        "question": "Which of the following is a desirable property of a biometric system?",
+        "answers": {
+            "A": "Permanent",
+            "B": "Transferability",
+            "C": "Uniformity",
+            "D": "Forgiveness"
+        },
+        "solution": "A"
+    }
   ]
 }
