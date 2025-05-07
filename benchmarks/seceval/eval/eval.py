@@ -299,7 +299,7 @@ def main():
         elif args.backend == "ollama":
             if not args.models:
                 raise RuntimeError("Please specify --model for Ollama backend")
-            llm = init_ollama_llm(args.model)
+            llm = init_ollama_llm(args.models)
         else:
             raise RuntimeError("Unknown backend")
 
