@@ -1,0 +1,11 @@
+transformers==4.36.*
+langchain
+einops
+protobuf
+scipy
+sentencepiece
+torch
+python-dotenv
+transformers_stream_generator
+tiktoken
+langchain-community
