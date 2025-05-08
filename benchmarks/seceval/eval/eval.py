@@ -1,23 +1,3 @@
-"""
-SecEval Evaluation Script
-
-This script evaluates language models on cybersecurity multiple-choice questions.
-It supports various LLM backends including HuggingFace, Azure OpenAI, TextGen, and Ollama.
-The script processes questions in batches and calculates accuracy scores by topic.
-
-Usage:
-    python3 eval.py -d dataset.json -B backend_type -m model_name [options]
-Example:
-    python3 eval.py --dataset_file datasets/questions.json --output_dir outputs --model ollama/qwen2.5:14b
-
-Environment Variables:
-    - OPENAI_API_ENDPOINT: Azure OpenAI endpoint URL
-    - OPENAI_API_KEY: Azure OpenAI API key
-    - TEXTGEN_MODEL_URL: URL for TextGen model
-    - LOCAL_HF_MODEL_DIR: Directory containing local HuggingFace models
-    - OLLAMA_API_BASE: Base URL for Ollama API (default: http://localhost:8000)
-"""
-
 import argparse
 from typing import Any, Dict, List
 from dotenv import load_dotenv
@@ -39,59 +19,60 @@ from pathlib import Path
 import os
 import logging
 
-# Configure logging
 logger = logging.getLogger(__name__)
 import time
 from langchain.globals import set_llm_cache
 from langchain.cache import SQLiteCache
-import litellm
 
-# Set up caching for LLM responses
 set_llm_cache(
     SQLiteCache(
         database_path=str(Path(__file__).parent.parent / ".langchain.db")
     )
 )
 
-# Configure logging settings
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
 )
 logger.addHandler(logging.FileHandler(f"./eval-{int(time.time())}.log", "w"))
-
-# Instruction template for the LLM
-instruction = """Below are multiple-choice questions concerning cybersecurity. 
-Please select the correct answers and respond with the correct letters A, B, C, or D.
-You could select more than one letter.
+instruction = "Below are multiple-choice questions concerning cybersecurity. Please select the correct answers and respond with the letters ABCD only."
+chat_few_shot = [
+    HumanMessage(
+        content="Question: Which mitigation prevent stack overflow bug? A: Stack Canary. B: ALSR. C: CFI. D: Code Signing.",
+    ),
+    AIMessage(
+        content="Answer: ABC",
+    ),
+]
+few_shot = """
+Question: You are reviewing a piece of code to identify potential vulnerabilities related to NULL pointer dereferences. Which of the following strategies should you consider implementing to mitigate the risk? Choose all that apply. A: Use a programming language that inherently manages pointers and prevents direct memory access. B: Apply input validation to all variables and data stores that receive data from external sources to ensure they are initialized to expected values. C: Explicitly initialize all variables and other data stores, either during declaration or just before the first usage. D: Implement a custom memory management system that automatically assigns a unique identifier to each pointer.
+Answer: ABC 
+Question: Analyze the code snippet provided. Which of the following practices should be implemented in a multithreaded application to prevent NULL pointer dereference vulnerabilities? Select all that apply.A: Ensure that proper locking APIs are used to lock the pointer before the if statement and unlock when it has finished to prevent race conditions. B: Check the return value of all functions that return a value, including network-related functions, and verify that it is non-null before using it.C: Use automated static analysis tools that target this type of weakness, understanding that while not perfect, they can still be effective.D: Verify that a non-nil 'response' is present before deferring 'response.Body.Close()' to handle cases where the 'Do' method returns an error.
+Answer: ABCD 
+Question: In a bank management application, a method called `createBankAccount` allows the creation of bank accounts without user identity verification or authority checks. Based on common security practices, which of the following measures would improve security?A: Implement a centralized authentication mechanism for operations that require a proven user identity.B: Duplicate client-side authentication checks on the server side to prevent bypassing of security checks.C: Use a vetted library or framework that offers robust authentication capabilities to prevent security weaknesses.D: Apply strong authentication requirements for all users accessing data stored in the cloud.
+Answer: ABCD
+Question: What are the potential consequences if an application handling sensitive data does not require authentication for data access, and what are the appropriate mitigation strategies?A: Attackers could easily access sensitive data from any location; require strong authentication for data access using cloud provider controls.B: Security checks might be bypassed if only performed on the client side; implement checks on both client and server sides.C: Unauthenticated users could alter product functionality; do not use authentication for critical functionality in products.D: Sensitive data may be accessed without proper credentials; utilize authentication capabilities provided by the framework or operating system.
+Answer: ABD
+Question: To prevent security vulnerabilities related to deserialization of untrusted data in a Java application, which of the following practices should a developer implement?A: Use the signing/sealing features of the programming language to assure that deserialized data has not been tainted.B: Explicitly define a final readObject() method to throw an exception and prevent deserialization.C: Populate a new object by deserializing data to ensure data flows through safe input validation functions.D: Make fields transient to protect them from deserialization and prevent carrying over sensitive variables.
+Answer: ABCD
 """
 
 
-def init_hf_llm(model_id: str) -> HuggingFacePipeline:
-    """
-    Initialize a HuggingFace language model.
-    
-    Args:
-        model_id: The model identifier from HuggingFace
-        
-    Returns:
-        HuggingFacePipeline: Initialized model pipeline
-        
-    Raises:
-        ImportError: If required dependencies are not installed
-    """
-    # Check transformers and torch installation
+def init_hf_llm(model_id: str):
+    # check transformers and torch installation
     try:
         import transformers
     except ImportError:
         raise ImportError("Please install transformers with `pip install transformers`")
     try:
         import torch
+
         flash_attn_enable = torch.cuda.get_device_capability()[0] >= 8
     except ImportError:
         raise ImportError("Please install torch with `pip install torch`")
 
-    # Initialize HuggingFace pipeline with specified parameters
+    # todo: add flash_attn_enable to the model_kwargs
+
     llm = HuggingFacePipeline.from_model_id(
         model_id=model_id,
         task="text-generation",
@@ -102,45 +83,18 @@ def init_hf_llm(model_id: str) -> HuggingFacePipeline:
     return llm
 
 
-def init_textgen_llm(model_id: str) -> TextGen:
-    """
-    Initialize a TextGen language model.
-    
-    Args:
-        model_id: The model identifier
-        
-    Returns:
-        TextGen: Initialized model
-        
-    Raises:
-        RuntimeError: If TEXTGEN_MODEL_URL is not set
-    """
-    # Check for required environment variable
+def init_textgen_llm(model_id: str):
     if os.environ.get("TEXTGEN_MODEL_URL") is None:
         raise RuntimeError("Please set TEXTGEN_MODEL_URL")
     llm = TextGen(model_url=os.environ["TEXTGEN_MODEL_URL"])  # type: ignore
     return llm
 
 
-def init_azure_openai_llm(model_id: str) -> AzureChatOpenAI:
-    """
-    Initialize an Azure OpenAI language model.
-    
-    Args:
-        model_id: The model identifier
-        
-    Returns:
-        AzureChatOpenAI: Initialized model
-        
-    Raises:
-        RuntimeError: If required environment variables are not set
-    """
+def init_azure_openai_llm(model_id: str):
     if os.environ.get("OPENAI_API_ENDPOINT") is None:
         raise RuntimeError("Please set OPENAI_API_ENDPOINT")
     if os.environ.get("OPENAI_API_KEY") is None:
         raise RuntimeError("Please set OPENAI_API_KEY")
-    
-    # Configure Azure OpenAI parameters
     azure_params = {
         "model": model_id,
         "openai_api_base": os.environ["OPENAI_API_ENDPOINT"],
@@ -151,116 +105,15 @@ def init_azure_openai_llm(model_id: str) -> AzureChatOpenAI:
     return AzureChatOpenAI(**azure_params)  # type: ignore
 
 
-def init_ollama_llm(model_id: str) -> 'OllamaChat':
-    """
-    Initialize an Ollama language model.
-    
-    Args:
-        model_id: The model identifier
-        
-    Returns:
-        OllamaChat: Initialized model wrapper
-    """
-    class OllamaChat:
-        async def abatch(self, prompts: List[str]) -> List[str]:
-            responses = []
-            for prompt in prompts:
-                try:
-                    ollama_api_base = os.getenv("OLLAMA_API_BASE", "http://localhost:8000")
-                    api_base = ollama_api_base.rstrip('/v1')
-                    completion = litellm.completion(
-                        model=model_id,
-                        messages=[{"role": "user", "content": prompt}],
-                        api_base=api_base,
-                        custom_llm_provider="ollama"
-                    )
-                    if hasattr(completion, "choices") and completion.choices:
-                        content = completion.choices[0].message.content
-                        result = self.extract_answer(content)
-                        if result:
-                            responses.append(result)
-                        else:
-                            print("Incorrect answer format detected.")
-                            responses.append("Error: No result parsed")
-                except Exception as e:
-                    logging.error(f"Ollama error: {e}")
-                    responses.append(f"Error: {e}")
-            return responses
-
-        def extract_answer(self, text: str) -> str:
-            match = re.findall(r"[A-D]", text.upper())
-            return "".join(sorted(set(match))) if match else ""
-
-    return OllamaChat()
-
-
-def init_openrouter_llm(model_id: str):
-    class OpenRouterChat:
-        async def abatch(self, prompts: List[str]):
-            responses = []
-            for prompt in prompts:
-                try:
-                    api_base = os.getenv("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1/chat/completions")
-                    api_key = os.getenv("OPENROUTER_API_KEY")
-
-                    if not api_key:
-                        raise ValueError("OPENROUTER_API_KEY is not defined in the environment variables.")
-
-                    completion = litellm.completion(
-                        model=model_id,
-                        messages=[{"role": "user", "content": prompt}],
-                        api_base=api_base,
-                        api_key=api_key,
-                        custom_llm_provider="openrouter"
-                    )
-
-                    if hasattr(completion, "choices") and completion.choices:
-                        content = completion.choices[0].message.content
-                        result = self.extract_answer(content)
-                        if result:
-                            responses.append(result)
-                        else:
-                            print("Formato de respuesta incorrecto.")
-                            responses.append("Error: No se pudo extraer resultado")
-                except Exception as e:
-                    logging.error(f"OpenRouter error: {e}")
-                    responses.append(f"Error: {e}")
-            return responses
-
-        def extract_answer(self, text: str):
-            match = re.findall(r"[A-D]", text.upper())
-            return "".join(sorted(set(match))) if match else ""
-
-    return OpenRouterChat()
-
-
-def load_dataset(dataset_path: str) -> List[Dict[str, Any]]:
-    """
-    Load evaluation dataset from JSON file.
-    
-    Args:
-        dataset_path: Path to dataset file
-        
-    Returns:
-        List[Dict[str, Any]]: Loaded dataset
-    """
+def load_dataset(dataset_path: str):
     with open(dataset_path, "r") as f:
         dataset = json.load(f)
     return dataset
 
 
-async def batch_inference_dataset(llm: BaseLanguageModel, batch: List[Dict[str, Any]], chat: bool = False) -> List[Dict[str, Any]]:
-    """
-    Process a batch of questions through the language model.
-    
-    Args:
-        llm: Language model to use
-        batch: List of questions to process
-        chat: Whether to use chat format
-        
-    Returns:
-        List[Dict[str, Any]]: Processed results with scores
-    """
+async def batch_inference_dataset(
+    llm: BaseLanguageModel, batch: List[Dict[str, Any]], chat=False
+):
     results = []
     llm_inputs = []
     for dataset_row in batch:
@@ -269,9 +122,13 @@ async def batch_inference_dataset(llm: BaseLanguageModel, batch: List[Dict[str, 
         )
         question_text = question_text.replace("\n", " ")
         if chat:
-            llm_input = [SystemMessage(content=instruction)]
+            llm_input = (
+                [SystemMessage(content=instruction)]
+                + chat_few_shot
+                + [HumanMessage(content=question_text)]
+            )
         else:
-            llm_input = instruction + "\n"
+            llm_input = instruction + few_shot + question_text + "\n"
 
         llm_inputs.append(llm_input)
     try:
@@ -298,14 +155,6 @@ async def batch_inference_dataset(llm: BaseLanguageModel, batch: List[Dict[str, 
         logging.info(
             f'llm_output: {llm_output}, parsed answer: {batch[idx]["llm_answer"]}, answer: {batch[idx]["answer"]}'
         )
-
-        print("Question:", batch[idx]["question"])
-        print("Correct Answer:", batch[idx]["answer"])
-        print("LLM Answer:", batch[idx]["llm_answer"])
-        print("LLM Output:", llm_output)
-        print("Score:", batch[idx]["score"])
-        print("--------------------------------")
-
         results.append(batch[idx])
     return results
 
@@ -358,17 +207,55 @@ def count_score_by_topic(dataset: List[Dict[str, Any]]):
 def main():
     parser = argparse.ArgumentParser(description="SecEval Evaluation CLI")
 
-    parser.add_argument("-o", "--output_dir", type=str, default="/tmp", help="Specify the output directory.")
-    parser.add_argument("-d", "--dataset_file", type=str, required=True, help="Specify the dataset file to evaluate on.")
-    parser.add_argument("-c", "--chat", action="store_true", default=False, help="Evaluate on chat model.")
-    parser.add_argument("-b", "--batch_size", type=int, default=1, help="Specify the batch size.")
-    parser.add_argument("-B", "--backend", type=str, choices=["remote_hf", "azure", "textgen", "local_hf", "ollama", "openrouter"], required=True, help="Specify the llm type. remote_hf: remote huggingface model backed, azure: azure openai model, textgen: textgen backend, local_hf: local huggingface model backed, ollama: ollama model, openrouter: openrouter model")
-    parser.add_argument("-m", "--models", type=str, nargs="+", required=True, help="Specify the models.")
-   
-    args = parser.parse_args()
-    models = list(args.models)
+    parser.add_argument(
+        "-o",
+        "--output_dir",
+        type=str,
+        default="/tmp",
+        help="Specify the output directory.",
+    )
+    parser.add_argument(
+        "-d",
+        "--dataset_file",
+        type=str,
+        required=True,
+        help="Specify the dataset file to evaluate on.",
+    )
+    parser.add_argument(
+        "-c",
+        "--chat",
+        action="store_true",
+        default=False,
+        help="Evaluate on chat model.",
+    )
+    parser.add_argument(
+        "-b",
+        "--batch_size",
+        type=int,
+        default=1,
+        help="Specify the batch size.",
+    )
+    parser.add_argument(
+        "-B",
+        "--backend",
+        type=str,
+        choices=["remote_hf", "azure", "textgen", "local_hf"],
+        required=True,
+        help="Specify the llm type. remote_hf: remote huggingface model backed, azure: azure openai model, textgen: textgen backend, local_hf: local huggingface model backed",
+    )
+    parser.add_argument(
+        "-m",
+        "--models",
+        type=str,
+        nargs="+",
+        required=True,
+        help="Specify the models.",
+    )
 
-    logging.info(f"Evaluating models: {models}")
+    args = parser.parse_args()
+
+    models = list(args.models)
+    logging.info(f"evaluating models: {models}")
     for model_id in models:
         if args.backend == "remote_hf":
             llm = init_hf_llm(model_id)
@@ -384,31 +271,28 @@ def main():
             llm = init_textgen_llm(model_id)
         elif args.backend == "azure":
             llm = init_azure_openai_llm(model_id)
-        elif args.backend == "ollama":
-            llm = init_ollama_llm(model_id)
-        elif args.backend == "openrouter":
-            llm = init_openrouter_llm(model_id)
         else:
             raise RuntimeError("Unknown backend")
 
         dataset = load_dataset(args.dataset_file)
-        result = inference_dataset(llm, dataset, batch_size=args.batch_size, chat=args.chat)
+        result = inference_dataset(
+            llm, dataset, batch_size=args.batch_size, chat=args.chat
+        )
         score_fraction, score_float = count_score_by_topic(result)
-        
         result_with_score = {
             "score_fraction": score_fraction,
             "score_float": score_float,
             "detail": result,
         }
-        # Create output directory if it doesn't exist
-        output_dir = Path(args.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{Path(args.dataset_file).stem}_{os.path.basename(model_id)}.json"
-        
-        logger.info(f"Writing result to {output_path}")
+        output_path = (
+            Path(args.output_dir)
+            / f"{Path(args.dataset_file).stem}_{os.path.basename(model_id)}.json"
+        )
+        logger.info(f"writing result to {output_path}")
         with open(output_path, "w") as f:
             json.dump(result_with_score, f, indent=4)
         del llm
+
 
 if __name__ == "__main__":
     main()
