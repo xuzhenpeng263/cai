@@ -30,4 +30,10 @@ benchmarks-test-seceval:
   script:
     - pip3 install -e .
     - pip install -r benchmarks/seceval/eval/requirements.txt
-    - python3 benchmarks/seceval/eval/eval.py --dataset_file benchmarks/seceval/eval/datasets/questions.json --output_dir benchmarks/seceval/eval/outputs --backend ollama --models ollama/qwen2.5:14b
+    - python3 benchmarks/seceval/eval/eval.py --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --output_dir benchmarks/seceval/eval/outputs --backend ollama --models ollama/qwen2.5:14b
+
+benchmarks-test-cybermetric:
+  <<: *run_benchmarks
+  script:
+    - pip3 install -e .
+    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b --file_path benchmarks/cybermetric/datasets/CyberMetric-2-v1.json
