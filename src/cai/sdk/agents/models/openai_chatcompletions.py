@@ -137,12 +137,17 @@ def add_to_message_history(msg):
             existing.get("content") == msg.get("content")
             for existing in message_history
         )
-
     elif msg.get("role") == "assistant" and msg.get("tool_calls"):
         is_duplicate = any(
             existing.get("role") == "assistant" and 
             existing.get("tool_calls") and 
             existing["tool_calls"][0].get("id") == msg["tool_calls"][0].get("id")
+            for existing in message_history
+        )
+    elif msg.get("role") == "tool":
+        is_duplicate = any(
+            existing.get("role") == "tool" and
+            existing.get("tool_call_id") == msg.get("tool_call_id")
             for existing in message_history
         )
 
@@ -534,6 +539,37 @@ class OpenAIChatCompletionsModel(Model):
         """
         Yields a partial message as it is generated, as well as the usage information.
         """
+        # IMPORTANT: Pre-process input to ensure it's in the correct format
+        # for streaming. This helps prevent errors during stream handling.
+        if not isinstance(input, str):
+            # Convert input items to messages and verify structure
+            try:
+                input_items = list(input)  # Make sure it's a list
+                # Pre-verify the input messages to avoid errors during streaming
+                from cai.util import fix_message_list
+                
+                # Apply fix_message_list to the input items that are dictionaries
+                dict_items = [item for item in input_items if isinstance(item, dict)]
+                if dict_items:
+                    fixed_dict_items = fix_message_list(dict_items)
+                    
+                    # Replace the original dict items with fixed ones while preserving non-dict items
+                    new_input = []
+                    dict_index = 0
+                    for item in input_items:
+                        if isinstance(item, dict):
+                            if dict_index < len(fixed_dict_items):
+                                new_input.append(fixed_dict_items[dict_index])
+                                dict_index += 1
+                        else:
+                            new_input.append(item)
+                    
+                    # Update input with the fixed version
+                    input = new_input
+            except Exception as e:
+                print(f"Warning: Error pre-processing input for streaming: {e}")
+                # Continue with original input even if pre-processing failed
+
         # Increment the interaction counter for CLI display
         self.interaction_counter += 1
         
@@ -1299,6 +1335,13 @@ class OpenAIChatCompletionsModel(Model):
         if tracing.include_data():
             span.span_data.input = converted_messages
 
+        # Ensure message list has correct structure regardless of error condition
+        try:
+            from cai.util import fix_message_list
+            converted_messages = fix_message_list(converted_messages)
+        except Exception as e:
+            logger.warning(f"Failed to fix message list: {e}")
+
         parallel_tool_calls = (
             True if model_settings.parallel_tool_calls and tools and len(tools) > 0 else NOT_GIVEN
         )
@@ -1481,13 +1524,19 @@ class OpenAIChatCompletionsModel(Model):
                         return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
                         
             elif ("An assistant message with 'tool_calls'" in str(e) or
-                "`tool_use` blocks must be followed by a user message with `tool_result`" in str(e)):  # noqa: E501 # pylint: disable=C0301
+                "`tool_use` blocks must be followed by a user message with `tool_result`" in str(e) or  # noqa: E501 # pylint: disable=C0301
+                "An assistant message with 'tool_calls' must be followed by tool messages" in str(e)):  # Añadir esta condición
                 print(f"Error: {str(e)}")
                 # NOTE: EDGE CASE: Report Agent CTRL C error
                 #
                 # This fix CTRL-C error when message list is incomplete
                 # When a tool is not finished but the LLM generates a tool call
-                kwargs["messages"] = fix_message_list(kwargs["messages"])
+                try:
+                    from cai.util import fix_message_list
+                    kwargs["messages"] = fix_message_list(kwargs["messages"])
+                except Exception as fix_error:
+                    print(f"Failed to fix message sequence: {fix_error}")
+                
                 return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
 
             # this captures an error related to the fact
@@ -1989,6 +2038,47 @@ class _Converter:
             return current_assistant_msg
 
         for item in items:
+            # NEW: Handle 'tool' messages from history
+            if (
+                isinstance(item, dict)
+                and item.get("role") == "tool"
+                and "tool_call_id" in item
+                and "content" in item
+            ):
+                flush_assistant_message() # Ensure any pending assistant message is flushed
+                tool_message: ChatCompletionToolMessageParam = {
+                    "role": "tool",
+                    "tool_call_id": item["tool_call_id"],
+                    "content": str(item["content"] or ""), # Ensure content is a string
+                }
+                result.append(tool_message)
+                continue
+
+            # 0) Assistant messages with tool_calls only (from memory)
+            if (
+                isinstance(item, dict)
+                and item.get("role") == "assistant"
+                and item.get("tool_calls")
+            ):
+                flush_assistant_message()
+                tool_calls_param: list[ChatCompletionMessageToolCallParam] = []
+                for tc in item["tool_calls"]:
+                    tool_calls_param.append(
+                        ChatCompletionMessageToolCallParam(
+                            id=tc.get("id", ""),
+                            type=tc.get("type", "function"),
+                            function=tc.get("function", {}),
+                        )
+                    )
+                msg_asst: ChatCompletionAssistantMessageParam = {
+                    "role": "assistant",
+                    "content": item.get("content"),
+                    "tool_calls": tool_calls_param,
+                }
+                result.append(msg_asst)
+                # Skip further processing for this item
+                continue
+
             # 1) Check easy input message
             if easy_msg := cls.maybe_easy_input_message(item):
                 role = easy_msg["role"]
