@@ -60,3 +60,4 @@ benchmarks-test-cybermetric-openai:
   variables:
     MODEL_NAME: "openai/gpt-4o-mini"
     BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
+  # Make sure to define OPENAI_API_KEY in GitLab CI/CD variables
