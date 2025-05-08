@@ -1,0 +1,12 @@
+CyberMetric Evaluation
+=====================
+
+Model: ollama/qwen2.5:14b
+Dataset: CyberMetric-2-v1.json
+Start Time: 2025-05-08 12:31:39
+Status: Completed
+Questions Processed: 2
+Correct Answers: 1
+Accuracy: 50.00%
+End Time: 2025-05-08 12:31:42
+Duration: 0:00:02.434703
