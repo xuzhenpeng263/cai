@@ -15,10 +15,7 @@
     - |
       for var in $(compgen -e); do
         if [[ ($var == CTF_* || $var == *_API_KEY || $var == *_API_BASE) && -n ${!var} ]]; then
-          export $var="${!var}"
-          if [[ $var == OPENAI_API_KEY ]]; then
-            echo "OPENAI_API_KEY is exported"
-          fi
+          export $var="${!var}"          
         fi
       done
     
