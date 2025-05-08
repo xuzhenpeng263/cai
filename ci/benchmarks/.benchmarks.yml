@@ -10,6 +10,12 @@
   script:
     - pip3 install -e .
     - pip install litellm langchain transformers torch openai tqdm
+    - for var in $(compgen -e); do
+        if [[ $var == CTF_* && -n ${!var} ]]; then
+          export $var="${!var}"
+        fi
+      done
+
   artifacts:
     paths:
       - benchmarks/seceval/eval/outputs/
