@@ -110,6 +110,8 @@ from rich.console import Console
 import asyncio
 from cai.util import fix_litellm_transcription_annotations, color, calculate_model_cost
 from cai.util import create_agent_streaming_context, update_agent_streaming_content, finish_agent_streaming
+from cai.sdk.agents.run_to_jsonl import get_session_recorder
+from cai.util import start_idle_timer, stop_idle_timer, start_active_timer, stop_active_timer
 
 # Import modules from cai.repl
 from cai.repl.commands import FuzzyCommandCompleter, handle_command as commands_handle_command
@@ -184,6 +186,13 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
 
     # Setup session logging
     history_file = setup_session_logging()
+    
+    # Initialize session logger and display the filename
+    session_logger = get_session_recorder()
+    # Use rich Text instead of wasabi color() for styling with underline
+    from rich.text import Text
+    log_text = Text(f"\nLog file: {session_logger.filename}", style="yellow underline")
+    console.print(log_text)
 
     # Display banner
     display_banner(console)
@@ -209,6 +218,9 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
 
     while turn_count < max_turns:
         try:
+            # Start measuring user idle time
+            start_idle_timer()
+            
             idle_start_time = time.time()
             
             # Check if model has changed and update if needed
@@ -253,6 +265,10 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 current_text
             )
             idle_time += time.time() - idle_start_time
+            
+            # Stop measuring user idle time and start measuring active time
+            stop_idle_timer()
+            start_active_timer()
            
         except KeyboardInterrupt:
             def format_time(seconds):
@@ -263,21 +279,35 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
             Total = time.time() - START_TIME
             idle_time += time.time() - idle_start_time
             try:
-                active_time = Total - idle_time
+                # Get more accurate active and idle time measurements from the timer functions
+                from cai.util import get_active_time_seconds, get_idle_time_seconds, COST_TRACKER
+                
+                # Use the precise measurements from our timers
+                active_time_seconds = get_active_time_seconds()
+                idle_time_seconds = get_idle_time_seconds()
+                
+                # Format for display
+                active_time_formatted = format_time(active_time_seconds)
+                idle_time_formatted = format_time(idle_time_seconds)
+
+                # Get session cost from the global cost tracker
+                session_cost = COST_TRACKER.session_total_cost
 
                 metrics = {
                     "session_time": format_time(Total),
-                    "active_time": format_time(active_time),
-                    "idle_time": format_time(idle_time),
-                    "llm_time": "0.0s",  # Placeholder, update if available
-                    "llm_percentage": 0.0,  # Placeholder, update if available
+                    "active_time": active_time_formatted,
+                    "idle_time": idle_time_formatted,
+                    "llm_time": format_time(active_time_seconds),  # Using active time as LLM time
+                    "llm_percentage": round((active_time_seconds / Total) * 100, 1) if Total > 0 else 0.0,
+                    "session_cost": f"${session_cost:.6f}"  # Add formatted session cost
                 }
-                logging_path = None  # Set this if you have a log file path
+                logging_path = session_logger.filename if hasattr(session_logger, 'filename') else None
 
                 content = []
                 content.append(f"Session Time: {metrics['session_time']}")
-                content.append(f"Active Time: {metrics['active_time']}")
+                content.append(f"Active Time: {metrics['active_time']} ({metrics['llm_percentage']}%)")
                 content.append(f"Idle Time: {metrics['idle_time']}")
+                content.append(f"Total Session Cost: {metrics['session_cost']}")  # Add cost to display
                 if logging_path:
                     content.append(f"Log available at: {logging_path}")
                 
@@ -290,8 +320,21 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                     from rich.box import ROUNDED
                     from rich.console import Group
 
+                    # Create Rich Text objects for each line
+                    text_content = []
+                    for i, line in enumerate(content):
+                        if "Total Session Cost" in line:
+                            # Format cost line with special styling
+                            cost_text = Text()
+                            parts = line.split(":")
+                            cost_text.append(parts[0] + ":", style="bold")
+                            cost_text.append(parts[1], style="bold green")
+                            text_content.append(cost_text)
+                        else:
+                            text_content.append(Text(line))
+
                     time_panel = Panel(
-                        Group(*[Text(line) for line in content]),
+                        Group(*text_content),
                         border_style="blue",
                         box=ROUNDED,
                         padding=(0, 1),
@@ -301,6 +344,14 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                     console.print(time_panel)
 
                 print_session_summary(console, metrics, logging_path)
+                
+                # Log session end
+                if session_logger:
+                    session_logger.log_session_end()
+                    
+                # Prevent duplicate cost display from the COST_TRACKER exit handler
+                os.environ["CAI_COST_DISPLAYED"] = "true"
+                    
             except Exception:
                 pass
             break
@@ -346,6 +397,10 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 # Use non-streamed response
                 response = asyncio.run(Runner.run(agent, user_input))
             turn_count += 1
+            
+            # Stop measuring active time and start measuring idle time again
+            stop_active_timer()
+            start_idle_timer()
 
         except KeyboardInterrupt:
             # No need to clean up streaming context as model handles it
@@ -358,6 +413,10 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
             filename, line, func, text = tb_info[-1]
             console.print(f"[bold red]Error: {str(e)}[/bold red]")
             console.print(f"[bold red]Traceback: {tb_info}[/bold red]")
+            
+            # Make sure we switch back to idle mode even if there's an error
+            stop_active_timer()
+            start_idle_timer()
 
 def main():
     # Apply litellm patch to fix the __annotations__ error
