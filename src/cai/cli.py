@@ -189,11 +189,6 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
     
     # Initialize session logger and display the filename
     session_logger = get_session_recorder()
-    # Use rich Text instead of wasabi color() for styling with underline
-    from rich.text import Text
-    log_text = Text(f"\nLog file: {session_logger.filename}", style="yellow underline")
-    console.print(log_text)
-
     # Display banner
     display_banner(console)
     display_quick_guide(console)
@@ -371,7 +366,9 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 if command not in ("/shell", "/s"):
                     console.print(f"[red]Unknown command: {command}[/red]")
                 continue
-
+            from rich.text import Text
+            log_text = Text(f"Log file: {session_logger.filename}", style="yellow on black")
+            console.print(log_text)
             # Process the conversation with the agent
             if stream:
                 async def process_streamed_response():
