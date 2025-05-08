@@ -1,11 +1,11 @@
 use_base_container: &use_base_container
-  stage: test
+  stage: benchmark
   image: "${CI_REGISTRY_IMAGE}:latest"
   services:
     - name: docker:dind
       alias: docker
 
-run_benchmark: &run_benchmark
+.run_benchmark: &run_benchmark
   <<: *use_base_container
   script:
     - pip3 install -e .
@@ -14,7 +14,7 @@ run_benchmark: &run_benchmark
     paths:
       - benchmarks/seceval/eval/outputs/
       - benchmarks/cybermetric/outputs/
-    expire_in: 1 month
+    expire_in: 12 month
   tags:
     - p40
     - x86
@@ -22,7 +22,7 @@ run_benchmark: &run_benchmark
     - if: $CI_COMMIT_BRANCH
       when: on_success
 
-🛠️ benchmark test_eval:
+🛠️ benchmark test_seceval:
   <<: *run_benchmark
   variables:
     OLLAMA_API_BASE: "http://localhost:8000"
