@@ -12,10 +12,6 @@
     - pip install litellm langchain transformers torch openai tqdm
     - echo "Checking environment variables..."
 
-    - echo "OPENAI_API_KEY is set:" && echo $([[ -n $OPENAI_API_KEY ]] && echo 'YES' || echo 'NO')
-    - echo "TRYVAR is set:" && echo $([[ -n $TRYVAR ]] && echo 'YES' || echo 'NO')
-    - echo "TRYVAR is:" && echo $TRYVAR
-
     - |
       for var in $(compgen -e); do
         if [[ ($var == CTF_* || $var == *_API_KEY || $var == *_API_BASE) && -n ${!var} ]]; then
@@ -25,13 +21,8 @@
           fi
         fi
       done
-
-    - echo "OPENAI_API_KEY is set:" && echo $([[ -n $OPENAI_API_KEY ]] && echo 'YES' || echo 'NO')
-    - echo "TRYVAR is set:" && echo $([[ -n $TRYVAR ]] && echo 'YES' || echo 'NO')
-    - echo "TRYVAR is:" && echo $TRYVAR
-
     
-    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name $MODEL_NAME --file_path $BENCHMARK_FILE --api_key  $OPENAI_API_KEY
+    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name $MODEL_NAME --file_path $BENCHMARK_FILE
     # - curl http://localhost:8000/api/tags  # validate that ollama is running
   variables:
     OLLAMA_API_BASE: "http://localhost:8000"
@@ -60,10 +51,10 @@
 #     - pip install -r benchmarks/seceval/eval/requirements.txt
 #     - python3 benchmarks/seceval/eval/eval.py --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --output_dir benchmarks/seceval/eval/outputs --backend ollama --models ollama/qwen2.5:14b
 
-# benchmarks-test-cybermetric-openrouter:
-#   <<: *run_benchmarks
-#   script:
-#     - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openrouter/qwen/qwen3-32b:free  --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
+benchmarks-test-cybermetric-openrouter:
+  <<: *run_benchmarks
+  script:
+    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openrouter/qwen/qwen3-32b:free  --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
 
 benchmarks-test-cybermetric-openai:
   <<: *run_benchmarks
