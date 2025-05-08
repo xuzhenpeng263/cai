@@ -11,6 +11,7 @@ import signal
 import time
 import uuid
 import sys
+import shlex
 from wasabi import color  # pylint: disable=import-error
 from cai.util  import format_time
 
@@ -774,18 +775,37 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 print(f"\033[32m(Started Session {new_session_id} in {context_msg})\n{output}\033[0m") # noqa E501
             return f"Started async session {new_session_id} in container {container_id[:12]}. Use this ID to interact." # noqa E501
 
-        # Handle Streaming Container Execution - not yet implemented for containers
+        # Handle Streaming Container Execution
         if stream:
-            # For now, display that streaming isn't supported for containers
-            from cai.util import cli_print_tool_output
-            if call_id and tool_name:
-                tool_args = {"command": command, "container": container_id[:12]}
-                cli_print_tool_output(
-                    tool_name, 
-                    tool_args, 
-                    "Streaming not yet supported for container execution. Running normally...",
-                    call_id=call_id
-                )
+            # Ensure workspace directory exists inside the container first
+            mkdir_cmd = [
+                "docker", "exec", container_id,
+                "mkdir", "-p", container_workspace
+            ]
+            subprocess.run(
+                mkdir_cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10
+            )
+
+            # Build docker exec command as a single shell string for streaming
+            docker_exec_cmd = (
+                "docker exec -w "
+                f"{shlex.quote(container_workspace)} "
+                f"{shlex.quote(container_id)} sh -c "
+                f"{shlex.quote(command)}"
+            )
+
+            # Re-use the local streaming helper to provide real-time output
+            return _run_local_streamed(
+                docker_exec_cmd,
+                call_id,
+                timeout,
+                tool_name,
+                workspace_dir=_get_workspace_dir()
+            )
 
         # Handle Synchronous Execution in Container
         try:
