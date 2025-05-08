@@ -48,7 +48,8 @@ benchmarks-test-cybermetric:
   script:
     - pip3 install -e .
     - pip install python-dotenv
-    # Debug the environment variables
+    - echo "All environment variables:"
+    - env | sort
     - echo "Checking if OPENROUTER_API_KEY is set..."
     - if [ -z "$OPENROUTER_API_KEY" ]; then echo "OPENROUTER_API_KEY is not set!"; else echo "OPENROUTER_API_KEY is set (value is masked)"; fi
     - echo "Creating .env file with API key"
