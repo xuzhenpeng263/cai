@@ -2,6 +2,7 @@ stages:
   - build
   - setup
   - test                # unit tests validation
+  - benchmark
   - ctf
 
 variables:
