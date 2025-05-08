@@ -378,6 +378,8 @@ if __name__ == "__main__":
         api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("API key must be provided via --api_key or OPENAI_API_KEY environment variable for OpenAI models")
+        
+        print(f"API key provided: {api_key[:4]}...{api_key[-4:] if len(api_key) > 8 else ''}")
             
         evaluator = CyberMetricEvaluator(
             model_name=model_name,
