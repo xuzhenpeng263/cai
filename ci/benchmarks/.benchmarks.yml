@@ -46,4 +46,9 @@ benchmarks-test-cybermetric:
     
   script:
     - pip3 install -e .
-    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openrouter/qwen/qwen3-32b:free --file_path benchmarks/cybermetric/CyberMetric-2-v1.json --api_key ${OPENROUTER_API_KEY}
+    - |
+      if [ -z "$OPENROUTER_API_KEY" ]; then
+        echo "Error: OPENROUTER_API_KEY is not set. Please configure it in GitLab CI/CD variables."
+        exit 1
+      fi
+    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openrouter/qwen/qwen3-32b:free --file_path benchmarks/cybermetric/CyberMetric-2-v1.json --api_key "$OPENROUTER_API_KEY"
