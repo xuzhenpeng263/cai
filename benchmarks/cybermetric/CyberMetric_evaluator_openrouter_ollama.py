@@ -1,3 +1,36 @@
+"""
+CyberMetric Evaluator for LLMs
+
+This script evaluates the performance of language models on the CyberMetric benchmark.
+It supports both OpenRouter-hosted models and local Ollama models via LiteLLM proxy.
+
+Usage:
+    python CyberMetric_evaluator_openrouter_ollama.py --model_name MODEL_NAME [--file_path FILE_PATH] [--api_key API_KEY]
+
+Arguments:
+    --model_name: Required. Model name with prefix (openrouter/ or ollama/)
+                  Examples: openrouter/anthropic/claude-3-opus, ollama/llama3
+    --file_path:  Optional. Path to the CyberMetric JSON file (default: CyberMetric-2-v1.json)
+    --api_key:    Optional. API key for OpenRouter (can also use OPENROUTER_API_KEY env var)
+
+Environment Variables:
+    OPENROUTER_API_KEY:  API key for OpenRouter (if using OpenRouter models)
+    OPENROUTER_API_BASE: Base URL for OpenRouter API (default: https://openrouter.ai/api/v1)
+    OLLAMA_API_BASE:     Base URL for Ollama API via LiteLLM proxy (default: http://localhost:8000/v1)
+
+Examples:
+    # Run with an OpenRouter model
+    python CyberMetric_evaluator_openrouter_ollama.py --model_name openrouter/qwen/qwen3-32b:free
+
+    # Run with a local Ollama model (requires LiteLLM proxy running)
+    python CyberMetric_evaluator_openrouter_ollama.py --model_name ollama/qwen2.5:14b
+
+    # Specify a different benchmark file
+    python CyberMetric_evaluator_openrouter_ollama.py --model_name openrouter/qwen/qwen3-32b:free --file_path CyberMetric-10000-v1.json
+
+
+"""
+
 import json
 import re
 import time
@@ -85,7 +118,7 @@ class CyberMetricEvaluator:
         with open(self.info_file, 'w') as file:
             file.write(f"CyberMetric Evaluation\n")
             file.write(f"=====================\n\n")
-            file.write(f"Model: {self.model_name}\n")
+            file.write(f"Model: {self.model_name}\n") # "openrouter/qwen/qwen3-32b:free"
             file.write(f"Dataset: {self.file_path}\n")
             file.write(f"Start Time: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
             file.write(f"Status: {status}\n")
@@ -298,3 +331,4 @@ if __name__ == "__main__":
     
     # Run the evaluation
     evaluator.run_evaluation()
+
