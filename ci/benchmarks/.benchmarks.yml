@@ -30,8 +30,8 @@
     OPENAI_API_BASE: "https://api.openai.com/v1"
   artifacts:
     paths:
-      - cai/benchmarks/seceval/eval/outputs/
-      - cai/benchmarks/cybermetric/outputs/
+      - benchmarks/seceval/eval/outputs/
+      - benchmarks/cybermetric/outputs/
     expire_in: 12 month
   tags:
     - p40
@@ -53,8 +53,9 @@
 
 benchmarks-test-cybermetric-openrouter:
   <<: *run_benchmarks
-  script:
-    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openrouter/qwen/qwen3-32b:free  --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
+  variables:
+    MODEL_NAME: "openrouter/qwen/qwen3-32b:free"
+    BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
 
 benchmarks-test-cybermetric-openai:
   <<: *run_benchmarks
