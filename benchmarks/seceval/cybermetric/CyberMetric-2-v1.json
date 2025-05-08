@@ -1,0 +1,25 @@
+{
+  "questions": [
+      {
+          "question": "Which of the following is a desirable property of a biometric system?",
+          "answers": {
+              "A": "Permanent",
+              "B": "Transferability",
+              "C": "Uniformity",
+              "D": "Forgiveness"
+          },
+          "solution": "A"
+      },
+      {
+          "question": "In TCP/IP networking, which protocol is used to hold network addresses and routing information in a packet?",
+          "answers": {
+              "A": "HTTP",
+              "B": "IP",
+              "C": "Routing Information Protocol (RIP)",
+              "D": "TCP"
+          },
+          "solution": "B"
+      }
+      
+  ]
+}
