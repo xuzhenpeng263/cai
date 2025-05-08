@@ -1,0 +1,6 @@
+[submodule "benchmark/seceval"]
+	path = benchmark/seceval
+	url = https://github.com/XuanwuAI/SecEval.git
+[submodule "benchmark/cybermetric"]
+	path = benchmark/cybermetric
+	url = https://github.com/cybermetric/CyberMetric.git
