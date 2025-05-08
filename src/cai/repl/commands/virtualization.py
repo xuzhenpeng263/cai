@@ -147,17 +147,30 @@ class DockerManager:
             Tuple[bool, str]: Success status and output message
         """
         try:
-            process = subprocess.run(
+            # Use Popen to stream pull progress line by line.
+            pull_proc = subprocess.Popen(
                 ["docker", "pull", image_name],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
-                check=False
+                bufsize=1,
             )
-            
-            if process.returncode == 0:
-                return True, f"Successfully pulled image: {image_name}"
-            else:
-                return False, f"Failed to pull image: {process.stderr}"
+
+            # Stream output in real time to the console.
+            if pull_proc.stdout is not None:
+                for line in pull_proc.stdout:
+                    console.print(line.rstrip())
+
+            pull_proc.wait()
+
+            if pull_proc.returncode == 0:
+                return True, (
+                    f"Successfully pulled image: {image_name}"
+                )
+            return False, (
+                f"Failed to pull image: {image_name} "
+                f"(code {pull_proc.returncode})"
+            )
         except (subprocess.SubprocessError, FileNotFoundError) as e:
             return False, f"Error pulling image: {str(e)}"
 

@@ -15,7 +15,9 @@ from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 from cai.util import get_ollama_api_base, fix_message_list, cli_print_agent_messages, create_agent_streaming_context, update_agent_streaming_content, finish_agent_streaming
+from cai.util import start_idle_timer, stop_idle_timer, start_active_timer, stop_active_timer
 from wasabi import color
+from cai.sdk.agents.run_to_jsonl import get_session_recorder
 
 from openai import NOT_GIVEN, AsyncOpenAI, AsyncStream, NotGiven
 from openai.types import ChatModel
@@ -73,6 +75,22 @@ class InputTokensDetails(BaseModel):
     """The number of prompt tokens."""
     cached_tokens: int = 0
     """The number of cached tokens."""
+    
+# Custom ResponseUsage that makes prompt_tokens/input_tokens and completion_tokens/output_tokens compatible
+class CustomResponseUsage(ResponseUsage):
+    """
+    Custom ResponseUsage class that provides compatibility between different field naming conventions.
+    Works with both input_tokens/output_tokens and prompt_tokens/completion_tokens.
+    """
+    @property
+    def prompt_tokens(self) -> int:
+        """Alias for input_tokens to maintain compatibility"""
+        return self.input_tokens
+        
+    @property
+    def completion_tokens(self) -> int:
+        """Alias for output_tokens to maintain compatibility"""
+        return self.output_tokens
 
 from .. import _debug
 from ..agent_output import AgentOutputSchema
@@ -227,11 +245,15 @@ class OpenAIChatCompletionsModel(Model):
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         self.total_reasoning_tokens = 0
+        self.total_cost = 0.0
         self.agent_name = "Agent"  # Default name
         
         # Flags for CLI integration
         self.disable_rich_streaming = False    # Prevents creating a rich panel in the model
         self.suppress_final_output = False     # Prevents duplicate output at end of streaming
+        
+        # Initialize the session logger
+        self.logger = get_session_recorder()
         
     def set_agent_name(self, name: str) -> None:
         """Set the agent name for CLI display purposes."""
@@ -252,6 +274,10 @@ class OpenAIChatCompletionsModel(Model):
     ) -> ModelResponse:
         # Increment the interaction counter for CLI display
         self.interaction_counter += 1
+        
+        # Stop idle timer and start active timer to track LLM processing time
+        stop_idle_timer()
+        start_active_timer()
         
         with generation_span(
             model=str(self.model),
@@ -285,6 +311,8 @@ class OpenAIChatCompletionsModel(Model):
                     "content": input
                 }
                 add_to_message_history(user_msg)
+                # Log the user message
+                self.logger.log_user_message(input)
             elif isinstance(input, list):
                 for item in input:
                     # Try to extract user messages
@@ -295,6 +323,9 @@ class OpenAIChatCompletionsModel(Model):
                                 "content": item.get("content", "")
                             }
                             add_to_message_history(user_msg)
+                            # Log the user message
+                            if item.get("content"):
+                                self.logger.log_user_message(item.get("content"))
             # Get token count estimate before API call for consistent counting
             estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
             
@@ -416,6 +447,19 @@ class OpenAIChatCompletionsModel(Model):
                     }
                     
                     add_to_message_history(tool_call_msg)
+                
+                # Log the assistant tool call message
+                tool_calls_list = []
+                for tool_call in assistant_msg.tool_calls:
+                    tool_calls_list.append({
+                        "id": tool_call.id,
+                        "type": tool_call.type,
+                        "function": {
+                            "name": tool_call.function.name,
+                            "arguments": tool_call.function.arguments
+                        }
+                    })
+                self.logger.log_assistant_message(None, tool_calls_list)
             # If the assistant message is just text, add it as well
             elif hasattr(assistant_msg, "content") and assistant_msg.content:
                 asst_msg = {
@@ -423,6 +467,21 @@ class OpenAIChatCompletionsModel(Model):
                     "content": assistant_msg.content
                 }
                 add_to_message_history(asst_msg)
+                # Log the assistant message
+                self.logger.log_assistant_message(assistant_msg.content)
+            
+            # Log the complete response for the session
+            self.logger.rec_training_data(
+                {
+                    "model": str(self.model),
+                    "messages": converted_messages,
+                    "stream": False,
+                    "tools": [t.params_json_schema for t in tools] if tools else [],
+                    "tool_choice": model_settings.tool_choice
+                },
+                response,
+                self.total_cost
+            )
 
             usage = (
                 Usage(
@@ -442,12 +501,25 @@ class OpenAIChatCompletionsModel(Model):
             }
 
             items = _Converter.message_to_output_items(response.choices[0].message)
+            
+            # For non-streaming responses, make sure we also log token usage with compatible field names
+            # This ensures both streaming and non-streaming use consistent naming
+            if not hasattr(response, 'usage'):
+                response.usage = {}
+            if hasattr(response.usage, 'prompt_tokens') and not hasattr(response.usage, 'input_tokens'):
+                response.usage.input_tokens = response.usage.prompt_tokens
+            if hasattr(response.usage, 'completion_tokens') and not hasattr(response.usage, 'output_tokens'):
+                response.usage.output_tokens = response.usage.completion_tokens
 
             return ModelResponse(
                 output=items,
                 usage=usage,
                 referenceable_id=None,
             )
+            
+        # Stop active timer and start idle timer when response is complete
+        stop_active_timer()
+        start_idle_timer()
 
     async def stream_response(
         self,
@@ -464,6 +536,10 @@ class OpenAIChatCompletionsModel(Model):
         """
         # Increment the interaction counter for CLI display
         self.interaction_counter += 1
+        
+        # Stop idle timer and start active timer to track LLM processing time
+        stop_idle_timer()
+        start_active_timer()
         
         # Check if streaming should be shown in rich panel
         should_show_rich_stream = os.getenv('CAI_STREAM', 'false').lower() == 'true' and not self.disable_rich_streaming
@@ -508,6 +584,8 @@ class OpenAIChatCompletionsModel(Model):
                         "content": input
                     }
                     add_to_message_history(user_msg)
+                    # Log the user message
+                    self.logger.log_user_message(input)
                 elif isinstance(input, list):
                     for item in input:
                         if isinstance(item, dict):
@@ -517,6 +595,9 @@ class OpenAIChatCompletionsModel(Model):
                                     "content": item.get("content", "")
                                 }
                                 add_to_message_history(user_msg)
+                                # Log the user message
+                                if item.get("content"):
+                                    self.logger.log_user_message(item.get("content"))
                 # Get token count estimate before API call for consistent counting
                 estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
                 
@@ -557,8 +638,8 @@ class OpenAIChatCompletionsModel(Model):
                     # If we're using rich context, we'll add separation through that
                     pass
                 else:
-                    # Print clear visual separator
-                    print("\n")
+                    # Removed clear visual separator to avoid blank lines during streaming
+                    pass
                 
                 try:
                     async for chunk in stream:
@@ -1017,7 +1098,7 @@ class OpenAIChatCompletionsModel(Model):
                     output_tokens = usage.completion_tokens
                 
                 # Create a proper usage object with our token counts
-                final_response.usage = ResponseUsage(
+                final_response.usage = CustomResponseUsage(
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     total_tokens=input_tokens + output_tokens,
@@ -1069,6 +1150,8 @@ class OpenAIChatCompletionsModel(Model):
                 interaction_cost = max(float(interaction_cost if interaction_cost is not None else 0.0), 0.00001)
                 total_cost = max(float(total_cost if total_cost is not None else 0.0), 0.00001)
                 
+                # Store the total cost for future recording
+                self.total_cost = total_cost
                 
                 # Create final stats with explicit type conversion for all values
                 final_stats = {
@@ -1096,8 +1179,8 @@ class OpenAIChatCompletionsModel(Model):
                     # Use the direct copy with guaranteed float costs
                     finish_agent_streaming(streaming_context, direct_stats)
                     
-                    # Add visual separation after agent output completes
-                    print("\n")
+                    # Removed extra newline after streaming completes to avoid blank lines
+                    pass
 
                 if tracing.include_data():
                     span_generation.span_data.output = [final_response.model_dump()]
@@ -1110,6 +1193,14 @@ class OpenAIChatCompletionsModel(Model):
                 # --- Add assistant tool call(s) to message_history at the end of streaming ---
                 for tool_call_msg in streamed_tool_calls:
                     add_to_message_history(tool_call_msg)
+                
+                # Log the assistant tool call message if any tool calls were collected
+                if streamed_tool_calls:
+                    tool_calls_list = []
+                    for tool_call_msg in streamed_tool_calls:
+                        for tool_call in tool_call_msg.get("tool_calls", []):
+                            tool_calls_list.append(tool_call)
+                    self.logger.log_assistant_message(None, tool_calls_list)
                # If there was only text output, add that as an assistant message
                 if (not streamed_tool_calls) and state.text_content_index_and_output and state.text_content_index_and_output[1].text:
                     asst_msg = {
@@ -1117,6 +1208,26 @@ class OpenAIChatCompletionsModel(Model):
                         "content": state.text_content_index_and_output[1].text
                     }
                     add_to_message_history(asst_msg)
+                    # Log the assistant message
+                    self.logger.log_assistant_message(state.text_content_index_and_output[1].text)
+                
+                # Log the complete response
+                self.logger.rec_training_data(
+                    {
+                        "model": str(self.model),
+                        "messages": converted_messages,
+                        "stream": True,
+                        "tools": [t.params_json_schema for t in tools] if tools else [],
+                        "tool_choice": model_settings.tool_choice
+                    },
+                    final_response,
+                    self.total_cost
+                )
+                
+                # Stop active timer and start idle timer when streaming is complete
+                stop_active_timer()
+                start_idle_timer()
+                
         except Exception as e:
             # Ensure streaming context is cleaned up in case of errors
             if streaming_context:
@@ -1124,6 +1235,11 @@ class OpenAIChatCompletionsModel(Model):
                     finish_agent_streaming(streaming_context, None)
                 except Exception:
                     pass
+                    
+            # Stop active timer and start idle timer when streaming errors out
+            stop_active_timer()
+            start_idle_timer()
+            
             raise e
 
     @overload

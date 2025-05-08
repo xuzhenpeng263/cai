@@ -43,8 +43,9 @@ from .tracing import Span, SpanError, agent_span, get_current_trace, trace
 from .tracing.span_data import AgentSpanData
 from .usage import Usage
 from .util import _coro, _error_tracing
+import os
 
-DEFAULT_MAX_TURNS = 10
+DEFAULT_MAX_TURNS = os.getenv("CAI_MAX_TURNS", float("inf"))
 
 
 @dataclass
