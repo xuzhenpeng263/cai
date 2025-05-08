@@ -11,7 +11,7 @@
     - pip3 install -e .
     - pip install litellm langchain transformers torch openai tqdm
     - echo "Checking environment variables..."
-    - echo "OPENAI_API_KEY is set:" && $([[ -n $OPENAI_API_KEY ]] && echo 'YES' || echo 'NO')
+    - echo "OPENAI_API_KEY is set:" && echo $([[ -n $OPENAI_API_KEY ]] && echo 'YES' || echo 'NO')
     - |
       for var in $(compgen -e); do
         if [[ ($var == CTF_* || $var == *_API_KEY || $var == *_API_BASE) && -n ${!var} ]]; then
