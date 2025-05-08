@@ -43,17 +43,7 @@ benchmarks-test-cybermetric:
   variables:    
     OLLAMA_API_BASE: "http://localhost:8000"
     OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
-    OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
     
   script:
     - pip3 install -e .
-    - pip install python-dotenv
-    - echo "All environment variables:"
-    - env | sort
-    - echo "Checking if OPENROUTER_API_KEY is set..."
-    - if [ -z "$OPENROUTER_API_KEY" ]; then echo "OPENROUTER_API_KEY is not set!"; else echo "OPENROUTER_API_KEY is set (value is masked)"; fi
-    - echo "Creating .env file with API key"
-    - echo "OPENROUTER_API_KEY=${OPENROUTER_API_KEY}" > .env
-    - echo "Created .env file, running benchmark..."
-    # Try using the direct command line approach
     - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openrouter/qwen/qwen3-32b:free --file_path benchmarks/cybermetric/CyberMetric-2-v1.json --api_key ${OPENROUTER_API_KEY}
