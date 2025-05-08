@@ -641,7 +641,7 @@ def cli_print_tool_call(tool_name="", args="", output="", prefix="  "):
     if not tool_name:
         return
 
-    print(f"\n{prefix}{color('Tool Call:', fg='cyan')}")
+    print(f"{prefix}{color('Tool Call:', fg='cyan')}")
     print(f"{prefix}{color('Name:', fg='cyan')} {tool_name}")
     if args:
         print(f"{prefix}{color('Args:', fg='cyan')} {args}")

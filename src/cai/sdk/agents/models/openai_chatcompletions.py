@@ -638,8 +638,8 @@ class OpenAIChatCompletionsModel(Model):
                     # If we're using rich context, we'll add separation through that
                     pass
                 else:
-                    # Print clear visual separator
-                    print("\n")
+                    # Removed clear visual separator to avoid blank lines during streaming
+                    pass
                 
                 try:
                     async for chunk in stream:
@@ -1179,8 +1179,8 @@ class OpenAIChatCompletionsModel(Model):
                     # Use the direct copy with guaranteed float costs
                     finish_agent_streaming(streaming_context, direct_stats)
                     
-                    # Add visual separation after agent output completes
-                    print("\n")
+                    # Removed extra newline after streaming completes to avoid blank lines
+                    pass
 
                 if tracing.include_data():
                     span_generation.span_data.output = [final_response.model_dump()]
