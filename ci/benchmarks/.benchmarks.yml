@@ -36,7 +36,7 @@ benchmarks-test-seceval:
   script:
     - pip3 install -e .
     - pip install -r benchmarks/seceval/eval/requirements.txt
-    - python3 benchmarks/seceval/eval/eval.py --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --output_dir benchmarks/seceval/eval/outputs --backend ollama --models ollama/qwen2.5:14b
+    - python3 benchmarks/seceval/eval/eval.py --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --output_dir benchmarks/seceval/eval/outputs --backend openrouter --models openrouter/qwen/qwen3-32b:free
 
 benchmarks-test-cybermetric:
   <<: *run_benchmarks
@@ -46,9 +46,4 @@ benchmarks-test-cybermetric:
     
   script:
     - pip3 install -e .
-    - |
-      if [ -z "$OPENROUTER_API_KEY" ]; then
-        echo "Error: OPENROUTER_API_KEY is not set. Please configure it in GitLab CI/CD variables."
-        exit 1
-      fi
-    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openrouter/qwen/qwen3-32b:free --file_path benchmarks/cybermetric/CyberMetric-2-v1.json --api_key "$OPENROUTER_API_KEY"
+    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
