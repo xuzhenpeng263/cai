@@ -21,7 +21,6 @@
     OLLAMA_API_BASE: "http://localhost:8000"
     OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
     OPENAI_API_BASE: "https://api.openai.com/v1"
-    OPENAI_API_KEY: $OPENAI_API_KEY
   artifacts:
     paths:
       - cai/benchmarks/seceval/eval/outputs/
