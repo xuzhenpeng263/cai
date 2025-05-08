@@ -44,7 +44,6 @@ benchmarks-test-cybermetric:
   variables:    
     OLLAMA_API_BASE: "http://localhost:8000"
     OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
-    OPENAI_API_KEY: "fake-api-key"
   script:
     - pip3 install -e .
     - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
