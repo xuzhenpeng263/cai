@@ -40,6 +40,10 @@ benchmarks-test-seceval:
 
 benchmarks-test-cybermetric:
   <<: *run_benchmarks
+  variables:    
+    OLLAMA_API_BASE: "http://localhost:8000"
+    OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
+    
   script:
     - pip3 install -e .
-    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openrouter/qwen/qwen/qwen3-32b:free --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
+    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openrouter/qwen/qwen3-32b:free --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
