@@ -22,7 +22,7 @@ use_base_container: &use_base_container
     - if: $CI_COMMIT_BRANCH
       when: on_success
 
-🛠️ benchmark test_seceval:
+benchmark-test-seceval:
   <<: *run_benchmark
   variables:
     OLLAMA_API_BASE: "http://localhost:8000"
