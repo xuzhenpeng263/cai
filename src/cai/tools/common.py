@@ -13,7 +13,7 @@ import uuid
 import sys
 import shlex
 from wasabi import color  # pylint: disable=import-error
-from cai.util  import format_time
+from cai.util import format_time, start_active_timer, stop_active_timer, start_idle_timer, stop_idle_timer
 
 
 # Instead of direct import
@@ -440,44 +440,57 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
     if stream and call_id:
         return _run_local_streamed(command, call_id, timeout, tool_name, workspace_dir)
     
-    target_dir = workspace_dir or _get_workspace_dir()
-    original_cmd_for_msg = command # For logging
-    context_msg = f"(local:{target_dir})"
+    # Make sure we're in active time mode for tool execution
+    stop_idle_timer()
+    start_active_timer()
+    
     try:
-        result = subprocess.run(
-            command,
-            shell=True,  # nosec B602
-            capture_output=True,
-            text=True,
-            check=False, 
-            timeout=timeout,
-            cwd=target_dir 
-        )
-        output = result.stdout if result.stdout else result.stderr
-        if stdout:
-            print(f"\033[32m{context_msg} $ {original_cmd_for_msg}\n{output}\033[0m") # noqa E501
-            
-        # Skip passing output to cli_print_tool_output when CAI_STREAM=true
-        # This prevents duplicate output in streaming mode
-        is_streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
-        if not is_streaming_enabled:
-            # Optional: Add cli_print_tool_output call here if needed for non-streaming
-            pass
-            
-        return output.strip()
-    except subprocess.TimeoutExpired as e:
-        error_output = e.stdout if e.stdout else str(e)
-        if stdout:
-            print("\033[32m" + error_output + "\033[0m")
-            return error_output
-    except Exception as e:  # pylint: disable=broad-except
-            error_msg = f"Error executing local command: {e}"
-            print(color(error_msg, fg="red"))
-            return error_msg
+        target_dir = workspace_dir or _get_workspace_dir()
+        original_cmd_for_msg = command # For logging
+        context_msg = f"(local:{target_dir})"
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,  # nosec B602
+                capture_output=True,
+                text=True,
+                check=False, 
+                timeout=timeout,
+                cwd=target_dir 
+            )
+            output = result.stdout if result.stdout else result.stderr
+            if stdout:
+                print(f"\033[32m{context_msg} $ {original_cmd_for_msg}\n{output}\033[0m") # noqa E501
+                
+            # Skip passing output to cli_print_tool_output when CAI_STREAM=true
+            # This prevents duplicate output in streaming mode
+            is_streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+            if not is_streaming_enabled:
+                # Optional: Add cli_print_tool_output call here if needed for non-streaming
+                pass
+                
+            return output.strip()
+        except subprocess.TimeoutExpired as e:
+            error_output = e.stdout if e.stdout else str(e)
+            if stdout:
+                print("\033[32m" + error_output + "\033[0m")
+                return error_output
+        except Exception as e:  # pylint: disable=broad-except
+                error_msg = f"Error executing local command: {e}"
+                print(color(error_msg, fg="red"))
+                return error_msg
+    finally:
+        # Always switch back to idle mode when function completes
+        stop_active_timer()
+        start_idle_timer()
 
 
 def _run_local_streamed(command, call_id, timeout=100, tool_name=None, workspace_dir=None):
     """Run a local command with streaming output to the Tool output panel."""
+    # Make sure we're in active time mode for tool execution
+    stop_idle_timer()
+    start_active_timer()
+    
     target_dir = workspace_dir or _get_workspace_dir()
     try:
         # Try to import Rich for nice display
@@ -708,6 +721,10 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None, workspace
             cli_print_tool_output(tool_name, tool_args, error_msg, call_id=call_id)
         
         return error_msg
+    finally:
+        # Always switch back to idle mode when function completes
+        stop_active_timer()
+        start_idle_timer()
 
 
 def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arguments # noqa: E501
@@ -732,185 +749,256 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
     Returns:
         str: Command output, status message, or session ID.
     """
-    # If session_id is provided, send command to that session
-    if session_id:
-        if session_id not in ACTIVE_SESSIONS:
-            return f"Session {session_id} not found"
-        session = ACTIVE_SESSIONS[session_id]
-        result = session.send_input(command) # Send the raw command string
-        if stdout:
-            output = get_session_output(session_id, clear=False)
-            env_type = "Local"
-            if session.container_id:
-                 env_type = f"Container({session.container_id[:12]})"
-            elif session.ctf:
-                 env_type = "CTF"
-            print(f"\033[32m(Session {session_id} in {env_type}:{session.workspace_dir}) >> {command}\n{output}\033[0m") # noqa E501
-        return result # Return the result of sending input ("Input sent..." or error)
-
-    # Generate a call_id if we're streaming and one wasn't provided
-    if stream and not call_id:
-        call_id = str(uuid.uuid4())[:8]
-
-    # 2. Determine Execution Environment (Container > CTF > SSH > Local)
-    active_container = os.getenv("CAI_ACTIVE_CONTAINER", "")
-    is_ssh_env = all(os.getenv(var) for var in ['SSH_USER', 'SSH_HOST'])
-
-    # --- Docker Container Execution ---
-    if active_container and not ctf and not is_ssh_env:
-        container_id = active_container
-        container_workspace = _get_container_workspace_path()
-        context_msg = f"(docker:{container_id[:12]}:{container_workspace})"
-
-        # Handle Async Session Creation in Container
-        if async_mode:
-            # Create a session specifically for the container environment
-            new_session_id = create_shell_session(command, container_id=container_id) # noqa E501
-            if "Failed" in new_session_id: # Check if session creation failed
-                 return new_session_id
+    # Use the active timer during tool execution
+    stop_idle_timer()
+    start_active_timer()
+    
+    try:
+        # If session_id is provided, send command to that session
+        if session_id:
+            if session_id not in ACTIVE_SESSIONS:
+                # Switch back to idle mode before returning error
+                stop_active_timer()
+                start_idle_timer()
+                return f"Session {session_id} not found"
+            session = ACTIVE_SESSIONS[session_id]
+            result = session.send_input(command) # Send the raw command string
             if stdout:
-                # Wait a moment for initial output
-                time.sleep(0.2)
-                output = get_session_output(new_session_id, clear=False)
-                print(f"\033[32m(Started Session {new_session_id} in {context_msg})\n{output}\033[0m") # noqa E501
-            return f"Started async session {new_session_id} in container {container_id[:12]}. Use this ID to interact." # noqa E501
+                output = get_session_output(session_id, clear=False)
+                env_type = "Local"
+                if session.container_id:
+                     env_type = f"Container({session.container_id[:12]})"
+                elif session.ctf:
+                     env_type = "CTF"
+                print(f"\033[32m(Session {session_id} in {env_type}:{session.workspace_dir}) >> {command}\n{output}\033[0m") # noqa E501
+            
+            # For async sessions, we don't switch back to idle mode here
+            # since the session continues to run in the background
+            if not async_mode:
+                # Switch back to idle mode after synchronous command completes
+                stop_active_timer()
+                start_idle_timer()
+                
+            return result # Return the result of sending input ("Input sent..." or error)
 
-        # Handle Streaming Container Execution
-        if stream:
-            # Ensure workspace directory exists inside the container first
-            mkdir_cmd = [
-                "docker", "exec", container_id,
-                "mkdir", "-p", container_workspace
-            ]
-            subprocess.run(
-                mkdir_cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=10
-            )
+        # Generate a call_id if we're streaming and one wasn't provided
+        if stream and not call_id:
+            call_id = str(uuid.uuid4())[:8]
 
-            # Build docker exec command as a single shell string for streaming
-            docker_exec_cmd = (
-                "docker exec -w "
-                f"{shlex.quote(container_workspace)} "
-                f"{shlex.quote(container_id)} sh -c "
-                f"{shlex.quote(command)}"
-            )
+        # 2. Determine Execution Environment (Container > CTF > SSH > Local)
+        active_container = os.getenv("CAI_ACTIVE_CONTAINER", "")
+        is_ssh_env = all(os.getenv(var) for var in ['SSH_USER', 'SSH_HOST'])
 
-            # Re-use the local streaming helper to provide real-time output
-            return _run_local_streamed(
-                docker_exec_cmd,
-                call_id,
-                timeout,
-                tool_name,
-                workspace_dir=_get_workspace_dir()
-            )
+        # --- Docker Container Execution ---
+        if active_container and not ctf and not is_ssh_env:
+            container_id = active_container
+            container_workspace = _get_container_workspace_path()
+            context_msg = f"(docker:{container_id[:12]}:{container_workspace})"
 
-        # Handle Synchronous Execution in Container
-        try:
-            # Ensure container workspace exists (best effort)
-            # Consider moving this to workspace set/container activation
-            mkdir_cmd = ["docker", "exec", container_id, "mkdir", "-p", container_workspace] # noqa E501
-            subprocess.run(mkdir_cmd, capture_output=True, text=True, check=False, timeout=10) # noqa E501
+            # Handle Async Session Creation in Container
+            if async_mode:
+                # Create a session specifically for the container environment
+                new_session_id = create_shell_session(command, container_id=container_id) # noqa E501
+                if "Failed" in new_session_id: # Check if session creation failed
+                    # Switch back to idle mode before returning error
+                    stop_active_timer()
+                    start_idle_timer()
+                    return new_session_id
+                if stdout:
+                    # Wait a moment for initial output
+                    time.sleep(0.2)
+                    output = get_session_output(new_session_id, clear=False)
+                    print(f"\033[32m(Started Session {new_session_id} in {context_msg})\n{output}\033[0m") # noqa E501
+                
+                # For async sessions, switch back to idle mode after session creation
+                stop_active_timer()
+                start_idle_timer()
+                return f"Started async session {new_session_id} in container {container_id[:12]}. Use this ID to interact." # noqa E501
 
-            # Construct the docker exec command with workspace context
-            cmd_list = [
-                "docker", "exec",
-                "-w", container_workspace, # Set working directory
-                container_id,
-                "sh", "-c", command # Execute command via shell
-            ]
-            result = subprocess.run(
-                cmd_list,
-                capture_output=True,
-                text=True,
-                check=False, # Don't raise exception on non-zero exit
-                timeout=timeout
-            )
+            # Handle Streaming Container Execution
+            if stream:
+                # Ensure workspace directory exists inside the container first
+                mkdir_cmd = [
+                    "docker", "exec", container_id,
+                    "mkdir", "-p", container_workspace
+                ]
+                subprocess.run(
+                    mkdir_cmd,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=10
+                )
 
-            output = result.stdout if result.stdout else result.stderr
-            output = output.strip() # Clean trailing newline
+                # Build docker exec command as a single shell string for streaming
+                docker_exec_cmd = (
+                    "docker exec -w "
+                    f"{shlex.quote(container_workspace)} "
+                    f"{shlex.quote(container_id)} sh -c "
+                    f"{shlex.quote(command)}"
+                )
 
-            if stdout:
-                print(f"\033[32m{context_msg} $ {command}\n{output}\033[0m") # noqa E501
+                # Re-use the local streaming helper to provide real-time output
+                result = _run_local_streamed(
+                    docker_exec_cmd,
+                    call_id,
+                    timeout,
+                    tool_name,
+                    workspace_dir=_get_workspace_dir()
+                )
+                
+                # Switch back to idle mode after streaming command completes
+                stop_active_timer()
+                start_idle_timer()
+                return result
 
-            # Check if command failed specifically because container isn't running
-            if result.returncode != 0 and "is not running" in result.stderr:
-                print(color(f"{context_msg} Container is not running. Attempting execution on host instead.", fg="yellow")) # noqa E501
-                 # Fallback to local execution, preserving workspace context
+            # Handle Synchronous Execution in Container
+            try:
+                # Ensure container workspace exists (best effort)
+                # Consider moving this to workspace set/container activation
+                mkdir_cmd = ["docker", "exec", container_id, "mkdir", "-p", container_workspace] # noqa E501
+                subprocess.run(mkdir_cmd, capture_output=True, text=True, check=False, timeout=10) # noqa E501
+
+                # Construct the docker exec command with workspace context
+                cmd_list = [
+                    "docker", "exec",
+                    "-w", container_workspace, # Set working directory
+                    container_id,
+                    "sh", "-c", command # Execute command via shell
+                ]
+                result = subprocess.run(
+                    cmd_list,
+                    capture_output=True,
+                    text=True,
+                    check=False, # Don't raise exception on non-zero exit
+                    timeout=timeout
+                )
+
+                output = result.stdout if result.stdout else result.stderr
+                output = output.strip() # Clean trailing newline
+
+                if stdout:
+                    print(f"\033[32m{context_msg} $ {command}\n{output}\033[0m") # noqa E501
+
+                # Check if command failed specifically because container isn't running
+                if result.returncode != 0 and "is not running" in result.stderr:
+                    print(color(f"{context_msg} Container is not running. Attempting execution on host instead.", fg="yellow")) # noqa E501
+                    # Switch back to idle mode before fallback execution
+                    stop_active_timer()
+                    start_idle_timer()
+                    # Fallback to local execution, preserving workspace context
+                    return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir()) # noqa E501
+
+                # Switch back to idle mode after command completes
+                stop_active_timer()
+                start_idle_timer()
+                return output # Return combined stdout/stderr
+
+            except subprocess.TimeoutExpired:
+                timeout_msg = "Timeout executing command in container."
+                if stdout:
+                    print(f"\033[33m{context_msg} $ {command}\nTIMEOUT\033[0m") # noqa E501
+                    print(color("Attempting execution on host instead.", fg="yellow"))
+                # Switch back to idle mode before fallback execution
+                stop_active_timer()
+                start_idle_timer()
+                # Fallback to local execution on timeout
+                return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir()) # noqa E501
+            except Exception as e:  # pylint: disable=broad-except
+                error_msg = f"Error executing command in container: {str(e)}"
+                print(color(f"{context_msg} {error_msg}", fg="red"))
+                print(color("Attempting execution on host instead.", fg="yellow"))
+                # Switch back to idle mode before fallback execution
+                stop_active_timer()
+                start_idle_timer()
+                # Fallback to local execution on other errors
                 return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir()) # noqa E501
 
-            return output # Return combined stdout/stderr
+        # --- CTF Execution ---
+        if ctf:
+            # Handling streaming for CTF - not fully implemented yet
+            if stream:
+                from cai.util import cli_print_tool_output
+                if call_id and tool_name:
+                    tool_args = {"command": command, "ctf": True}
+                    cli_print_tool_output(
+                        tool_name, 
+                        tool_args, 
+                        "Streaming not yet supported for CTF execution. Running normally...",
+                        call_id=call_id
+                    )
+            
+            # _run_ctf handles workspace internally using _get_workspace_dir() default
+            result = _run_ctf(ctf, command, stdout, timeout)  # Pass None for workspace_dir
+            
+            # Switch back to idle mode after CTF command completes
+            stop_active_timer()
+            start_idle_timer()
+            return result
 
-        except subprocess.TimeoutExpired:
-            timeout_msg = "Timeout executing command in container."
-            if stdout:
-                print(f"\033[33m{context_msg} $ {command}\nTIMEOUT\033[0m") # noqa E501
-                print(color("Attempting execution on host instead.", fg="yellow"))
-             # Fallback to local execution on timeout
-            return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir()) # noqa E501
-        except Exception as e:  # pylint: disable=broad-except
-            error_msg = f"Error executing command in container: {str(e)}"
-            print(color(f"{context_msg} {error_msg}", fg="red"))
-            print(color("Attempting execution on host instead.", fg="yellow"))
-             # Fallback to local execution on other errors
-            return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir()) # noqa E501
+        # --- SSH Execution ---
+        if is_ssh_env:
+            # Async for SSH would require session management via SSH client features
+            if async_mode:
+                # Switch back to idle mode before returning message
+                stop_active_timer()
+                start_idle_timer()
+                return "Async mode not fully supported for SSH environment via this function yet."
+            
+            # Handling streaming for SSH - not fully implemented yet
+            if stream:
+                from cai.util import cli_print_tool_output
+                if call_id and tool_name:
+                    tool_args = {"command": command, "ssh": True}
+                    cli_print_tool_output(
+                        tool_name, 
+                        tool_args, 
+                        "Streaming not yet supported for SSH execution. Running normally...",
+                        call_id=call_id
+                    )
+            
+            # _run_ssh handles command execution, workspace is relative to remote home
+            result = _run_ssh(command, stdout, timeout)  # Workspace dir less relevant here
+            
+            # Switch back to idle mode after SSH command completes
+            stop_active_timer()
+            start_idle_timer()
+            return result
 
-    # --- CTF Execution ---
-    if ctf:
-        # Handling streaming for CTF - not fully implemented yet
-        if stream:
-            from cai.util import cli_print_tool_output
-            if call_id and tool_name:
-                tool_args = {"command": command, "ctf": True}
-                cli_print_tool_output(
-                    tool_name, 
-                    tool_args, 
-                    "Streaming not yet supported for CTF execution. Running normally...",
-                    call_id=call_id
-                )
-        
-        # _run_ctf handles workspace internally using _get_workspace_dir() default
-        return _run_ctf(ctf, command, stdout, timeout)  # Pass None for workspace_dir
-
-    # --- SSH Execution ---
-    if is_ssh_env:
-        # Async for SSH would require session management via SSH client features
+        # --- Local Execution (Default Fallback) ---
+        # Let _run_local handle determining the host workspace
+        # Handle Async Session Creation Locally
         if async_mode:
-            return "Async mode not fully supported for SSH environment via this function yet."
-        
-        # Handling streaming for SSH - not fully implemented yet
-        if stream:
-            from cai.util import cli_print_tool_output
-            if call_id and tool_name:
-                tool_args = {"command": command, "ssh": True}
-                cli_print_tool_output(
-                    tool_name, 
-                    tool_args, 
-                    "Streaming not yet supported for SSH execution. Running normally...",
-                    call_id=call_id
-                )
-        
-        # _run_ssh handles command execution, workspace is relative to remote home
-        return _run_ssh(command, stdout, timeout)  # Workspace dir less relevant here
+            # create_shell_session uses _get_workspace_dir() when container_id is None
+            new_session_id = create_shell_session(command)
+            if isinstance(new_session_id, str) and "Failed" in new_session_id:  # Check failure
+                # Switch back to idle mode before returning error
+                stop_active_timer()
+                start_idle_timer()
+                return new_session_id
+            # Retrieve the actual workspace dir the session is using
+            session = ACTIVE_SESSIONS.get(new_session_id)
+            actual_workspace = session.workspace_dir if session else "unknown"
+            if stdout:
+                time.sleep(0.2)  # Allow session buffer to populate
+                output = get_session_output(new_session_id, clear=False)
+                print(f"\033[32m(Started Session {new_session_id} in local:{actual_workspace})\n{output}\033[0m")
+            
+            # For async, switch back to idle mode after session creation
+            stop_active_timer()
+            start_idle_timer()
+            return f"Started async session {new_session_id} locally. Use this ID to interact."
 
-    # --- Local Execution (Default Fallback) ---
-    # Let _run_local handle determining the host workspace
-    # Handle Async Session Creation Locally
-    if async_mode:
-        # create_shell_session uses _get_workspace_dir() when container_id is None
-        new_session_id = create_shell_session(command)
-        if isinstance(new_session_id, str) and "Failed" in new_session_id:  # Check failure
-            return new_session_id
-        # Retrieve the actual workspace dir the session is using
-        session = ACTIVE_SESSIONS.get(new_session_id)
-        actual_workspace = session.workspace_dir if session else "unknown"
-        if stdout:
-            time.sleep(0.2)  # Allow session buffer to populate
-            output = get_session_output(new_session_id, clear=False)
-            print(f"\033[32m(Started Session {new_session_id} in local:{actual_workspace})\n{output}\033[0m")
-        return f"Started async session {new_session_id} locally. Use this ID to interact."
-
-    # Handle Synchronous Execution Locally using _run_local default with streaming support
-    return _run_local(command, stdout, timeout, stream, call_id, tool_name, None)
+        # Handle Synchronous Execution Locally using _run_local default with streaming support
+        result = _run_local(command, stdout, timeout, stream, call_id, tool_name, None)
+        
+        # Switch back to idle mode after local command completes
+        stop_active_timer()
+        start_idle_timer()
+        return result
+        
+    except Exception as e:
+        # Ensure we switch back to idle mode if any unexpected error occurs
+        stop_active_timer()
+        start_idle_timer()
+        raise e
