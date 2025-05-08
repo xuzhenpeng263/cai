@@ -1,4 +1,4 @@
-use_base_container: &use_base_container
+.use_base_container: &use_base_container
   stage: benchmark
   image: "${CI_REGISTRY_IMAGE}:latest"
   services:
