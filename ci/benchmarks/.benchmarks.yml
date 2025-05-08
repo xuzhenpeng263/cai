@@ -18,8 +18,8 @@
 
   artifacts:
     paths:
-      - benchmarks/seceval/eval/outputs/
-      - benchmarks/cybermetric/outputs/
+      - cai/benchmarks/seceval/eval/outputs/
+      - cai/benchmarks/cybermetric/outputs/
     expire_in: 12 month
   tags:
     - p40
