@@ -28,16 +28,16 @@
     - if: $CI_COMMIT_BRANCH
       when: on_success
 
-benchmarks-test-seceval:
-  <<: *run_benchmarks
-  variables:
-    OLLAMA_API_BASE: "http://localhost:8000"
-    OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
-    OPENAI_API_KEY: "fake-api-key"
-  script:
-    - pip3 install -e .
-    - pip install -r benchmarks/seceval/eval/requirements.txt
-    - python3 benchmarks/seceval/eval/eval.py --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --output_dir benchmarks/seceval/eval/outputs --backend ollama --models ollama/qwen2.5:14b
+# benchmarks-test-seceval:
+#   <<: *run_benchmarks
+#   variables:
+#     OLLAMA_API_BASE: "http://localhost:8000"
+#     OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
+#     OPENAI_API_KEY: "fake-api-key"
+#   script:
+#     - pip3 install -e .
+#     - pip install -r benchmarks/seceval/eval/requirements.txt
+#     - python3 benchmarks/seceval/eval/eval.py --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --output_dir benchmarks/seceval/eval/outputs --backend ollama --models ollama/qwen2.5:14b
 
 benchmarks-test-cybermetric:
   <<: *run_benchmarks
@@ -47,3 +47,12 @@ benchmarks-test-cybermetric:
   script:
     - pip3 install -e .
     - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
+
+benchmarks-test-cybermetric-openai:
+  <<: *run_benchmarks
+  variables:    
+    OPENAI_API_KEY: $OPENAI_API_KEY
+    OPENAI_API_BASE: "https://api.openai.com/v1"
+  script:
+    - pip3 install -e .
+    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openai/gpt-4o --file_path benchmarks/cybermetric/CyberMetric-2-v1.json

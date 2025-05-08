@@ -293,7 +293,7 @@ class CyberMetricEvaluator:
                 print(f"Expected Answer: {item['correct_answer']}, LLM Answer: {item['llm_answer']}\n")
 
 if __name__ == "__main__":
-    litellm._turn_on_debug()
+    #litellm._turn_on_debug()
     
     # Create argument parser
     parser = argparse.ArgumentParser(description='CyberMetric Evaluator for LLMs')
