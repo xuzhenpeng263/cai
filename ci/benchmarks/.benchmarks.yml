@@ -16,7 +16,7 @@
           export $var="${!var}"
         fi
       done
-    - curl $OLLAMA_API_BASE/api/tags  # validate that ollama is running
+    - curl http://localhost:8000/api/tags  # validate that ollama is running
   variables:
     OLLAMA_API_BASE: "http://localhost:8000"
     OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
