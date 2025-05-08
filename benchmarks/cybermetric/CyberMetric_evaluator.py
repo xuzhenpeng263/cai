@@ -48,7 +48,7 @@ import requests
 
 # Default API bases
 OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
-OLLAMA_LITELLM_API_BASE = os.environ["OLLAMA_API_BASE"] #"http://localhost:8000/v1"
+OLLAMA_LITELLM_API_BASE = os.environ["OLLAMA_API_BASE"] # "http://localhost:8000/v1"
 os.environ["OPENAI_API_KEY"] = "test_key_for_ci_environment"
 
 class CyberMetricEvaluator:
@@ -293,7 +293,7 @@ class CyberMetricEvaluator:
                 print(f"Expected Answer: {item['correct_answer']}, LLM Answer: {item['llm_answer']}\n")
 
 if __name__ == "__main__":
-    #litellm._turn_on_debug()
+    litellm._turn_on_debug()
     
     # Create argument parser
     parser = argparse.ArgumentParser(description='CyberMetric Evaluator for LLMs')

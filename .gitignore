@@ -146,3 +146,6 @@ cython_debug/
 # CAI files
 .cai/
 .vscode/
+
+# benchmarks
+benchmarks/cybermetric/outputs
