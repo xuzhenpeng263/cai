@@ -1,11 +1,11 @@
 .use_base_container: &use_base_container
-  stage: benchmark
+  stage: benchmarks
   image: "${CI_REGISTRY_IMAGE}:latest"
   services:
     - name: docker:dind
       alias: docker
 
-.run_benchmark: &run_benchmark
+.run_benchmarks: &run_benchmarks
   <<: *use_base_container
   script:
     - pip3 install -e .
@@ -22,8 +22,8 @@
     - if: $CI_COMMIT_BRANCH
       when: on_success
 
-benchmark-test-seceval:
-  <<: *run_benchmark
+benchmarks-test-seceval:
+  <<: *run_benchmarks
   variables:
     OLLAMA_API_BASE: "http://localhost:8000"
     OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
