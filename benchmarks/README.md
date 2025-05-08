@@ -4,7 +4,7 @@ This chapter is a curated collection of benchmark datasets and evaluation tools 
 
 The collection is intended to support researchers and developers who are evaluating their own models using reliable, task-specific benchmarks.
 
-Currently, this are the benchmark included:
+Currently, this are the benchmarks included:
 
 - [SecEval](https://github.com/XuanwuAI/SecEval)
 - [CyberMetric](https://github.com/CyberMetric)
@@ -19,24 +19,23 @@ The goal is to consolidate diverse evaluation tasks under a single framework to 
 
 
 
-## 🔐 SecEval: [https://github.com/XuanwuAI/SecEval](https://github.com/XuanwuAI/SecEval)  
+## 🔐 [SecEval](https://github.com/XuanwuAI/SecEval)   
 
-### 📄 Description
+#### 📄 Description
 
 SecEval is a benchmark designed to evaluate large language models (LLMs) on security-related tasks. It includes various real-world scenarios such as phishing email analysis, vulnerability classification, and response generation.
 
-### 📥 Installation
+#### ▶️ Usage
 
 ```bash
-git clone https://github.com/XuanwuAI/SecEval.git
-cd SecEval
+cd benchmarks/seceval/eval
 pip install -r requirements.txt
 ```
-### ▶️ Usage
+
 ```bash
-python evaluate.py --model your_model_name --task all
+python3 eval.py --dataset_file datasets/questions.json --output_dir outputs --backend ollama --model ollama/qwen2.5:14b
 ```
-### 📊 Evaluation Results
+#### 📊 Evaluation Results
 
 | Model Name     | Accuracy | F1 Score | ROUGE | Notes               |
 |----------------|----------|----------|-------|---------------------|
@@ -46,27 +45,23 @@ python evaluate.py --model your_model_name --task all
 | Falcon-40B     | 70.1%    | 68.0%    | 0.47  | Baseline            |
 | YourModel      | XX.X%    | XX.X%    | XX.X  | Custom results here |
 
-📂 Source: results/seceval/scores.csv
 
 ---
 
-## 🧠 CyberMetric: [https://github.com/CyberMetric](https://github.com/CyberMetric)  
+## 🧠 [CyberMetric](https://github.com/CyberMetric)
 
-### 📄 Description 
+#### 📄 Description 
 CyberMetric is a benchmark framework that focuses on measuring the performance of AI systems in cybersecurity-specific question answering, knowledge extraction, and contextual understanding. It emphasizes both domain knowledge and reasoning ability.
 
-### 📥 Installation
+#### ▶️ Usage
 ```bash
-git clone https://github.com/CyberMetric/CyberMetric.git
-cd CyberMetric
-pip install -r requirements.txt
+cd benchmarks/cybermetric
 ```
-### ▶️ Usage
 ```bash
-python run.py --model your_model_name --task qa
+python CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b --file_path CyberMetric-2-v1.json
 ```
 
-### 📊 Evaluation Results
+#### 📊 Evaluation Results
 
 | Model Name     | Accuracy | F1 Score | ROUGE | Notes               |
 |----------------|----------|----------|-------|---------------------|
