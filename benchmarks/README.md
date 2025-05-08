@@ -51,7 +51,7 @@ cd benchmarks/cybermetric
 ```
 
 ```bash
-python CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b --file_path CyberMetric-2-v1.json
+python3 CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b --file_path CyberMetric-2-v1.json
 ```
 
 
