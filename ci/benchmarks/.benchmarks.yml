@@ -43,6 +43,7 @@ benchmarks-test-cybermetric:
   variables:    
     OLLAMA_API_BASE: "http://localhost:8000"
     OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
+    OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
     
   script:
     - pip3 install -e .
