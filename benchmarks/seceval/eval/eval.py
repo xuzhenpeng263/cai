@@ -61,8 +61,10 @@ logging.basicConfig(
 logger.addHandler(logging.FileHandler(f"./eval-{int(time.time())}.log", "w"))
 
 # Instruction template for the LLM
-instruction = """Below are multiple-choice questions concerning cybersecurity.
- Please select the correct letter. Your exprected answer is JUST THE CORRECT LETTER, not a word or phrase."""
+instruction = """Below are multiple-choice questions concerning cybersecurity. 
+Please select the correct answers and respond with the correct letters A, B, C, or D.
+You could select more than one letter.
+"""
 
 
 def init_hf_llm(model_id: str) -> HuggingFacePipeline:
@@ -161,15 +163,6 @@ def init_ollama_llm(model_id: str) -> 'OllamaChat':
     """
     class OllamaChat:
         async def abatch(self, prompts: List[str]) -> List[str]:
-            """
-            Process a batch of prompts asynchronously.
-            
-            Args:
-                prompts: List of prompts to process
-                
-            Returns:
-                List[str]: List of model responses
-            """
             responses = []
             for prompt in prompts:
                 try:
@@ -195,19 +188,50 @@ def init_ollama_llm(model_id: str) -> 'OllamaChat':
             return responses
 
         def extract_answer(self, text: str) -> str:
-            """
-            Extract answer letter from model response.
-            
-            Args:
-                text: Model response text
-                
-            Returns:
-                str: Extracted answer letter(s)
-            """
             match = re.findall(r"[A-D]", text.upper())
             return "".join(sorted(set(match))) if match else ""
 
     return OllamaChat()
+
+
+def init_openrouter_llm(model_id: str):
+    class OpenRouterChat:
+        async def abatch(self, prompts: List[str]):
+            responses = []
+            for prompt in prompts:
+                try:
+                    api_base = os.getenv("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1/chat/completions")
+                    api_key = os.getenv("OPENROUTER_API_KEY")
+
+                    if not api_key:
+                        raise ValueError("OPENROUTER_API_KEY is not defined in the environment variables.")
+
+                    completion = litellm.completion(
+                        model=model_id,
+                        messages=[{"role": "user", "content": prompt}],
+                        api_base=api_base,
+                        api_key=api_key,
+                        custom_llm_provider="openrouter"
+                    )
+
+                    if hasattr(completion, "choices") and completion.choices:
+                        content = completion.choices[0].message.content
+                        result = self.extract_answer(content)
+                        if result:
+                            responses.append(result)
+                        else:
+                            print("Formato de respuesta incorrecto.")
+                            responses.append("Error: No se pudo extraer resultado")
+                except Exception as e:
+                    logging.error(f"OpenRouter error: {e}")
+                    responses.append(f"Error: {e}")
+            return responses
+
+        def extract_answer(self, text: str):
+            match = re.findall(r"[A-D]", text.upper())
+            return "".join(sorted(set(match))) if match else ""
+
+    return OpenRouterChat()
 
 
 def load_dataset(dataset_path: str) -> List[Dict[str, Any]]:
@@ -338,7 +362,7 @@ def main():
     parser.add_argument("-d", "--dataset_file", type=str, required=True, help="Specify the dataset file to evaluate on.")
     parser.add_argument("-c", "--chat", action="store_true", default=False, help="Evaluate on chat model.")
     parser.add_argument("-b", "--batch_size", type=int, default=1, help="Specify the batch size.")
-    parser.add_argument("-B", "--backend", type=str, choices=["remote_hf", "azure", "textgen", "local_hf", "ollama"], required=True, help="Specify the llm type. remote_hf: remote huggingface model backed, azure: azure openai model, textgen: textgen backend, local_hf: local huggingface model backed, ollama: ollama model")
+    parser.add_argument("-B", "--backend", type=str, choices=["remote_hf", "azure", "textgen", "local_hf", "ollama", "openrouter"], required=True, help="Specify the llm type. remote_hf: remote huggingface model backed, azure: azure openai model, textgen: textgen backend, local_hf: local huggingface model backed, ollama: ollama model, openrouter: openrouter model")
     parser.add_argument("-m", "--models", type=str, nargs="+", required=True, help="Specify the models.")
    
     args = parser.parse_args()
@@ -362,6 +386,8 @@ def main():
             llm = init_azure_openai_llm(model_id)
         elif args.backend == "ollama":
             llm = init_ollama_llm(model_id)
+        elif args.backend == "openrouter":
+            llm = init_openrouter_llm(model_id)
         else:
             raise RuntimeError("Unknown backend")
 
