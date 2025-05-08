@@ -53,4 +53,4 @@ benchmarks-test-cybermetric:
 benchmarks-test-cybermetric-openai:
   <<: *run_benchmarks
   script:
-    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openai/gpt-4o --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
+    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openai/gpt-4o-mini --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
