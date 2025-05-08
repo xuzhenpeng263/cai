@@ -48,7 +48,7 @@ import requests
 
 # Default API bases
 OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
-OLLAMA_LITELLM_API_BASE = "http://localhost:8000/v1"
+OLLAMA_LITELLM_API_BASE = os.environ["OLLAMA_API_BASE"] #"http://localhost:8000/v1"
 os.environ["OPENAI_API_KEY"] = "test_key_for_ci_environment"
 
 class CyberMetricEvaluator:
