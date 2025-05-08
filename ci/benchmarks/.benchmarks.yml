@@ -7,7 +7,7 @@
 
 .run_benchmarks: &run_benchmarks
   <<: *use_base_container
-  script:
+  before_script:
     - pip3 install -e .
     - pip install litellm langchain transformers torch openai tqdm
     - for var in $(compgen -e); do
@@ -15,7 +15,12 @@
           export $var="${!var}"
         fi
       done
-
+    - curl http://localhost:11434/api/tags
+  variables:
+    OLLAMA_API_BASE: "http://localhost:8000"
+    OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
+    OPENAI_API_BASE: "https://api.openai.com/v1"
+    OPENAI_API_KEY: $OPENAI_API_KEY
   artifacts:
     paths:
       - cai/benchmarks/seceval/eval/outputs/
@@ -41,18 +46,10 @@
 
 benchmarks-test-cybermetric:
   <<: *run_benchmarks
-  variables:    
-    OLLAMA_API_BASE: "http://localhost:8000"
-    OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
   script:
-    - pip3 install -e .
     - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
 
 benchmarks-test-cybermetric-openai:
   <<: *run_benchmarks
-  variables:    
-    OPENAI_API_KEY: $OPENAI_API_KEY
-    OPENAI_API_BASE: "https://api.openai.com/v1"
   script:
-    - pip3 install -e .
     - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openai/gpt-4o --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
