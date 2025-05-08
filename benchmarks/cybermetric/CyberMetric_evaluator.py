@@ -77,7 +77,7 @@ class CyberMetricEvaluator:
         
     def create_output_directory(self):
         # Create base directory if it doesn't exist
-        base_dir = "output_cybermetric"
+        base_dir = "outputs"
         if not os.path.exists(base_dir):
             os.makedirs(base_dir)
             
