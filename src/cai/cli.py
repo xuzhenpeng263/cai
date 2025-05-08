@@ -128,7 +128,10 @@ from cai.agents import get_agent_by_name
 # to preserve conversation context between turns.
 from cai.sdk.agents.models.openai_chatcompletions import (
     message_history,
+    add_to_message_history,
 )
+from cai.sdk.agents.items import ToolCallOutputItem
+from cai.sdk.agents.stream_events import RunItemStreamEvent
 
 # Load environment variables from .env file
 load_dotenv()
@@ -387,8 +390,33 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
             for msg in message_history:
                 role = msg.get("role")
                 content = msg.get("content")
-                if role in ("user", "assistant") and content:
-                    history_context.append({"role": role, "content": content})
+                tool_calls = msg.get("tool_calls")
+
+                if role == "user":
+                    history_context.append({"role": "user", "content": content or ""})
+                elif role == "system":
+                    history_context.append({"role": "system", "content": content or ""})
+                elif role == "assistant":
+                    if tool_calls:
+                        history_context.append(
+                            {
+                                "role": "assistant",
+                                "content": content,  # Can be None
+                                "tool_calls": tool_calls,
+                            }
+                        )
+                    elif content is not None:
+                        history_context.append({"role": "assistant", "content": content})
+                    elif content is None and not tool_calls: # Explicitly handle empty assistant message
+                         history_context.append({"role": "assistant", "content": None})
+                elif role == "tool":
+                    history_context.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": msg.get("tool_call_id"),
+                            "content": msg.get("content"), # Tool output
+                        }
+                    )
 
             # Append the current user input as the last message in the list.
             conversation_input: list | str
@@ -405,8 +433,17 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                         result = Runner.run_streamed(agent, conversation_input)
 
                         # Consume events so the async generator is executed.
-                        async for _ in result.stream_events():
-                            pass
+                        async for event in result.stream_events():
+                            if isinstance(event, RunItemStreamEvent) and event.name == "tool_output":
+                                # Ensure item is a ToolCallOutputItem before accessing attributes
+                                if isinstance(event.item, ToolCallOutputItem):
+                                    tool_msg = {
+                                        "role": "tool",
+                                        "tool_call_id": event.item.raw_item["call_id"], # Changed to dictionary access
+                                        "content": event.item.output,
+                                    }
+                                    add_to_message_history(tool_msg)
+                            # pass # Original logic was just pass
 
                         return result
                     except Exception as e:
@@ -422,6 +459,14 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
             else:
                 # Use non-streamed response
                 response = asyncio.run(Runner.run(agent, conversation_input))
+                for item in response.new_items:
+                    if isinstance(item, ToolCallOutputItem):
+                        tool_msg = {
+                            "role": "tool",
+                            "tool_call_id": item.raw_item["call_id"],  # Usar formato consistente con streaming
+                            "content": item.output,
+                        }
+                        add_to_message_history(tool_msg)
             turn_count += 1
             
             # Stop measuring active time and start measuring idle time again

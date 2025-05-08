@@ -549,91 +549,76 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
         List[dict]: Sanitized list of messages with invalid tool calls
                    and empty messages removed.
     """
-    # Step 1: Filter and discard empty messages (considered empty if 'content'
-    # is None or only whitespace)
-    cleaned_messages = []
-    for msg in messages:
-        content = msg.get("content")
-        if content is not None and content.strip():
-            cleaned_messages.append(msg)
-    messages = cleaned_messages
-    # Step 2: Collect tool call id occurrences.
-    # In assistant messages, iterate through 'tool_calls' list.
-    # In 'tool' type messages, use the 'tool_call_id' key.
-    tool_calls_occurrences = {}
-    for i, msg in enumerate(messages):
-        if msg.get("role") == "assistant" and isinstance(
-                msg.get("tool_calls"), list):
-            for j, tool_call in enumerate(msg["tool_calls"]):
-                tc_id = tool_call.get("id")
-                if tc_id:
-                    tool_calls_occurrences.setdefault(
-                        tc_id, []).append((i, "assistant", j))
-        elif msg.get("role") == "tool" and msg.get("tool_call_id"):
-            tc_id = msg["tool_call_id"]
-            tool_calls_occurrences.setdefault(
-                tc_id, []).append((i, "tool", None))
-
-    # Step 3: Mark indices in the message list to remove.
-    # Maps message index (assistant) to set of indices (in tool_calls) to
-    # delete, or directly marks message indices (tool) to delete.
-    to_remove = {}
-    for tc_id, occurrences in tool_calls_occurrences.items():
-        if len(occurrences) > 2:
-            # More than one assistant and tool message pair - trim down
-            # by picking first pairing and removing the rest
-            assistant_items = [
-                occ for occ in occurrences if occ[1] == "assistant"]
-            tool_items = [occ for occ in occurrences if occ[1] == "tool"]
-
-            if assistant_items and tool_items:
-                valid_assistant = assistant_items[0]
-                valid_tool = tool_items[0]
-                for item in occurrences:
-                    if item != valid_assistant and item != valid_tool:
-                        if item[1] == "assistant":
-                            # If assistant message, mark specific tool_call index
-                            to_remove.setdefault(item[0], set()).add(item[2])
-                        else:
-                            # If tool message, mark whole message
-                            to_remove[item[0]] = None
-            else:
-                # Only one type of message, no complete pairs - remove them all
-                for item in occurrences:
-                    if item[1] == "assistant":
-                        to_remove.setdefault(item[0], set()).add(item[2])
-                    else:
-                        to_remove[item[0]] = None
-        elif len(occurrences) == 1:
-            # Incomplete pair (only tool call without tool result or vice versa)
-            item = occurrences[0]
-            if item[1] == "assistant":
-                to_remove.setdefault(item[0], set()).add(item[2])
-            else:
-                to_remove[item[0]] = None
-
-    # Step 4: Apply the removals and reconstruct the message list
+    # Deep-copy to ensure we don't modify the input
     sanitized_messages = []
+    
+    # First pass - identify tool_call_ids from assistant messages and tool messages
+    tool_call_map = {}  # Map from tool_call_id to (assistant_idx, tool_idx)
+    
     for i, msg in enumerate(messages):
-        if i in to_remove and to_remove[i] is None:
-            # Skip entirely removed messages
+        # Skip empty messages (considered empty if 'content' is None or only whitespace)
+        if msg.get("role") in ["user", "system"] and (msg.get("content") is None or not msg.get("content").strip()):
             continue
-
-        # For assistant messages, remove marked tool_calls
-        if msg.get("role") == "assistant" and "tool_calls" in msg:
-            new_tool_calls = []
-            for j, tc in enumerate(msg["tool_calls"]):
-                if i not in to_remove or j not in to_remove[i]:
-                    new_tool_calls.append(tc)
-            msg["tool_calls"] = new_tool_calls
-            # If after modification message has no content and no tool_calls,
-            # skip it
-            if not (msg.get("content", "").strip() or
-                   not msg.get("tool_calls")):
-                continue
-
+            
+        # Add valid messages to our sanitized list first
         sanitized_messages.append(msg)
-
+        
+        # Now track tool calls and tool messages for pairing 
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                if tc.get("id"):
+                    tool_id = tc.get("id")
+                    if tool_id not in tool_call_map:
+                        tool_call_map[tool_id] = {"assistant_idx": len(sanitized_messages) - 1, "tool_idx": None}
+        
+        if msg.get("role") == "tool" and msg.get("tool_call_id"):
+            tool_id = msg.get("tool_call_id")
+            if tool_id in tool_call_map:
+                tool_call_map[tool_id]["tool_idx"] = len(sanitized_messages) - 1
+            else:
+                # Tool response without a matching tool call - create a synthetic pair
+                # by adding a dummy assistant message with a tool_call
+                assistant_msg = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{
+                        "id": tool_id,
+                        "type": "function",
+                        "function": {
+                            "name": "unknown_function",
+                            "arguments": "{}"
+                        }
+                    }]
+                }
+                # Insert the assistant message *before* the tool message
+                sanitized_messages.insert(len(sanitized_messages) - 1, assistant_msg)
+                # Update mapping
+                tool_call_map[tool_id] = {"assistant_idx": len(sanitized_messages) - 2, "tool_idx": len(sanitized_messages) - 1}
+    
+    # Final validation - ensure all tool calls have responses
+    for tool_id, indices in tool_call_map.items():
+        if indices["tool_idx"] is None:
+            # Tool call without a response - create a synthetic tool message
+            assistant_idx = indices["assistant_idx"]
+            assistant_msg = sanitized_messages[assistant_idx]
+            
+            # Find the relevant tool call
+            tool_name = "unknown_function"
+            for tc in assistant_msg["tool_calls"]:
+                if tc.get("id") == tool_id:
+                    if tc.get("function") and tc["function"].get("name"):
+                        tool_name = tc["function"]["name"]
+                    break
+            
+            # Create an automatic tool response message
+            tool_msg = {
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": f"Auto-generated response for {tool_name}"
+            }
+            # Insert right after the assistant message
+            sanitized_messages.insert(assistant_idx + 1, tool_msg)
+    
     return sanitized_messages
 
 def cli_print_tool_call(tool_name="", args="", output="", prefix="  "):
