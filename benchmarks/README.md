@@ -11,7 +11,7 @@ Currently, this are the benchmarks included:
 
 The goal is to consolidate diverse evaluation tasks under a single framework to support rigorous, standardized testing.
 
-## 🏆 General Summary Table
+## 📊 General Summary Table
 
 | Model       | SecEval   | CyberMetric  | Total Value | 
 |-------------|-----------|--------------|-------------|
@@ -35,16 +35,6 @@ pip install -r requirements.txt
 ```bash
 python3 eval.py --dataset_file datasets/questions.json --output_dir outputs --backend ollama --model ollama/qwen2.5:14b
 ```
-#### 📊 Evaluation Results
-
-| Model Name     | Accuracy | F1 Score | ROUGE | Notes               |
-|----------------|----------|----------|-------|---------------------|
-| GPT-4          | 87.5%    | 84.2%    | 0.61  | Zero-shot           |
-| LLaMA2-13B     | 75.4%    | 71.8%    | 0.52  | Fine-tuned          |
-| Claude 3 Opus  | 79.2%    | 76.5%    | 0.58  | Few-shot setup      |
-| Falcon-40B     | 70.1%    | 68.0%    | 0.47  | Baseline            |
-| YourModel      | XX.X%    | XX.X%    | XX.X  | Custom results here |
-
 
 ---
 
@@ -53,22 +43,15 @@ python3 eval.py --dataset_file datasets/questions.json --output_dir outputs --ba
 #### 📄 Description 
 CyberMetric is a benchmark framework that focuses on measuring the performance of AI systems in cybersecurity-specific question answering, knowledge extraction, and contextual understanding. It emphasizes both domain knowledge and reasoning ability.
 
-#### ▶️ Usage
+
+#### ▶️ Usage
+
 ```bash
 cd benchmarks/cybermetric
 ```
+
 ```bash
 python CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b --file_path CyberMetric-2-v1.json
 ```
 
-#### 📊 Evaluation Results
-
-| Model Name     | Accuracy | F1 Score | ROUGE | Notes               |
-|----------------|----------|----------|-------|---------------------|
-| GPT-4          | 87.5%    | 84.2%    | 0.61  | Zero-shot           |
-| LLaMA2-13B     | 75.4%    | 71.8%    | 0.52  | Fine-tuned          |
-| Claude 3 Opus  | 79.2%    | 76.5%    | 0.58  | Few-shot setup      |
-| Falcon-40B     | 70.1%    | 68.0%    | 0.47  | Baseline            |
-| YourModel      | XX.X%    | XX.X%    | XX.X  | Custom results here |
-📂 Source: results/cybermetric/scores.csv
 
