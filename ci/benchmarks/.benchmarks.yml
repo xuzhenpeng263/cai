@@ -20,6 +20,8 @@
       done
     
     - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name $MODEL_NAME --file_path $BENCHMARK_FILE
+    - pwd
+    - ls -la
     # - curl http://localhost:8000/api/tags  # validate that ollama is running
   variables:
     OLLAMA_API_BASE: "http://localhost:8000"
