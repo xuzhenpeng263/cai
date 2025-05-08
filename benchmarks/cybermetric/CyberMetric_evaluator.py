@@ -2,21 +2,23 @@
 CyberMetric Evaluator for LLMs
 
 This script evaluates the performance of language models on the CyberMetric benchmark.
-It supports both OpenRouter-hosted models and local Ollama models via LiteLLM proxy.
+It supports OpenRouter-hosted models, local Ollama models via LiteLLM proxy, and OpenAI models.
 
 Usage:
     python CyberMetric_evaluator.py --model_name MODEL_NAME [--file_path FILE_PATH] [--api_key API_KEY]
 
 Arguments:
-    --model_name: Required. Model name with prefix (openrouter/ or ollama/)
-                  Examples: openrouter/anthropic/claude-3-opus, ollama/llama3
+    --model_name: Required. Model name with prefix (openrouter/, ollama/, or openai/)
+                  Examples: openrouter/anthropic/claude-3-opus, ollama/llama3, openai/gpt-4o
     --file_path:  Optional. Path to the CyberMetric JSON file (default: CyberMetric-2-v1.json)
-    --api_key:    Optional. API key for OpenRouter (can also use OPENROUTER_API_KEY env var)
+    --api_key:    Optional. API key for OpenRouter or OpenAI (can also use env vars)
 
 Environment Variables:
     OPENROUTER_API_KEY:  API key for OpenRouter (if using OpenRouter models)
     OPENROUTER_API_BASE: Base URL for OpenRouter API (default: https://openrouter.ai/api/v1)
     OLLAMA_API_BASE:     Base URL for Ollama API via LiteLLM proxy (default: http://localhost:8000/v1)
+    OPENAI_API_KEY:      API key for OpenAI (if using OpenAI models)
+    OPENAI_API_BASE:     Base URL for OpenAI API (default: https://api.openai.com/v1)
 
 Examples:
     # Run with an OpenRouter model
@@ -25,8 +27,11 @@ Examples:
     # Run with a local Ollama model (requires LiteLLM proxy running)
     python CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b
 
+    # Run with an OpenAI model
+    python CyberMetric_evaluator.py --model_name openai/gpt-4o
+
     # Specify a different benchmark file
-    python CyberMetric_evaluator.py --model_name openrouter/qwen/qwen3-32b:free --file_path CyberMetric-10000-v1.json
+    python CyberMetric_evaluator.py --model_name openai/gpt-4o --file_path CyberMetric-10000-v1.json
 
 
 """
@@ -48,11 +53,11 @@ import requests
 
 # Default API bases
 OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
-OLLAMA_LITELLM_API_BASE = os.environ["OLLAMA_API_BASE"] # "http://localhost:8000/v1"
-os.environ["OPENAI_API_KEY"] = "test_key_for_ci_environment"
+OLLAMA_LITELLM_API_BASE = os.environ.get("OLLAMA_API_BASE", "http://localhost:8000/v1")
+OPENAI_API_BASE = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
 
 class CyberMetricEvaluator:
-    def __init__(self, model_name, file_path, api_key=None, openrouter_api_base=None, ollama_litellm_api_base=None):
+    def __init__(self, model_name, file_path, api_key=None, openrouter_api_base=None, ollama_litellm_api_base=None, openai_api_base=None):
         self.model_name = model_name  
         self.file_path = file_path
         self.failed_questions = []
@@ -61,11 +66,14 @@ class CyberMetricEvaluator:
         # Set API configurations
         self.openrouter_api_base = openrouter_api_base or os.environ.get("OPENROUTER_API_BASE", OPENROUTER_API_BASE)
         self.ollama_litellm_api_base = ollama_litellm_api_base or os.environ.get("OLLAMA_LITELLM_API_BASE", OLLAMA_LITELLM_API_BASE)
+        self.openai_api_base = openai_api_base or os.environ.get("OPENAI_API_BASE", OPENAI_API_BASE)
         
-        # Set API key for OpenRouter if needed
+        # Set API key based on model type
         self.api_key = None
         if self.model_name.startswith("openrouter/"):
             self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
+        elif self.model_name.startswith("openai/"):
+            self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
 
         self.start_time = datetime.datetime.now()
         
@@ -122,7 +130,7 @@ class CyberMetricEvaluator:
         with open(self.info_file, 'w') as file:
             file.write(f"CyberMetric Evaluation\n")
             file.write(f"=====================\n\n")
-            file.write(f"Model: {self.model_name}\n") # "openrouter/qwen/qwen3-32b:free"
+            file.write(f"Model: {self.model_name}\n") 
             file.write(f"Dataset: {self.file_path}\n")
             file.write(f"Start Time: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
             file.write(f"Status: {status}\n")
@@ -184,7 +192,6 @@ class CyberMetricEvaluator:
         if not self.api_key:
             raise ValueError("API key is required for OpenRouter models")
         
-            
         for attempt in range(max_retries):
             try:
                 response = litellm.completion(
@@ -213,6 +220,37 @@ class CyberMetricEvaluator:
                 time.sleep(2 ** attempt)
         return None
 
+    def ask_openai(self, prompt, max_retries=5):
+        if not self.api_key:
+            raise ValueError("API key is required for OpenAI models")
+        
+        for attempt in range(max_retries):
+            try:
+                # Extract the actual model name without the 'openai/' prefix
+                actual_model = self.model_name.replace("openai/", "")
+                
+                response = litellm.completion(
+                    model=actual_model,  # Use the actual OpenAI model name
+                    messages=[
+                        {"role": "system", "content": "You are a security expert who answers questions."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    api_base=self.openai_api_base,
+                    api_key=self.api_key
+                )
+                if hasattr(response, "choices") and response.choices:
+                    content = response.choices[0].message.content
+                    result = self.extract_answer(content)
+                    if result:
+                        print("--DEBUG: result: ", result)
+                        return result
+                    else:
+                        print("Incorrect answer format detected. Attempting the question again.")
+            except Exception as e:
+                print(f"Error: {e}. Attempting the question again in {2 ** attempt} seconds.")
+                time.sleep(2 ** attempt)
+        return None
+
     def ask_llm(self, question, answers, max_retries=5):
         options = ', '.join([f"{key}) {value}" for key, value in answers.items()])
         prompt = (
@@ -225,15 +263,18 @@ class CyberMetricEvaluator:
         if self.model_name.startswith("openrouter/"):
             return self.ask_openrouter(prompt, max_retries)
         elif self.model_name.startswith("ollama/"):
-            # Only use the litellm approach with port 8000 for Ollama
             return self.ask_ollama_litellm(prompt, max_retries)
+        elif self.model_name.startswith("openai/"):
+            return self.ask_openai(prompt, max_retries)
         else:
-            print("Error: Model name must start with 'openrouter/' or 'ollama/'")
+            print(f"Error: Unsupported model prefix: {self.model_name}")
             return None
 
     def run_evaluation(self):
-        if not (self.model_name.startswith("openrouter/") or self.model_name.startswith("ollama/")):
-            print("Error: You must set model name with prefix 'ollama/' or 'openrouter/'")
+        if not (self.model_name.startswith("openrouter/") or 
+                self.model_name.startswith("ollama/") or 
+                self.model_name.startswith("openai/")):
+            print("Error: Model name must start with 'ollama/', 'openrouter/', or 'openai/'")
             return
             
         json_data = self.read_json_file()
@@ -298,17 +339,17 @@ if __name__ == "__main__":
     # Create argument parser
     parser = argparse.ArgumentParser(description='CyberMetric Evaluator for LLMs')
     parser.add_argument('--model_name', type=str, required=True, 
-                        help='Model name with prefix (openrouter/ or ollama/)')
+                        help='Model name with prefix (openrouter/, ollama/, or openai/)')
     parser.add_argument('--file_path', type=str, default='CyberMetric-2-v1.json',
                         help='Path to the CyberMetric JSON file')
     parser.add_argument('--api_key', type=str, 
-                        help='API key for OpenRouter (can also use OPENROUTER_API_KEY env var)')
+                        help='API key for OpenRouter or OpenAI (can also use env vars)')
     
     args = parser.parse_args()
     
     model_name = args.model_name
     file_path = args.file_path
-    api_key = args.api_key or os.environ.get("OPENROUTER_API_KEY")
+    api_key = args.api_key
     
     if model_name.startswith("ollama/"):
         # Ollama configuration
@@ -320,6 +361,7 @@ if __name__ == "__main__":
     
     elif model_name.startswith("openrouter/"):
         # OpenRouter configuration
+        api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
         if not api_key:
             raise ValueError("API key must be provided via --api_key or OPENROUTER_API_KEY environment variable for OpenRouter models")
             
@@ -331,8 +373,22 @@ if __name__ == "__main__":
         )
         print("Using OpenRouter configuration")
         
+    elif model_name.startswith("openai/"):
+        # OpenAI configuration
+        api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("API key must be provided via --api_key or OPENAI_API_KEY environment variable for OpenAI models")
+            
+        evaluator = CyberMetricEvaluator(
+            model_name=model_name,
+            file_path=file_path,
+            api_key=api_key,
+            openai_api_base=os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+        )
+        print("Using OpenAI configuration")
+    
     else:
-        raise ValueError("Model name must start with 'ollama/' or 'openrouter/'")
+        raise ValueError("Model name must start with 'ollama/', 'openrouter/', or 'openai/'")
     
     # Run the evaluation
     evaluator.run_evaluation()
