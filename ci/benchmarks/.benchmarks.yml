@@ -7,7 +7,7 @@
 
 .run_benchmarks: &run_benchmarks
   <<: *use_base_container
-  before_script:
+  script:
     - pip3 install -e .
     - pip install litellm langchain transformers torch openai tqdm
     - |
@@ -16,6 +16,7 @@
           export $var="${!var}"
         fi
       done
+    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name $MODEL_NAME --file_path $BENCHMARK_FILE
     # - curl http://localhost:8000/api/tags  # validate that ollama is running
   variables:
     OLLAMA_API_BASE: "http://localhost:8000"
@@ -44,12 +45,13 @@
 #     - pip install -r benchmarks/seceval/eval/requirements.txt
 #     - python3 benchmarks/seceval/eval/eval.py --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --output_dir benchmarks/seceval/eval/outputs --backend ollama --models ollama/qwen2.5:14b
 
-benchmarks-test-cybermetric:
-  <<: *run_benchmarks
-  script:
-    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
+# benchmarks-test-cybermetric-openrouter:
+#   <<: *run_benchmarks
+#   script:
+#     - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openrouter/qwen/qwen3-32b:free  --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
 
 benchmarks-test-cybermetric-openai:
   <<: *run_benchmarks
-  script:
-    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name openai/gpt-4o-mini --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
+  variables:
+    MODEL_NAME: "openai/gpt-4o-mini"
+    BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
