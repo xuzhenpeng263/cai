@@ -27,7 +27,9 @@ SecEval is a benchmark designed to evaluate large language models (LLMs) on secu
 
 #### ▶️ Usage
 
+
 ```bash
+git submodule update --init --recursive  # init submodules
 cd benchmarks/seceval/eval
 pip install -r requirements.txt
 ```
@@ -47,10 +49,8 @@ CyberMetric is a benchmark framework that focuses on measuring the performance o
 #### ▶️ Usage
 
 ```bash
+git submodule update --init --recursive  # init submodules
 cd benchmarks/cybermetric
-```
-
-```bash
 python3 CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b --file_path CyberMetric-2-v1.json
 ```
 
