@@ -9,3 +9,4 @@ python-dotenv
 transformers_stream_generator
 tiktoken
 litellm
+langchain-community
