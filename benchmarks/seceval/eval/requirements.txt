@@ -5,7 +5,7 @@ protobuf
 scipy
 sentencepiece
 torch
-flash_attn==2.3.*
 python-dotenv
 transformers_stream_generator
 tiktoken
+litellm
