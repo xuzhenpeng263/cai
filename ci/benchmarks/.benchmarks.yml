@@ -11,7 +11,7 @@
     - pip3 install -e .
     - pip install litellm langchain transformers torch openai tqdm
     - echo "Checking environment variables..."
-    
+
     - echo "OPENAI_API_KEY is set:" && echo $([[ -n $OPENAI_API_KEY ]] && echo 'YES' || echo 'NO')
     - echo "TRYVAR is set:" && echo $([[ -n $TRYVAR ]] && echo 'YES' || echo 'NO')
     - echo "TRYVAR is:" && echo $TRYVAR
@@ -31,7 +31,7 @@
     - echo "TRYVAR is:" && echo $TRYVAR
 
     
-    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name $MODEL_NAME --file_path $BENCHMARK_FILE --api_key "${OPENAI_API_KEY}"
+    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name $MODEL_NAME --file_path $BENCHMARK_FILE --api_key  $OPENAI_API_KEY
     # - curl http://localhost:8000/api/tags  # validate that ollama is running
   variables:
     OLLAMA_API_BASE: "http://localhost:8000"
