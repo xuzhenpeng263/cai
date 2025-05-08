@@ -43,6 +43,9 @@ from tqdm import tqdm
 import litellm
 import requests
 
+# Enable debug mode for litellm
+litellm._turn_on_debug()
+
 # Default API bases
 OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
 OLLAMA_LITELLM_API_BASE = "http://localhost:8000/v1"
@@ -62,6 +65,11 @@ class CyberMetricEvaluator:
         self.api_key = None
         if self.model_name.startswith("openrouter/"):
             self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
+            # Debug API key (masked)
+            if self.api_key:
+                print(f"API Key is set (masked)")
+            else:
+                print("WARNING: API Key is not set!")
         
         self.start_time = datetime.datetime.now()
         
@@ -179,6 +187,9 @@ class CyberMetricEvaluator:
     def ask_openrouter(self, prompt, max_retries=5):
         if not self.api_key:
             raise ValueError("API key is required for OpenRouter models")
+        
+        print(f"Using OpenRouter API base: {self.openrouter_api_base}")
+        print(f"Using API key (masked):")
             
         for attempt in range(max_retries):
             try:
@@ -191,7 +202,7 @@ class CyberMetricEvaluator:
                     api_base=self.openrouter_api_base,
                     api_key=self.api_key,
                     headers={
-                        "HTTP-Referer": "https://your-site-url.com",  
+                        "HTTP-Referer": "https://gitlab.com",  
                         "X-Title": "CyberMetric Evaluator"
                     }
                 )
