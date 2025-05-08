@@ -124,6 +124,12 @@ from cai.repl.ui.toolbar import get_toolbar_with_refresh
 # Import agents-related functions
 from cai.agents import get_agent_by_name
 
+# Import global message history from the OpenAI chat completions model
+# to preserve conversation context between turns.
+from cai.sdk.agents.models.openai_chatcompletions import (
+    message_history,
+)
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -367,32 +373,55 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                     console.print(f"[red]Unknown command: {command}[/red]")
                 continue
             from rich.text import Text
-            log_text = Text(f"Log file: {session_logger.filename}", style="yellow on black")
+            log_text = Text(
+                f"Log file: {session_logger.filename}",
+                style="yellow on black",
+            )
             console.print(log_text)
-            # Process the conversation with the agent
+
+            # Build conversation context from previous turns to give the
+            # model short-term memory. We only keep messages that have plain
+            # text content and ignore tool call entries to prevent schema
+            # mismatches when converting to OpenAI chat format.
+            history_context = []
+            for msg in message_history:
+                role = msg.get("role")
+                content = msg.get("content")
+                if role in ("user", "assistant") and content:
+                    history_context.append({"role": role, "content": content})
+
+            # Append the current user input as the last message in the list.
+            conversation_input: list | str
+            if history_context:
+                history_context.append({"role": "user", "content": user_input})
+                conversation_input = history_context
+            else:
+                conversation_input = user_input
+
+            # Process the conversation with the agent.
             if stream:
                 async def process_streamed_response():
                     try:
-                        # Run the agent with streaming
-                        result = Runner.run_streamed(agent, user_input)
-                        
-                        # Process stream events 
-                        async for event in result.stream_events():
-                            # The openai_chatcompletions.py now handles all the streaming display
-                            # We only need to pass through the events
+                        result = Runner.run_streamed(agent, conversation_input)
+
+                        # Consume events so the async generator is executed.
+                        async for _ in result.stream_events():
                             pass
-                            
+
                         return result
                     except Exception as e:
                         import traceback
                         tb = traceback.format_exc()
-                        print(f"\n[Error occurred during streaming: {str(e)}]\nLocation: {tb}")
+                        print(
+                            f"\n[Error occurred during streaming: {str(e)}]"
+                            f"\nLocation: {tb}"
+                        )
                         return None
 
                 asyncio.run(process_streamed_response())
             else:
                 # Use non-streamed response
-                response = asyncio.run(Runner.run(agent, user_input))
+                response = asyncio.run(Runner.run(agent, conversation_input))
             turn_count += 1
             
             # Stop measuring active time and start measuring idle time again
