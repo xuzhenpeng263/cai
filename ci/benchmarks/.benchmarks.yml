@@ -36,4 +36,4 @@ benchmarks-test-cybermetric:
   <<: *run_benchmarks
   script:
     - pip3 install -e .
-    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b --file_path benchmarks/cybermetric/datasets/CyberMetric-2-v1.json
+    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name ollama/qwen2.5:14b --file_path benchmarks/cybermetric/CyberMetric-2-v1.json
