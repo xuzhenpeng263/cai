@@ -17,7 +17,7 @@
         fi
       done
     - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name $MODEL_NAME --file_path $BENCHMARK_FILE
-    # - curl http://localhost:8000/api/tags  # validate that ollama is running
+    # - curl http://localhost:8000/api/tags  # validate that ollama is running
   variables:
     OLLAMA_API_BASE: "http://localhost:8000"
     OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
@@ -55,3 +55,4 @@ benchmarks-test-cybermetric-openai:
   variables:
     MODEL_NAME: "openai/gpt-4o-mini"
     BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
+    OPENAI_API_KEY: ${OPENAI_API_KEY}
