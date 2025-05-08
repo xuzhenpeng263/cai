@@ -4,3 +4,6 @@
 [submodule "benchmark/cybermetric"]
 	path = benchmark/cybermetric
 	url = https://github.com/cybermetric/CyberMetric.git
+[submodule "benchmarks/cti_bench"]
+	path = benchmarks/cti_bench
+	url = https://github.com/xashru/cti-bench.git
