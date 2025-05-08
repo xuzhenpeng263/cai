@@ -12,7 +12,7 @@
     - pip install litellm langchain transformers torch openai tqdm
     - |
       for var in $(compgen -e); do
-        if [[ $var == CTF_* && -n ${!var} ]]; then
+        if [[ ($var == CTF_* || $var == *_API_KEY || $var == *_API_BASE) && -n ${!var} ]]; then
           export $var="${!var}"
         fi
       done
@@ -55,3 +55,4 @@ benchmarks-test-cybermetric-openai:
   variables:
     MODEL_NAME: "openai/gpt-4o-mini"
     BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
+    # GitLab will use the OPENAI_API_KEY defined in CI/CD variables
