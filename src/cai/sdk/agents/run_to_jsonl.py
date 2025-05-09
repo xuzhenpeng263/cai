@@ -356,25 +356,70 @@ def load_history_from_jsonl(file_path):
     Returns:
         list: A list of messages extracted from the JSONL file.
     """
-    history = []
-    max_length = 0
-    with open(file_path, encoding='utf-8') as file:
-        for line in file:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                record = json.loads(line)
-            except Exception:  # pylint: disable=broad-except
-                print(f"Error loading line: {line}")
-                continue
-            if isinstance(record, dict) and "messages" \
-                in record and isinstance(
-                    record["messages"], list):
-                if len(record["messages"]) > max_length:
-                    max_length = len(record["messages"])
-                    history = record["messages"]
-    return history
+    messages = []
+    
+    try:
+        with open(file_path, encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                try:
+                    record = json.loads(line)
+                except Exception:  # pylint: disable=broad-except
+                    print(f"Error loading line: {line}")
+                    continue
+                
+                # Extract messages from model record
+                if "model" in record and "messages" in record and isinstance(record["messages"], list):
+                    # Store only complete conversation message objects
+                    for msg in record["messages"]:
+                        if "role" in msg:
+                            # Skip system messages
+                            if msg.get("role") == "system":
+                                continue
+                            
+                            # Add this message if we haven't seen it already
+                            if not any(m.get("role") == msg.get("role") and 
+                                       m.get("content") == msg.get("content") for m in messages):
+                                messages.append(msg)
+                
+                # Extract assistant messages and tool responses from model record choices
+                elif "choices" in record and isinstance(record["choices"], list) and record["choices"]:
+                    choice = record["choices"][0]
+                    if "message" in choice and "role" in choice["message"]:
+                        msg = choice["message"]
+                        if not any(m.get("role") == msg.get("role") and 
+                                  m.get("content") == msg.get("content") for m in messages):
+                            messages.append(msg)
+                            
+                            # Check for tool_calls in the message
+                            if msg.get("tool_calls"):
+                                for tool_call in msg.get("tool_calls", []):
+                                    if tool_call.get("id") and "function" in tool_call:
+                                        name = tool_call["function"].get("name", "")
+                                        arguments = tool_call["function"].get("arguments", "")
+                                        if name and arguments:
+                                            # Add a placeholder tool message - will be filled later
+                                            tool_message = {
+                                                "role": "tool",
+                                                "tool_call_id": tool_call.get("id"),
+                                                "content": ""
+                                            }
+                                            messages.append(tool_message)
+    except Exception as e:  # pylint: disable=broad-except
+        print(f"Error loading history from {file_path}: {e}")
+    
+    # Clean up duplicates and reorder
+    unique_messages = []
+    for msg in messages:
+        if not any(m.get("role") == msg.get("role") and 
+                  m.get("content") == msg.get("content") and
+                  m.get("tool_call_id", "") == msg.get("tool_call_id", "") for m in unique_messages):
+            unique_messages.append(msg)
+    
+    return unique_messages
 
 
 def get_token_stats(file_path):
