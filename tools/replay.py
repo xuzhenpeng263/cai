@@ -319,23 +319,23 @@ def main():
         sys.exit(1)
     
     print(color(f"Loading JSONL file: {jsonl_file_path}", fg="blue"))
-    
+
     try:
         # Load the full JSONL file to extract tool outputs
         full_data = load_jsonl(jsonl_file_path)
-        
+
         # Extract tool outputs from events and find last assistant message
         tool_outputs = {}
 
         # Load the JSONL file for messages
         messages = load_history_from_jsonl(jsonl_file_path)
-        
+
         # Attach tool outputs to messages
         for message in messages:
             if message.get("role") == "assistant" and message.get("tool_calls"):
                 if "tool_outputs" not in message:
                     message["tool_outputs"] = {}
-                
+
                 for tool_call in message.get("tool_calls", []):
                     call_id = tool_call.get("id", "")
                     if call_id in tool_outputs:
@@ -361,7 +361,7 @@ def main():
         active_time = usage[4] if len(usage) > 4 else 0
         idle_time = usage[5] if len(usage) > 5 else 0
         total_time = active_time + idle_time
-        
+
         # Format time values as strings with units
         def format_time(seconds):
             """Format time in seconds to a human-readable string."""
@@ -371,7 +371,7 @@ def main():
                 # Convert seconds to hours, minutes, seconds
                 hours, remainder = divmod(seconds, 3600)
                 minutes, seconds = divmod(remainder, 60)
-                
+
                 if hours > 0:
                     return f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
                 else:

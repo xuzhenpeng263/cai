@@ -57,6 +57,7 @@ class LoadCommand(Command):
             jsonl_file = args[0]
             # Try to load the jsonl file
             try:
+                # fetch messages from JSONL file
                 messages = load_history_from_jsonl(jsonl_file)
                 console.print(f"[green]Jsonl file {jsonl_file} loaded[/green]")
             except BaseException:  # pylint: disable=broad-exception-caught
@@ -64,13 +65,10 @@ class LoadCommand(Command):
                 # process
                 console.print(f"[red]Error: Failed to load jsonl file {jsonl_file}[/red]")
 
-            # fetch messages from JSONL file and add them to message_history
-            import pprint
-            pprint.pprint(messages)
-
-            # for message in messages:
-            #     message_history.append(message)
-
+            # add them to message_history
+            for message in messages:
+                message_history.append(message)
+            return True
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             console.print(f"[red]Error loading jsonl file: {str(e)}[/red]")
