@@ -23,6 +23,7 @@
     - python3 benchmarks/eval.py --model $MODEL_NAME --dataset_file $BENCHMARK_FILE --eval $BENCHMARK_NAME --backend $BACKEND
     - pwd
     - ls -la
+    - ls -la benchmarks/outputs/
     # - curl http://localhost:8000/api/tags  # validate that ollama is running
   variables:
     OLLAMA_API_BASE: "http://localhost:8000"
@@ -31,7 +32,6 @@
   artifacts:
     paths:
       - benchmarks/outputs/
-      - benchmarks/cybermetric/outputs
     expire_in: 12 month
   tags:
     - p40
