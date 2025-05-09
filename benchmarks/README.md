@@ -28,6 +28,7 @@ The goal is to consolidate diverse evaluation tasks under a single framework to 
 
 ```bash
 git submodule update --init --recursive  # init submodules
+pip install cvss
 ```
 
 ```bash

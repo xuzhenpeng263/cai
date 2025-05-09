@@ -155,54 +155,6 @@ def run_evaluation(dataset, instruction, model, api_base=None, api_key=None, cus
         
     return results
 
-def compute_accuracy(results, benchmark_name, dataset_file=None):
-    """
-    Compute accuracy for a benchmark result set.
-
-    Args:
-        results (list of dict): Each dict should have the ground truth answer and model answer.
-        benchmark_name (str): The name of the benchmark.
-    Returns:
-        accuracy (float): Accuracy as a percentage (0-100).
-        correct_count (int): Number of correct answers.
-        total_count (int): Total number of evaluated items.
-    """
-    correct_count = 0
-    total_count = 0
-    for item in results:
-        sol = item.get("Solution")
-        pred = item.get("ModelAnswer")
-        # For cybermetric, parse both gt and pred using parse_result_cybermetric
-        if benchmark_name.lower() == "cybermetric":
-            from benchmarks.eval import parse_result_cybermetric
-            pred_parsed = parse_result_cybermetric(pred)
-            if sol is not None and pred_parsed is not None:
-                if sol == pred_parsed:
-                    correct_count += 1
-                total_count += 1
-        elif benchmark_name.lower() == "seceval":  
-            pred_parsed = parse_result_seceval(pred)
-            if sol is not None and pred_parsed is not None:
-                if sol == pred_parsed:
-                    correct_count += 1
-                total_count += 1
-        elif benchmark_name.lower() == "cti_bench":
-            pred_parsed = parse_result_cti_bench(pred, dataset_file)
-            print(pred_parsed)
-            print(sol)
-            if sol is not None and pred_parsed is not None:
-                if sol == pred_parsed:
-                    correct_count += 1
-                total_count += 1
-        else:
-            if sol is not None and pred is not None:
-                # Accept either exact match or case-insensitive match
-                if str(sol).strip().upper() == str(pred).strip().upper():
-                    correct_count += 1
-                total_count += 1
-    accuracy = (correct_count / total_count * 100) if total_count > 0 else 0.0
-    return accuracy, correct_count, total_count
-
 def parse_result_seceval(result):
     # Expecting format: 'ANSWER: X', 'ANSWER: XY', or 'ANSWER: XYZ' (1, 2, or 3 letters A-D)
     if result is None:
@@ -246,8 +198,196 @@ def parse_result_cti_bench(result, dataset_file):
         cvss_match = re.search(r"(CVSS:3\.1/AV:[NALP]/AC:[LH]/PR:[NLH]/UI:[NR]/S:[UC]/C:[NLH]/I:[NLH]/A:[NLH])", result, re.IGNORECASE)
         if cvss_match:
             return cvss_match.group(1).upper()
+        # Also accept vector without prefix
+        vector_match = re.search(r"(AV:[NALP]/AC:[LH]/PR:[NLH]/UI:[NR]/S:[UC]/C:[NLH]/I:[NLH]/A:[NLH])", result, re.IGNORECASE)
+        if vector_match:
+            return "CVSS:3.1/" + vector_match.group(1).upper()
         return result.upper()
     return None
+
+def extract_cvss_score(vector):
+    """
+    Extracts a score from a CVSS vector string using the CVSS library.
+    """
+    try:
+        from cvss import CVSS3
+        c = CVSS3(vector)
+        return c.scores()[0]
+    except Exception as e:
+        print(f"Error calculating CVSS score: {e}")
+        return None
+
+def compute_vsp_mad(results):
+    """
+    Compute Mean Absolute Deviation for CVSS scores, following the original implementation.
+    """
+    try:
+        from cvss import CVSS3
+    except ImportError:
+        print("CVSS library not found. Please install it with 'pip install cvss'")
+        return None
+        
+    cvss_prefix = 'CVSS:3.1/'  # Use 3.1 to match current data
+    error_sum = 0
+    total = 0
+    
+    for item in results:
+        gt = item.get("Solution")
+        pred = item.get("ModelAnswer")
+        
+        try:
+            # Parse prediction
+            pred_vector = parse_result_cti_bench(pred, "cti-vsp")
+            
+            # Ensure vectors have prefix
+            if pred_vector and not pred_vector.startswith("CVSS:"):
+                pred_vector = cvss_prefix + pred_vector
+                
+            # Calculate scores
+            if gt and pred_vector:
+                c_gt = CVSS3(gt)
+                c_pred = CVSS3(pred_vector)
+                
+                gt_score = c_gt.scores()[0]
+                pred_score = c_pred.scores()[0]
+                
+                error = abs(pred_score - gt_score)
+                error_sum += error
+                total += 1
+        except Exception as e:
+            print(f"Error processing CVSS vector: {e}")
+            continue
+            
+    return error_sum / total if total > 0 else None
+
+def compute_ate_metrics(results):
+    """
+    Compute F1-macro score and accuracy for CTI-ATE task.
+    
+    For F1-macro, we calculate F1 separately for each sample and then average them.
+    
+    Args:
+        results (list of dict): Each dict should have the ground truth answer and model answer.
+        
+    Returns:
+        tuple: (f1_macro, accuracy, precision_macro, recall_macro)
+    """
+    # For storing per-sample metrics
+    f1_scores = []
+    precision_scores = []
+    recall_scores = []
+    
+    correct_predictions = 0
+    total_predictions = 0
+    
+    for item in results:
+        gt = item.get("Solution", "")
+        pred = item.get("ModelAnswer", "")
+        
+        # Extract technique IDs
+        gt_ids = [tid.strip().upper() for tid in gt.split(",") if tid.strip()]
+        pred_vector = parse_result_cti_bench(pred, "cti-ate")
+        pred_ids = [tid.strip().upper() for tid in (pred_vector or "").split(",") if tid.strip()]
+        
+        # Calculate true positives, false positives, and false negatives for this sample
+        sample_tp = len(set(gt_ids) & set(pred_ids))
+        sample_fp = len(set(pred_ids) - set(gt_ids))
+        sample_fn = len(set(gt_ids) - set(pred_ids))
+        
+        # Calculate precision and recall for this sample
+        if sample_tp + sample_fp > 0:
+            sample_precision = sample_tp / (sample_tp + sample_fp)
+        else:
+            sample_precision = 0
+            
+        if sample_tp + sample_fn > 0:
+            sample_recall = sample_tp / (sample_tp + sample_fn)
+        else:
+            sample_recall = 0
+            
+        # Calculate F1 for this sample
+        if sample_precision + sample_recall > 0:
+            sample_f1 = 2 * (sample_precision * sample_recall) / (sample_precision + sample_recall)
+        else:
+            sample_f1 = 0
+            
+        # Add to list of scores
+        precision_scores.append(sample_precision)
+        recall_scores.append(sample_recall)
+        f1_scores.append(sample_f1)
+        
+        # Calculate exact match for accuracy
+        if set(gt_ids) == set(pred_ids):
+            correct_predictions += 1
+        total_predictions += 1
+    
+    # Calculate macro metrics (average of per-sample metrics)
+    precision_macro = sum(precision_scores) / len(precision_scores) if precision_scores else 0
+    recall_macro = sum(recall_scores) / len(recall_scores) if recall_scores else 0
+    f1_macro = sum(f1_scores) / len(f1_scores) if f1_scores else 0
+    accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
+    
+    return f1_macro, accuracy, precision_macro, recall_macro
+
+def compute_accuracy(results, benchmark_name, dataset_file=None):
+    """
+    Compute accuracy for a benchmark result set.
+
+    Args:
+        results (list of dict): Each dict should have the ground truth answer and model answer.
+        benchmark_name (str): The name of the benchmark.
+    Returns:
+        accuracy (float): Accuracy as a percentage (0-100).
+        correct_count (int): Number of correct answers.
+        total_count (int): Total number of evaluated items.
+    """
+    correct_count = 0
+    total_count = 0
+    
+    # For VSP, use the mean absolute deviation instead of accuracy
+    if benchmark_name.lower() == "cti_bench" and dataset_file and 'cti-vsp' in dataset_file:
+        mad = compute_vsp_mad(results)
+        # Return MAD as the "accuracy" value, with 0 correct count and total items processed
+        return mad, 0, len(results)
+    
+    # For ATE, calculate F1-macro score and return it with accuracy
+    if benchmark_name.lower() == "cti_bench" and dataset_file and 'cti-ate' in dataset_file:
+        f1_macro, accuracy, precision_macro, recall_macro = compute_ate_metrics(results)
+        # We'll return f1_macro as the primary metric, and pass accuracy as correct_count (as a percentage)
+        # and total items processed as total_count
+        return f1_macro, accuracy * 100, len(results)
+        
+    for item in results:
+        sol = item.get("Solution")
+        pred = item.get("ModelAnswer")
+        # For cybermetric, parse both gt and pred using parse_result_cybermetric
+        if benchmark_name.lower() == "cybermetric":
+            from benchmarks.eval import parse_result_cybermetric
+            pred_parsed = parse_result_cybermetric(pred)
+            if sol is not None and pred_parsed is not None:
+                if sol == pred_parsed:
+                    correct_count += 1
+                total_count += 1
+        elif benchmark_name.lower() == "seceval":  
+            pred_parsed = parse_result_seceval(pred)
+            if sol is not None and pred_parsed is not None:
+                if sol == pred_parsed:
+                    correct_count += 1
+                total_count += 1
+        elif benchmark_name.lower() == "cti_bench" and 'vsp' not in dataset_file and 'ate' not in dataset_file:
+            pred_parsed = parse_result_cti_bench(pred, dataset_file)
+            if sol is not None and pred_parsed is not None:
+                if sol == pred_parsed:
+                    correct_count += 1
+                total_count += 1
+        else:
+            if sol is not None and pred is not None:
+                # Accept either exact match or case-insensitive match
+                if str(sol).strip().upper() == str(pred).strip().upper():
+                    correct_count += 1
+                total_count += 1
+    accuracy = (correct_count / total_count * 100) if total_count > 0 else 0.0
+    return accuracy, correct_count, total_count
 
 def save_benchmark_results(
     benchmark_name,
@@ -289,8 +429,18 @@ def save_benchmark_results(
         f.write(f"Dataset: {os.path.basename(dataset_file)}\n")
         f.write(f"Start Time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"Questions Processed: {questions_processed}\n")
-        f.write(f"Correct Answers: {correct_count}\n")
-        f.write(f"Accuracy: {accuracy:.2f}%\n")
+        
+        # Check if it's a VSP evaluation
+        if benchmark_name.lower() == "cti_bench" and 'cti-vsp' in dataset_file:
+            f.write(f"Mean Absolute Deviation: {accuracy:.2f}\n")
+        # Check if it's an ATE evaluation
+        elif benchmark_name.lower() == "cti_bench" and 'cti-ate' in dataset_file:
+            f.write(f"F1-macro Score: {accuracy:.2f}\n")
+            f.write(f"Accuracy: {correct_count:.2f}%\n")
+        else:
+            f.write(f"Correct Answers: {correct_count}\n")
+            f.write(f"Accuracy: {accuracy:.2f}%\n")
+            
         f.write(f"End Time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"Duration: {duration}\n")
 
@@ -373,8 +523,15 @@ def main():
     print(result)
 
     accuracy, correct_count, total_count = compute_accuracy(result, args.eval, dataset_file=args.dataset_file)
-    print(f"Accuracy: {accuracy:.2f}% ({correct_count}/{total_count})")
     
+    if args.eval.lower() == "cti_bench" and 'cti-vsp' in args.dataset_file:
+        print(f"Mean Absolute Deviation: {accuracy:.2f}")
+    elif args.eval.lower() == "cti_bench" and 'cti-ate' in args.dataset_file:
+        print(f"F1-macro Score: {accuracy:.2f}")
+        print(f"Accuracy: {correct_count:.2f}%")
+    else:
+        print(f"Accuracy: {accuracy:.2f}% ({correct_count}/{total_count})")
+
     save_benchmark_results(args.eval, model, args.dataset_file, start_time, end_time, len(dataset), correct_count, accuracy, total_count, result)
 
 if __name__ == "__main__":
