@@ -15,12 +15,12 @@ Arguments:
 
 Example:
 
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --output_dir benchmarks/outputs/cybermetric --backend ollama
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --eval seceval --output_dir benchmarks/outputs/seceval --backend ollama
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-mcq1.tsv --eval cti_bench --output_dir benchmarks/outputs/cti_bench --backend ollama
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-ate2.tsv --eval cti_bench --output_dir benchmarks/outputs/cti_bench --backend ollama
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend ollama
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --eval seceval --backend ollama
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-mcq1.tsv --eval cti_bench --backend ollama
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-ate2.tsv --eval cti_bench --backend ollama
     
-     python benchmarks/eval.py --model qwen/qwen3-32b:free --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --output_dir benchmarks/outputs/cybermetric --backend openrouter
+     python benchmarks/eval.py --model qwen/qwen3-32b:free --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend openrouter
 
 Environment Variables:
     OPENROUTER_API_KEY:  API key for OpenRouter (if using OpenRouter models)
@@ -152,16 +152,13 @@ def run_evaluation(dataset, instruction, model, api_base=None, api_key=None, cus
         
     return results
 
-
-def compute_accuracy(results, answer_key_field="Solution", model_answer_field="ModelAnswer"):
+def compute_accuracy(results, benchmark_name):
     """
     Compute accuracy for a benchmark result set.
 
     Args:
         results (list of dict): Each dict should have the ground truth answer and model answer.
-        answer_key_field (str): The key for the ground truth answer in each result dict.
-        model_answer_field (str): The key for the model's answer in each result dict.
-
+        benchmark_name (str): The name of the benchmark.
     Returns:
         accuracy (float): Accuracy as a percentage (0-100).
         correct_count (int): Number of correct answers.
@@ -170,17 +167,50 @@ def compute_accuracy(results, answer_key_field="Solution", model_answer_field="M
     correct_count = 0
     total_count = 0
     for item in results:
-        gt = item.get(answer_key_field)
-        pred = item.get(model_answer_field)
-        if gt is not None and pred is not None:
-            # Accept either exact match or case-insensitive match
-            if str(gt).strip().upper() == str(pred).strip().upper():
-                correct_count += 1
-            total_count += 1
+        sol = item.get("Solution")
+        pred = item.get("ModelAnswer")
+        # For cybermetric, parse both gt and pred using parse_result_cybermetric
+        if benchmark_name.lower() == "cybermetric":
+            from benchmarks.eval import parse_result_cybermetric
+            pred_parsed = parse_result_cybermetric(pred)
+            if sol is not None and pred_parsed is not None:
+                if sol == pred_parsed:
+                    correct_count += 1
+                total_count += 1
+        elif benchmark_name.lower() == "seceval":
+            
+            pred_parsed = parse_result_seceval(pred)
+            if sol is not None and pred_parsed is not None:
+                if sol == pred_parsed:
+                    correct_count += 1
+                total_count += 1
+        else:
+            if sol is not None and pred is not None:
+                # Accept either exact match or case-insensitive match
+                if str(sol).strip().upper() == str(pred).strip().upper():
+                    correct_count += 1
+                total_count += 1
     accuracy = (correct_count / total_count * 100) if total_count > 0 else 0.0
     return accuracy, correct_count, total_count
+def parse_result_seceval(result):
+    # Expecting format: 'ANSWER: X', 'ANSWER: XY', or 'ANSWER: XYZ' (1, 2, or 3 letters A-D)
+    if result is None:
+        return None
+    match = re.search(r"ANSWER:?\s*([A-D]{1,3})", result, re.IGNORECASE)
+    if match:
+        return match.group(1).upper()
+    return None
+
+def parse_result_cybermetric(result):
+    # Expecting format: 'ANSWER: X'
+    if result is None:
+        return None
+    match = re.search(r"ANSWER:?\s*([A-D])", result, re.IGNORECASE)
+    if match:
+        return match.group(1).upper()
+    return None
+
 def save_benchmark_results(
-    output_dir,
     benchmark_name,
     model,
     dataset_file,
@@ -189,35 +219,50 @@ def save_benchmark_results(
     questions_processed,
     correct_count,
     accuracy,
-    total_count
+    total_count,
+    result
 ):
     """
     Save benchmark results in CyberMetric-style format to output_dir/information.txt.
     """
-
-    # Ensure output_dir exists
+    output_dir = os.path.join(os.getcwd(), "benchmarks", "outputs", benchmark_name)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    info_file = os.path.join(output_dir, "information.txt")
+    # Save information file as: <model>_<YYYYMMDD_HHMMSS>.txt
+    now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_model = "".join([c if c.isalnum() or c in ('-', '_') else '_' for c in str(model)])
+    info_file = os.path.join(output_dir, f"{safe_model}_{now_str}.txt")
     duration = end_time - start_time
 
-    with open(info_file, "w") as f:
+    # Create a subdirectory for this run, named after info_file (without extension)
+    run_dir = os.path.splitext(info_file)[0]
+    if not os.path.exists(run_dir):
+        os.makedirs(run_dir)
+
+    # Save the info file as .tct inside the run_dir
+    info_file="information.txt"
+    info_file_tct = os.path.join(run_dir, os.path.basename(os.path.splitext(info_file)[0] + ".txt"))
+    with open(info_file_tct, "w") as f:
         f.write(f"{benchmark_name} Evaluation\n")
         f.write("=====================\n\n")
         f.write(f"Model: {model}\n")
         f.write(f"Dataset: {os.path.basename(dataset_file)}\n")
         f.write(f"Start Time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"Status: {status}\n")
         f.write(f"Questions Processed: {questions_processed}\n")
         f.write(f"Correct Answers: {correct_count}\n")
         f.write(f"Accuracy: {accuracy:.2f}%\n")
         f.write(f"End Time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"Duration: {duration}\n")
 
+    # Save the results as answers.json inside the run_dir
+    results_file = os.path.join(run_dir, "answers.json")
+    with open(results_file, "w", encoding="utf-8") as rf:
+        json.dump(result, rf, ensure_ascii=False, indent=2)
+
+
 def main():
     parser = argparse.ArgumentParser(description="SecEval Evaluation CLI")
-    parser.add_argument("-o", "--output_dir", type=str, default="/tmp", help="Specify the output directory.")
     parser.add_argument("-d", "--dataset_file", type=str, required=True, help="Specify the dataset file to evaluate on.")
     parser.add_argument("-B", "--backend", type=str, choices=["openai", "ollama", "openrouter"], required=True, help="Specify the llm type. openai: openai model, ollama: ollama model, openrouter: openrouter model")
     parser.add_argument("-m", "--model", type=str, required=True, help="Specify the models.")
@@ -247,7 +292,8 @@ def main():
     if args.eval == "seceval":
         instruction = """Below are multiple-choice questions concerning cybersecurity. 
         Please select the correct answers and respond with the correct letters A, B, C, or D.
-        You could select more than one letter.
+        You could select more than one letter
+        Always return in this format: 'ANSWER: XYZ' or 'ANSWER: X'.
         """
         if args.dataset_file == "":
             args.dataset_file = "benchmarks/seceval/eval/datasets/questions-2.json"
@@ -264,14 +310,17 @@ def main():
         if args.dataset_file == "":
             args.dataset_file = "benchmarks/cti_bench/data/cti-mcq1.tsv"
         dataset = load_dataset(args.dataset_file, "cti_bench")
+    
     start_time = datetime.datetime.now()
     result = run_evaluation(dataset, instruction, model, api_base, api_key, custom_llm_provider)
     end_time = datetime.datetime.now()
-    accuracy, correct_count, total_count = compute_accuracy(result)
-    print(f"Accuracy: {accuracy:.2f}% ({correct_count}/{total_count})")
-    save_benchmark_results(args.output_dir, args.eval, model, args.dataset_file, start_time, end_time, len(dataset), correct_count, accuracy, total_count)
 
+    print(result)
+
+    accuracy, correct_count, total_count = compute_accuracy(result, args.eval  )
+    print(f"Accuracy: {accuracy:.2f}% ({correct_count}/{total_count})")
+    
+    save_benchmark_results(args.eval, model, args.dataset_file, start_time, end_time, len(dataset), correct_count, accuracy, total_count, result)
 
 if __name__ == "__main__":
-    #litellm._turn_on_debug()
     main()

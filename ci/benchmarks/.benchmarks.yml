@@ -19,7 +19,8 @@
         fi
       done
     
-    - python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name $MODEL_NAME --file_path $BENCHMARK_FILE
+    #- python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name $MODEL_NAME --file_path $BENCHMARK_FILE
+    - python3 benchmarks/eval.py --model $MODEL_NAME --dataset_file $BENCHMARK_FILE --eval $BENCHMARK_NAME --backend $BACKEND
     - pwd
     - ls -la
     # - curl http://localhost:8000/api/tags  # validate that ollama is running
@@ -55,9 +56,11 @@ benchmarks-test-cybermetric-openrouter:
   variables:
     MODEL_NAME: "openrouter/qwen/qwen3-32b:free"
     BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
+    BENCHMARK_NAME: "cybermetric"
+    BACKEND: "openrouter"
 
-benchmarks-test-cybermetric-openai:
-  <<: *run_benchmarks
-  variables:
-    MODEL_NAME: "openai/gpt-4o-mini"
-    BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
+# benchmarks-test-cybermetric-openai:
+#   <<: *run_benchmarks
+#   variables:
+#     MODEL_NAME: "openai/gpt-4o-mini"
+#     BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
