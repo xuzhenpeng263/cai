@@ -19,6 +19,16 @@
         fi
       done
 
+    # to be removed 
+    - |
+      if [ "$BACKEND" = "ollama" ]; then
+        echo "Starting Ollama service..."
+        ollama serve &
+        sleep 10  # Give time for Ollama to start
+        curl http://localhost:8000/api/tags || echo "Ollama service may not be running properly"
+      fi
+    ## to be removed
+
 
     #- python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name $MODEL_NAME --file_path $BENCHMARK_FILE
     - echo $OLLAMA_API_BASE
