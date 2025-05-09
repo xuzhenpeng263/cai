@@ -48,7 +48,8 @@ Output:
            └── information.txt    # report of that precise run (e.g. model_name, benchmark_name, metrics, date)
 
 ```
-Examples
+#### 🔍 Examples
+
 ```bash
 python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend ollama
 ````
