@@ -4,10 +4,10 @@ Tool to convert JSONL files to a replay format that simulates the CLI output.
 This allows reviewing conversations in a more readable format.
 
 Usage:
-    JSONL_FILE_PATH="path/to/file.jsonl" REPLAY_DELAY="0.5" python3 tools/jsonl_to_replay.py
+    JSONL_FILE_PATH="path/to/file.jsonl" REPLAY_DELAY="0.5" python3 tools/replay.py
 
 Usage with asciinema rec, generating a .cast file and then converting it to a gif:
-    asciinema rec --command="JSONL_FILE_PATH=\"/workspace/caiextensions-memory/caiextensions/memory/it/htb/challenges/insomnia/cai_20250307_114836.jsonl\" REPLAY_DELAY=\"0.5\" python3 tools/jsonl_to_replay.py" --overwrite
+    asciinema rec --command="JSONL_FILE_PATH=\"/workspace/caiextensions-memory/caiextensions/memory/it/htb/challenges/insomnia/cai_20250307_114836.jsonl\" REPLAY_DELAY=\"0.5\" python3 tools/replay.py" --overwrite
 
 Or alternatively:
     asciinema rec --command="JSONL_FILE_PATH='caiextensions-memory/caiextensions/memory/it/pentestperf/hackableii/hackableII_autonomo.jsonl' REPLAY_DELAY='0.05' cai-replay"
