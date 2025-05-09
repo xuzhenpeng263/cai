@@ -507,7 +507,7 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None, workspace
             from cai.util import cli_print_tool_output
             
         output_buffer = []
-        
+        start_time = time.time()
         # Start the process
         process = subprocess.Popen(
             command,
@@ -545,7 +545,7 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None, workspace
             header.append(args_str, style="yellow")
             header.append(")", style="yellow")
             tool_time = 0 
-            start_time = time.time()
+
             total_time = 0
             if START_TIME is not None:
                 total_time = time.time() - START_TIME 
