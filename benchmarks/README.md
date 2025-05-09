@@ -51,9 +51,12 @@ Output:
 ```
 #### 🔍 Examples
 
+Below are examples showing how to run different CTI Bench tests with the Qwen 2.5 14B model using Ollama as the backend:
+
 ```bash
 python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend ollama
 ````
+
 ```bash
 python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --eval seceval --backend ollama
 ````
