@@ -9,7 +9,6 @@ Usage:
 Arguments:
     -m, --model           Specify the model to evaluate (e.g., "gpt-4", "qwen2.5:14b", etc.)
     -d, --dataset_file    Path to the dataset file (JSON or TSV) containing questions to evaluate
-    -o, --output_dir      Specify the output directory for results (default: "benchmarks/outputs/[benchmark_name]")
     -B, --backend         Backend to use: "openai", "openrouter", "ollama" (required)
     -e, --eval            Specify the evaluation benchmark
 
