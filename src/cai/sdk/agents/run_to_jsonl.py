@@ -357,6 +357,7 @@ def load_history_from_jsonl(file_path):
         list: A list of messages extracted from the JSONL file.
     """
     messages = []
+    last_assistant_message = None
     
     try:
         with open(file_path, encoding='utf-8') as f:
@@ -364,13 +365,26 @@ def load_history_from_jsonl(file_path):
                 line = line.strip()
                 if not line:
                     continue
-                
                 try:
                     record = json.loads(line)
                 except Exception:  # pylint: disable=broad-except
                     print(f"Error loading line: {line}")
                     continue
-                
+
+                # process assistant messages and keep the last one
+                # for additing it manually at the end
+                #
+                # NOTE: it might be the case that if the last message is of type "tool_message"
+                # we might be missing it. For that purpose, leaving here the corresponding code
+                # in case of need:
+                    # if entry.get("event") == "tool_message":
+                    #     tool_call_id = entry.get("tool_call_id", "")
+                    #     content = entry.get("content", "")
+                    #     if tool_call_id and content:
+                    #         tool_outputs[tool_call_id] = content
+                if record.get("event") == "assistant_message":
+                    last_assistant_message = record.get("content")
+
                 # Extract messages from model record
                 if "model" in record and "messages" in record and isinstance(record["messages"], list):
                     # Store only complete conversation message objects
@@ -379,12 +393,12 @@ def load_history_from_jsonl(file_path):
                             # Skip system messages
                             if msg.get("role") == "system":
                                 continue
-                            
+
                             # Add this message if we haven't seen it already
                             if not any(m.get("role") == msg.get("role") and 
                                        m.get("content") == msg.get("content") for m in messages):
                                 messages.append(msg)
-                
+
                 # Extract assistant messages and tool responses from model record choices
                 elif "choices" in record and isinstance(record["choices"], list) and record["choices"]:
                     choice = record["choices"][0]
@@ -410,7 +424,7 @@ def load_history_from_jsonl(file_path):
                                             messages.append(tool_message)
     except Exception as e:  # pylint: disable=broad-except
         print(f"Error loading history from {file_path}: {e}")
-    
+
     # Clean up duplicates and reorder
     unique_messages = []
     for msg in messages:
@@ -418,7 +432,15 @@ def load_history_from_jsonl(file_path):
                   m.get("content") == msg.get("content") and
                   m.get("tool_call_id", "") == msg.get("tool_call_id", "") for m in unique_messages):
             unique_messages.append(msg)
-    
+
+    # Add last message to the end of the list
+    if last_assistant_message:
+        unique_messages.append(
+            {
+                "role": "assistant",
+                "content": last_assistant_message
+             }
+        )
     return unique_messages
 
 
@@ -460,14 +482,23 @@ def get_token_stats(file_path):
                     else:
                         # Si cost es un valor directo
                         last_total_cost = float(record["cost"])
-                if "timing" in record:
-                    if isinstance(record["timing"], dict):
-                        last_active_time = record["timing"].get(
-                            "active_seconds", 0.0)
-                        last_idle_time = record["timing"].get(
-                            "idle_seconds", 0.0)
+                if "timing_metrics" in record:
+                    if isinstance(record["timing_metrics"], dict):
+                        last_active_time = record["timing_metrics"].get(
+                            "active_time_seconds", 0.0)
+                        last_idle_time = record["timing_metrics"].get(
+                            "idle_time_seconds", 0.0)
                 if "model" in record:
                     model_name = record["model"]
+                # Keep track of the last record for session_end event
+                if record.get("event") == "session_end":
+                    if "timing_metrics" in record and isinstance(record["timing_metrics"], dict):
+                        last_active_time = record["timing_metrics"].get(
+                            "active_time_seconds", 0.0)
+                        last_idle_time = record["timing_metrics"].get(
+                            "idle_time_seconds", 0.0)
+                    if "cost" in record and isinstance(record["cost"], dict):
+                        last_total_cost = record["cost"].get("total_cost", 0.0)
             except Exception as e:  # pylint: disable=broad-except
                 print(f"Error loading line: {line}: {e}")
                 continue

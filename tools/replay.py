@@ -132,7 +132,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
             tool_id = message.get("tool_call_id")
             content = message.get("content", "")
             tool_outputs[tool_id] = content
-    
+
     # Process assistant messages to match tool calls with outputs
     for message in messages:
         if message.get("role") == "assistant" and message.get("tool_calls"):
@@ -150,7 +150,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
             time.sleep(replay_delay)
             
         role = message.get("role", "")
-        content = message.get("content", "")
+        content = message.get("content", "").strip()
         sender = message.get("sender", role)
         model = message.get("model", file_model)
         
@@ -326,17 +326,7 @@ def main():
         
         # Extract tool outputs from events and find last assistant message
         tool_outputs = {}
-        last_assistant_message = None
-        
-        for entry in full_data:
-            if entry.get("event") == "tool_message":
-                tool_call_id = entry.get("tool_call_id", "")
-                content = entry.get("content", "")
-                if tool_call_id and content:
-                    tool_outputs[tool_call_id] = content
-            elif entry.get("event") == "assistant_message":
-                last_assistant_message = entry
-        
+
         # Load the JSONL file for messages
         messages = load_history_from_jsonl(jsonl_file_path)
         
@@ -350,17 +340,19 @@ def main():
                     call_id = tool_call.get("id", "")
                     if call_id in tool_outputs:
                         message["tool_outputs"][call_id] = tool_outputs[call_id]
-        
+
         print(color(f"Loaded {len(messages)} messages from JSONL file", fg="blue"))
 
         # Get token stats and cost from the JSONL file
         usage = get_token_stats(jsonl_file_path)
-        
+
+        print(usage)
+
         # Display timing information if available (new format)
         if len(usage) > 4:
             print(color(f"Active time: {usage[4]:.2f}s", fg="blue"))
             print(color(f"Idle time: {usage[5]:.2f}s", fg="blue"))
-                
+
         # Generate the replay with live printing
         replay_conversation(messages, replay_delay, usage)        
         print(color("Replay completed successfully", fg="green"))
@@ -375,22 +367,16 @@ def main():
             """Format time in seconds to a human-readable string."""
             if seconds < 60:
                 return f"{seconds:.1f}s"
-            if seconds < 3600:
-                minutes = seconds / 60
-                return f"{minutes:.1f}m"
-            hours = seconds / 3600
-            return f"{hours:.1f}h"
-                        
-        if last_assistant_message:
-            # Display the last assistant message in a panel
-            console.print(Panel(
-                last_assistant_message.get("content", "No content available"),
-                title="[bold]Final Answer[/bold]",
-                title_align="left",
-                border_style="green",
-                box=ROUNDED,
-                padding=(1, 2)
-            ))
+            else:
+                # Convert seconds to hours, minutes, seconds
+                hours, remainder = divmod(seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                
+                if hours > 0:
+                    return f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
+                else:
+                    return f"{int(minutes)}m {int(seconds)}s"
+        
         metrics = {
             'session_time': format_time(total_time),
             'llm_time': "0.0s",
@@ -400,7 +386,6 @@ def main():
         }
         display_execution_time(metrics)
 
-            
     except FileNotFoundError:
         print(color(f"Error: File {jsonl_file_path} not found", fg="red"))
         sys.exit(1)

@@ -38,7 +38,8 @@ from cai.repl.commands import (  # pylint: disable=import-error,unused-import,li
     config,
     flush,
     workspace,
-    virtualization
+    virtualization,
+    load
 )
 
 # Define helper functions

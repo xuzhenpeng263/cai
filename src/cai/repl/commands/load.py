@@ -13,6 +13,7 @@ from typing import (
 from rich.console import Console  # pylint: disable=import-error
 from cai.repl.commands.base import Command, register_command
 from cai.sdk.agents.models.openai_chatcompletions import message_history
+from cai.sdk.agents.run_to_jsonl import get_token_stats, load_history_from_jsonl
 
 console = Console()
 
@@ -56,17 +57,20 @@ class LoadCommand(Command):
             jsonl_file = args[0]
             # Try to load the jsonl file
             try:
-                with open(jsonl_file, 'r') as f:
-                    for line in f:
-                        print(line)
+                messages = load_history_from_jsonl(jsonl_file)
                 console.print(f"[green]Jsonl file {jsonl_file} loaded[/green]")
             except BaseException:  # pylint: disable=broad-exception-caught
                 # If killing the process group fails, try killing just the
                 # process
                 console.print(f"[red]Error: Failed to load jsonl file {jsonl_file}[/red]")
 
-            # fetch longest message from jsonl file and send to message_history
-            # TODO @luijait
+            # fetch messages from JSONL file and add them to message_history
+            import pprint
+            pprint.pprint(messages)
+
+            # for message in messages:
+            #     message_history.append(message)
+
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             console.print(f"[red]Error loading jsonl file: {str(e)}[/red]")
