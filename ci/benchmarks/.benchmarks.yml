@@ -58,21 +58,21 @@
 #     BENCHMARK_NAME: "cybermetric"
 #     BACKEND: "openrouter"
 
-# benchmarks-test-cybermetric-ollama:
-#   <<: *run_benchmarks
-#   variables:
-#     MODEL_NAME: "ollama/qwen2.5:14b"
-#     BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
-#     BENCHMARK_NAME: "cybermetric"
-#     BACKEND: "ollama"
-
-benchmarks-test-seceval-ollama:
+benchmarks-test-cybermetric-ollama:
   <<: *run_benchmarks
   variables:
     MODEL_NAME: "ollama/qwen2.5:14b"
-    BENCHMARK_FILE: "benchmarks/seceval/eval/datasets/questions-2.json"
-    BENCHMARK_NAME: "seceval"
+    BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
+    BENCHMARK_NAME: "cybermetric"
     BACKEND: "ollama"
+
+# benchmarks-test-seceval-ollama:
+#   <<: *run_benchmarks
+#   variables:
+#     MODEL_NAME: "ollama/qwen2.5:14b"
+#     BENCHMARK_FILE: "benchmarks/seceval/eval/datasets/questions-2.json"
+#     BENCHMARK_NAME: "seceval"
+#     BACKEND: "ollama"
 # benchmarks-test-cybermetric-openai:
 #   <<: *run_benchmarks
 #   variables:
