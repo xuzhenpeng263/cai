@@ -50,21 +50,31 @@
 # #     - pip install -r benchmarks/seceval/eval/requirements.txt
 # #     - python3 benchmarks/seceval/eval/eval.py --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --output_dir benchmarks/seceval/eval/outputs --backend ollama --models ollama/qwen2.5:14b
 
-# benchmarks-test-cybermetric-openrouter:
-#   <<: *run_benchmarks
-#   variables:
-#     MODEL_NAME: "openrouter/qwen/qwen3-32b:free"
-#     BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
-#     BENCHMARK_NAME: "cybermetric"
-#     BACKEND: "openrouter"
-
-benchmarks-test-cybermetric-ollama:
+benchmarks-test-cybermetric-openrouter:
   <<: *run_benchmarks
   variables:
-    MODEL_NAME: "ollama/qwen2.5:14b"
+    MODEL_NAME: "openrouter/qwen/qwen3-32b:free"
     BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
     BENCHMARK_NAME: "cybermetric"
-    BACKEND: "ollama"
+    BACKEND: "openrouter"
+
+benchmarks-test-cybermetric-openrouter:
+  <<: *run_benchmarks
+  variables:
+    MODEL_NAME: "openrouter/qwen/qwen3-32b:free"
+    BENCHMARK_FILE: "benchmarks/seceval/eval/datasets/questions-2.json"
+    BENCHMARK_NAME: "seceval"
+    BACKEND: "openrouter"
+
+benchmarks-test-cybermetric-openrouter:
+  <<: *run_benchmarks
+  variables:
+    MODEL_NAME: "openrouter/qwen/qwen3-32b:free"
+    BENCHMARK_FILE: "benchmarks/cti_bench/data/cti-mcq1.tsv"
+    BENCHMARK_NAME: "cti_bench"
+    BACKEND: "openrouter"
+
+
 
 # benchmarks-test-seceval-ollama:
 #   <<: *run_benchmarks
