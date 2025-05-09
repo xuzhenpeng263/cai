@@ -4,7 +4,7 @@ Benchmark Evaluation Script
 This script provides utilities to evaluate language models on cybersecurity-related multiple-choice and other question-answering benchmarks.
 
 Usage:
-    python benchmarks/eval.py --model MODEL_NAME --dataset_file INPUT_FILE --eval EVAL_TYPE --output_dir OUTPUT_DIR --backend BACKEND
+    python benchmarks/eval.py --model MODEL_NAME --dataset_file INPUT_FILE --eval EVAL_TYPE --backend BACKEND
 
 Arguments:
     -m, --model           Specify the model to evaluate (e.g., "gpt-4", "qwen2.5:14b", etc.)
@@ -19,7 +19,8 @@ Example:
      python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --eval seceval --backend ollama
      python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-mcq1.tsv --eval cti_bench --backend ollama
      python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-ate2.tsv --eval cti_bench --backend ollama
-    
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-rcm2.tsv --eval cti_bench --backend ollama
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-vsp2.tsv --eval cti_bench --backend ollama
      python benchmarks/eval.py --model qwen/qwen3-32b:free --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend openrouter
 
 Environment Variables:
@@ -58,7 +59,7 @@ def ask_model(question_obj, instruction, model, api_base, api_key=None, custom_l
     Calls the model with the question and choices, returns the extracted answer.
     """
     # Compose the prompt
-    prompt = instruction + "\n" + question_obj["Question"]
+    prompt =  question_obj["Question"] + "\n" + instruction
     if question_obj.get("Choices"):
         prompt += "\nChoices:\n" + question_obj["Choices"]
     try:
@@ -109,7 +110,8 @@ def load_dataset(dataset_file, eval_type):
                 # Handle three possible formats:
                 # Format 1: [URL, Question, Option A, Option B, Option C, Option D, Prompt, GT] (8 columns)
                 # Format 2: [URL, Platform, Description, Prompt, GT] (5 columns)
-                # Format 3: [URL, Text, Prompt] (3 columns) -- see cti-taa.tsv
+                # Format 3: [URL, Description, Prompt, GT] (4 columns)
+
                 if len(row) == 8:
                     # MCQ format
                     questions.append({
@@ -120,17 +122,18 @@ def load_dataset(dataset_file, eval_type):
                 elif len(row) == 5:
                     # ATE format (no choices, just open-ended)
                     questions.append({
-                        "Question": row[2],  # Description
+                        "Question": row[2] + row[3],  # Description + Prompt
                         "Choices": "",       # No choices for ATE
                         "Solution": row[4]   # GT
                     })
-                elif len(row) == 3:
-                    # TAA format (threat actor attribution, open-ended)
+                elif len(row) == 4:
+                    # RCM format: [URL, Description, Prompt, GT]
                     questions.append({
-                        "Question": row[1],  # Text
-                        "Choices": "",       # No choices
-                        "Solution": ""       # No GT in this format
+                        "Question": row[1] + row[2],  # Description + Prompt
+                        "Choices": "",       # No choices for RCM
+                        "Solution": row[3]   # GT
                     })
+
     return questions
 
 def run_evaluation(dataset, instruction, model, api_base=None, api_key=None, custom_llm_provider=None):
@@ -152,7 +155,7 @@ def run_evaluation(dataset, instruction, model, api_base=None, api_key=None, cus
         
     return results
 
-def compute_accuracy(results, benchmark_name):
+def compute_accuracy(results, benchmark_name, dataset_file=None):
     """
     Compute accuracy for a benchmark result set.
 
@@ -177,9 +180,16 @@ def compute_accuracy(results, benchmark_name):
                 if sol == pred_parsed:
                     correct_count += 1
                 total_count += 1
-        elif benchmark_name.lower() == "seceval":
-            
+        elif benchmark_name.lower() == "seceval":  
             pred_parsed = parse_result_seceval(pred)
+            if sol is not None and pred_parsed is not None:
+                if sol == pred_parsed:
+                    correct_count += 1
+                total_count += 1
+        elif benchmark_name.lower() == "cti_bench":
+            pred_parsed = parse_result_cti_bench(pred, dataset_file)
+            print(pred_parsed)
+            print(sol)
             if sol is not None and pred_parsed is not None:
                 if sol == pred_parsed:
                     correct_count += 1
@@ -192,6 +202,7 @@ def compute_accuracy(results, benchmark_name):
                 total_count += 1
     accuracy = (correct_count / total_count * 100) if total_count > 0 else 0.0
     return accuracy, correct_count, total_count
+
 def parse_result_seceval(result):
     # Expecting format: 'ANSWER: X', 'ANSWER: XY', or 'ANSWER: XYZ' (1, 2, or 3 letters A-D)
     if result is None:
@@ -208,6 +219,34 @@ def parse_result_cybermetric(result):
     match = re.search(r"ANSWER:?\s*([A-D])", result, re.IGNORECASE)
     if match:
         return match.group(1).upper()
+    return None
+
+def parse_result_cti_bench(result, dataset_file):
+    # Accepts answers like 'ANSWER: X', 'ANSWER: XY', or 'ANSWER: XYZ' (A-D), and also 'ANSWER: Txxxx' (MITRE ATT&CK IDs)
+    if result is None: 
+        return None
+    # Try to match CWE IDs (e.g., CWE-416, CWE-79, etc.)
+    if "cti-rcm" in dataset_file:
+        cwe_match = re.search(r"(CWE-\d+)", result, re.IGNORECASE)
+        if cwe_match:
+            return cwe_match.group(1).upper()
+    # Try to match A-D answers (1-3 letters)
+    if "cti-mcq" in dataset_file:
+        match = re.search(r"ANSWER:?\s*([A-D])", result, re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+    # Find all MITRE ATT&CK technique IDs (e.g., T1071, T1059, etc.) anywhere in the result
+    if "cti-ate" in dataset_file:
+        ids = re.findall(r"T\d{4}", result, re.IGNORECASE)
+        if ids:
+            # Return all found IDs as uppercase, comma-separated
+            return ", ".join([x.upper() for x in ids])
+    if "cti-vsp" in dataset_file:
+        # Try to match CVSS vector strings (e.g., CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)
+        cvss_match = re.search(r"(CVSS:3\.1/AV:[NALP]/AC:[LH]/PR:[NLH]/UI:[NR]/S:[UC]/C:[NLH]/I:[NLH]/A:[NLH])", result, re.IGNORECASE)
+        if cvss_match:
+            return cvss_match.group(1).upper()
+        return result.upper()
     return None
 
 def save_benchmark_results(
@@ -306,7 +345,23 @@ def main():
             args.dataset_file = "benchmarks/cybermetric/CyberMetric-2-v1.json"
         dataset = load_dataset(args.dataset_file, "cybermetric")
     elif args.eval == "cti_bench":
-        instruction = ""
+        if "ate" in args.dataset_file:
+            instruction = """
+            Return your answer in the MITRE ATT&CK technique ID format.
+            You could select more than one technique ID. Be brief and concise. 
+            Return your answer in this format: 'ANSWER: TXXXX' or 'ANSWER: TXXXX, TXXXX, TXXXX'
+            Remember they are just an example, the important is the format."""
+        elif "rcm" in args.dataset_file:
+           instruction = """ #CWE
+           Return CWE ID. 
+           Return your answer in this format: 'ANSWER: CWE-XXXX' (X are numbers)."""   
+        elif "mcq" in args.dataset_file:
+            instruction = """
+            Select the correct answer (A, B, C, or D) only.
+            Return your answer in this format: 'ANSWER: A'"""
+        elif "vsp" in args.dataset_file:
+            instruction = """
+            Return your answer in this CVSS format: 'ANSWER: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H'"""
         if args.dataset_file == "":
             args.dataset_file = "benchmarks/cti_bench/data/cti-mcq1.tsv"
         dataset = load_dataset(args.dataset_file, "cti_bench")
@@ -317,7 +372,7 @@ def main():
 
     print(result)
 
-    accuracy, correct_count, total_count = compute_accuracy(result, args.eval  )
+    accuracy, correct_count, total_count = compute_accuracy(result, args.eval, dataset_file=args.dataset_file)
     print(f"Accuracy: {accuracy:.2f}% ({correct_count}/{total_count})")
     
     save_benchmark_results(args.eval, model, args.dataset_file, start_time, end_time, len(dataset), correct_count, accuracy, total_count, result)
