@@ -9,7 +9,7 @@
   <<: *use_base_container
   script:
     - pip3 install -e .
-    - pip install litellm langchain transformers torch openai tqdm cvss
+    - pip install litellm langchain transformers torch openai tqdm cvss python-dotenv
     - echo "Checking environment variables..."
 
     - |
@@ -19,12 +19,30 @@
         fi
       done
     
+    # TODO: remove this in thefuture, this is a test
+    # Create .env at same level as .py executed 
+    - |
+      echo "Creating .env file..."
+      cat > benchmarks/.env << EOL
+      OLLAMA_API_BASE=${OLLAMA_API_BASE}
+      OPENROUTER_API_BASE=${OPENROUTER_API_BASE}
+      OPENAI_API_BASE=${OPENAI_API_BASE}
+      OPENAI_API_KEY=${OPENAI_API_KEY}
+      OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      MODEL_NAME=${MODEL_NAME}
+      BENCHMARK_FILE=${BENCHMARK_FILE}
+      BENCHMARK_NAME=${BENCHMARK_NAME}
+      BACKEND=${BACKEND}
+      EOL
+      echo ".env file created at benchmarks/.env"
+    ## end of removing this in thefuture
+
     #- python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name $MODEL_NAME --file_path $BENCHMARK_FILE
     - echo $OLLAMA_API_BASE
     - python3 benchmarks/eval.py --model $MODEL_NAME --dataset_file $BENCHMARK_FILE --eval $BENCHMARK_NAME --backend $BACKEND
     - pwd
     - ls -la benchmarks/outputs/$BENCHMARK_NAME/
-    # - curl http://localhost:8000/api/tags  # validate that ollama is running
+    - curl http://localhost:8000/api/tags 
   variables:
     OLLAMA_API_BASE: "http://localhost:8000"
     OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
