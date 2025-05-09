@@ -51,7 +51,7 @@ Output:
 ```
 #### 🔍 Examples
 
-Below are examples showing how to run different CTI Bench tests with the Qwen 2.5 14B model using Ollama as the backend:
+How to run different CTI Bench tests with the "llama/qwen2.5:14b" model using Ollama as the backend:
 
 ```bash
 python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend ollama
@@ -59,13 +59,13 @@ python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/c
 
 ```bash
 python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --eval seceval --backend ollama
-````
-```bash
-python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-mcq1.tsv --eval cti_bench --backend ollama
-````
-```bash
-python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-ate2.tsv --eval cti_bench --backend ollama
-````
-```bash
-python benchmarks/eval.py --model qwen/qwen3-32b:free --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend openrouter
 ```
+
+How to run different CTI Bench tests with the "qwen/qwen3-32b:free" model using Openrouter as the backend:
+
+```bash
+python benchmarks/eval.py --model qwen/qwen3-32b:free  --dataset_file benchmarks/cti_bench/data/cti-mcq1.tsv --eval cti_bench --backend openrouter
+````
+```bash
+python benchmarks/eval.py --model qwen/qwen3-32b:free  --dataset_file benchmarks/cti_bench/data/cti-ate2.tsv --eval cti_bench --backend openrouter
+````
