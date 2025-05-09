@@ -75,10 +75,10 @@
 #     BENCHMARK_NAME: "cti_bench"
 #     BACKEND: "openrouter"
 
-benchmarks-test-cybermetric-openrouter:
+benchmarks-test-cybermetric-ollama:
   <<: *run_benchmarks
   variables:
-    MODEL_NAME: "openrouter/qwen/qwen3-32b:free"
+    MODEL_NAME: "ollama/qwen2.5:14b"
     BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
     BENCHMARK_NAME: "cybermetric"
     BACKEND: "ollama"
