@@ -5,6 +5,9 @@ This allows reviewing conversations in a more readable format.
 
 Usage:
     JSONL_FILE_PATH="path/to/file.jsonl" REPLAY_DELAY="0.5" python3 tools/replay.py
+    
+    # Or using command line arguments:
+    python3 tools/replay.py --jsonl-file-path path/to/file.jsonl --replay-delay 0.5
 
 Usage with asciinema rec, generating a .cast file and then converting it to a gif:
     asciinema rec --command="JSONL_FILE_PATH=\"/workspace/caiextensions-memory/caiextensions/memory/it/htb/challenges/insomnia/cai_20250307_114836.jsonl\" REPLAY_DELAY=\"0.5\" python3 tools/replay.py" --overwrite
@@ -23,6 +26,7 @@ import json
 import os
 import sys
 import time
+import argparse
 from typing import Dict, List, Tuple
 
 # Add the parent directory to the path to import cai modules
@@ -306,15 +310,63 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
         sys.stdout.flush()
 
 
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Tool to convert JSONL files to a replay format that simulates the CLI output.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Using environment variables:
+  JSONL_FILE_PATH="path/to/file.jsonl" REPLAY_DELAY="0.5" python3 tools/replay.py
+  
+  # Using command line arguments:
+  python3 tools/replay.py --jsonl-file-path path/to/file.jsonl --replay-delay 0.5
+  
+  # Using positional argument (equivalent to --jsonl-file-path):
+  python3 tools/replay.py path/to/file.jsonl --replay-delay 0.5
+  
+  # With asciinema:
+  asciinema rec --command="python3 tools/replay.py path/to/file.jsonl" --overwrite
+"""
+    )
+    
+    parser.add_argument(
+        "jsonl_file", 
+        nargs="?", 
+        default=None,
+        help="Path to the JSONL file containing conversation history (positional argument)"
+    )
+    
+    parser.add_argument(
+        "--jsonl-file-path", 
+        type=str, 
+        help="Path to the JSONL file containing conversation history"
+    )
+    
+    parser.add_argument(
+        "--replay-delay", 
+        type=float, 
+        default=0.5,
+        help="Time in seconds to wait between actions (default: 0.5)"
+    )
+    
+    return parser.parse_args()
+
+
 def main():
     """Main function to process JSONL files and generate replay output."""
-    # Get environment variables
-    jsonl_file_path = os.environ.get("JSONL_FILE_PATH")
-    replay_delay = float(os.environ.get("REPLAY_DELAY", "0.5"))
+    # Parse command line arguments
+    args = parse_arguments()
     
-    # Validate environment variables
+    # Get environment variables or command line arguments
+    # First check for --jsonl-file-path, then positional argument, then environment variable
+    jsonl_file_path = args.jsonl_file_path or args.jsonl_file or os.environ.get("JSONL_FILE_PATH")
+    replay_delay = args.replay_delay if args.replay_delay is not None else float(os.environ.get("REPLAY_DELAY", "0.5"))
+    
+    # Validate required parameters
     if not jsonl_file_path:
-        print(color("Error: JSONL_FILE_PATH environment variable is required", 
+        print(color("Error: JSONL file path is required. Use a positional argument, --jsonl-file-path option, or set JSONL_FILE_PATH environment variable.", 
                     fg="red"))
         sys.exit(1)
     
@@ -345,8 +397,6 @@ def main():
 
         # Get token stats and cost from the JSONL file
         usage = get_token_stats(jsonl_file_path)
-
-        print(usage)
 
         # Display timing information if available (new format)
         if len(usage) > 4:
