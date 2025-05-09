@@ -70,7 +70,7 @@ benchmarks-test-cti_bench-openrouter:
   <<: *run_benchmarks
   variables:
     MODEL_NAME: "openrouter/qwen/qwen3-32b:free"
-    BENCHMARK_FILE: "benchmarks/dataset_cti_bench/cti-mcq1.tsv"
+    BENCHMARK_FILE: "benchmarks/utils/cti_bench_dataset/cti-mcq1.tsv"
     BENCHMARK_NAME: "cti_bench"
     BACKEND: "openrouter"
 
