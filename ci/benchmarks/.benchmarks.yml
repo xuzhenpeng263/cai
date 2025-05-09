@@ -18,24 +18,7 @@
           export $var="${!var}"          
         fi
       done
-    
-    # TODO: remove this in thefuture, this is a test
-    # Create .env at same level as .py executed 
-    - |
-      echo "Creating .env file..."
-      cat > benchmarks/.env << EOL
-      OLLAMA_API_BASE=${OLLAMA_API_BASE}
-      OPENROUTER_API_BASE=${OPENROUTER_API_BASE}
-      OPENAI_API_BASE=${OPENAI_API_BASE}
-      OPENAI_API_KEY=${OPENAI_API_KEY}
-      OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      MODEL_NAME=${MODEL_NAME}
-      BENCHMARK_FILE=${BENCHMARK_FILE}
-      BENCHMARK_NAME=${BENCHMARK_NAME}
-      BACKEND=${BACKEND}
-      EOL
-      echo ".env file created at benchmarks/.env"
-    ## end of removing this in thefuture
+
 
     #- python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name $MODEL_NAME --file_path $BENCHMARK_FILE
     - echo $OLLAMA_API_BASE
