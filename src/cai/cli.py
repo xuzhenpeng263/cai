@@ -215,7 +215,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
             agent.model.disable_rich_streaming = False  # Now True as the model handles streaming
         if hasattr(agent.model, 'suppress_final_output'):
             agent.model.suppress_final_output = True
-            
+
         # Set the agent name in the model for proper display in streaming panel
         if hasattr(agent.model, 'set_agent_name'):
             agent.model.set_agent_name(get_agent_short_name(agent))
@@ -224,9 +224,9 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
         try:
             # Start measuring user idle time
             start_idle_timer()
-            
+
             idle_start_time = time.time()
-            
+
             # Check if model has changed and update if needed
             current_model = os.getenv('CAI_MODEL', 'qwen2.5:14b')
             if current_model != last_model and hasattr(agent, 'model'):
@@ -234,7 +234,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 if hasattr(agent.model, 'model'):
                     agent.model.model = current_model
                     last_model = current_model
-            
+
             # Check if agent type has changed and recreate agent if needed
             current_agent_type = os.getenv('CAI_AGENT_TYPE', 'one_tool_agent')
             if current_agent_type != last_agent_type:
@@ -242,18 +242,18 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                     # Import is already at the top level
                     agent = get_agent_by_name(current_agent_type)
                     last_agent_type = current_agent_type
-                    
+
                     # Configure the new agent's model flags
                     if hasattr(agent, 'model'):
                         if hasattr(agent.model, 'disable_rich_streaming'):
                             agent.model.disable_rich_streaming = False  # Now False to let model handle streaming
                         if hasattr(agent.model, 'suppress_final_output'):
                             agent.model.suppress_final_output = True
-                            
+
                         # Apply current model to the new agent
                         if hasattr(agent.model, 'model'):
                             agent.model.model = current_model
-                            
+
                         # Set agent name in the model for streaming display
                         if hasattr(agent.model, 'set_agent_name'):
                             agent.model.set_agent_name(get_agent_short_name(agent))
@@ -269,11 +269,11 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 current_text
             )
             idle_time += time.time() - idle_start_time
-            
+
             # Stop measuring user idle time and start measuring active time
             stop_idle_timer()
             start_active_timer()
-           
+
         except KeyboardInterrupt:
             def format_time(seconds):
                 mins, secs = divmod(int(seconds), 60)
@@ -468,7 +468,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                         }
                         add_to_message_history(tool_msg)
             turn_count += 1
-            
+
             # Stop measuring active time and start measuring idle time again
             stop_active_timer()
             start_idle_timer()
@@ -500,7 +500,7 @@ def main():
 
     # Get the agent instance by name
     agent = get_agent_by_name(agent_type)
-    
+
     # Configure model flags to work well with CLI
     if hasattr(agent, 'model'):
         # Disable rich streaming in the model to avoid conflicts
