@@ -58,7 +58,7 @@ benchmarks-test-cybermetric-openrouter:
     BENCHMARK_NAME: "cybermetric"
     BACKEND: "openrouter"
 
-benchmarks-test-cybermetric-openrouter:
+benchmarks-test-seceval-openrouter:
   <<: *run_benchmarks
   variables:
     MODEL_NAME: "openrouter/qwen/qwen3-32b:free"
@@ -66,7 +66,7 @@ benchmarks-test-cybermetric-openrouter:
     BENCHMARK_NAME: "seceval"
     BACKEND: "openrouter"
 
-benchmarks-test-cybermetric-openrouter:
+benchmarks-test-cti_bench-openrouter:
   <<: *run_benchmarks
   variables:
     MODEL_NAME: "openrouter/qwen/qwen3-32b:free"
