@@ -22,8 +22,7 @@
     #- python3 benchmarks/cybermetric/CyberMetric_evaluator.py --model_name $MODEL_NAME --file_path $BENCHMARK_FILE
     - python3 benchmarks/eval.py --model $MODEL_NAME --dataset_file $BENCHMARK_FILE --eval $BENCHMARK_NAME --backend $BACKEND
     - pwd
-    - ls -la
-    - ls -la benchmarks/outputs/
+    - ls -la benchmarks/outputs/$BENCHMARK_NAME/
     # - curl http://localhost:8000/api/tags  # validate that ollama is running
   variables:
     OLLAMA_API_BASE: "http://localhost:8000"
@@ -40,25 +39,40 @@
     - if: $CI_COMMIT_BRANCH
       when: on_success
 
-# benchmarks-test-seceval:
+# # benchmarks-test-seceval:
+# #   <<: *run_benchmarks
+# #   variables:
+# #     OLLAMA_API_BASE: "http://localhost:8000"
+# #     OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
+# #     OPENAI_API_KEY: "fake-api-key"
+# #   script:
+# #     - pip3 install -e .
+# #     - pip install -r benchmarks/seceval/eval/requirements.txt
+# #     - python3 benchmarks/seceval/eval/eval.py --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --output_dir benchmarks/seceval/eval/outputs --backend ollama --models ollama/qwen2.5:14b
+
+# benchmarks-test-cybermetric-openrouter:
 #   <<: *run_benchmarks
 #   variables:
-#     OLLAMA_API_BASE: "http://localhost:8000"
-#     OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
-#     OPENAI_API_KEY: "fake-api-key"
-#   script:
-#     - pip3 install -e .
-#     - pip install -r benchmarks/seceval/eval/requirements.txt
-#     - python3 benchmarks/seceval/eval/eval.py --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --output_dir benchmarks/seceval/eval/outputs --backend ollama --models ollama/qwen2.5:14b
+#     MODEL_NAME: "openrouter/qwen/qwen3-32b:free"
+#     BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
+#     BENCHMARK_NAME: "cybermetric"
+#     BACKEND: "openrouter"
 
-benchmarks-test-cybermetric-openrouter:
+# benchmarks-test-cybermetric-ollama:
+#   <<: *run_benchmarks
+#   variables:
+#     MODEL_NAME: "ollama/qwen2.5:14b"
+#     BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
+#     BENCHMARK_NAME: "cybermetric"
+#     BACKEND: "ollama"
+
+benchmarks-test-seceval-ollama:
   <<: *run_benchmarks
   variables:
-    MODEL_NAME: "openrouter/qwen/qwen3-32b:free"
-    BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
-    BENCHMARK_NAME: "cybermetric"
-    BACKEND: "openrouter"
-
+    MODEL_NAME: "ollama/qwen2.5:14b"
+    BENCHMARK_FILE: "benchmarks/seceval/eval/datasets/questions-2.json"
+    BENCHMARK_NAME: "seceval"
+    BACKEND: "ollama"
 # benchmarks-test-cybermetric-openai:
 #   <<: *run_benchmarks
 #   variables:
