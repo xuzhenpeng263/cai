@@ -29,8 +29,8 @@
     OPENAI_API_BASE: "https://api.openai.com/v1"
   artifacts:
     paths:
-      - benchmarks/seceval/eval/outputs/
-      - benchmarks/cybermetric/outputs/
+      - benchmarks/outputs/
+      - benchmarks/cybermetric/outputs
     expire_in: 12 month
   tags:
     - p40
