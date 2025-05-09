@@ -26,7 +26,7 @@
     - ls -la benchmarks/outputs/$BENCHMARK_NAME/
     # - curl http://localhost:8000/api/tags  # validate that ollama is running
   variables:
-    OLLAMA_API_BASE: "http://localhost:8000/v1"
+    OLLAMA_API_BASE: "http://localhost:8000"
     OPENROUTER_API_BASE: "https://openrouter.ai/api/v1"
     OPENAI_API_BASE: "https://api.openai.com/v1"
   artifacts:
@@ -39,6 +39,18 @@
   rules:
     - if: $CI_COMMIT_BRANCH
       when: on_success
+
+
+
+benchmarks-test-cybermetric-ollama:
+  <<: *run_benchmarks
+  variables:
+    MODEL_NAME: "ollama/qwen2.5:14b"
+    BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
+    BENCHMARK_NAME: "cybermetric"
+    BACKEND: "ollama"
+    #OLLAMA_API_BASE: "http://localhost:8000"
+
 
 # # benchmarks-test-seceval:
 # #   <<: *run_benchmarks
@@ -75,14 +87,14 @@
 #     BENCHMARK_NAME: "cti_bench"
 #     BACKEND: "openrouter"
 
-benchmarks-test-cybermetric-ollama:
-  <<: *run_benchmarks
-  variables:
-    MODEL_NAME: "ollama/qwen2.5:14b"
-    BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
-    BENCHMARK_NAME: "cybermetric"
-    BACKEND: "ollama"
-    OLLAMA_API_BASE: "http://localhost:8000/v1"
+# benchmarks-test-cybermetric-ollama:
+#   <<: *run_benchmarks
+#   variables:
+#     MODEL_NAME: "openrouter/qwen/qwen3-32b:free"
+#     BENCHMARK_FILE: "benchmarks/cybermetric/CyberMetric-2-v1.json"
+#     BENCHMARK_NAME: "cybermetric"
+#     BACKEND: "ollama"
+#     OLLAMA_API_BASE: "http://localhost:8000/v1"
 
 # benchmarks-test-seceval-ollama:
 #   <<: *run_benchmarks
