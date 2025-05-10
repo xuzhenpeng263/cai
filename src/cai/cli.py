@@ -442,6 +442,13 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                         }
                     )
 
+            # Fix message list structure BEFORE sending to the model to prevent errors
+            try:
+                from cai.util import fix_message_list
+                history_context = fix_message_list(history_context)
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not preprocess message history: {e}[/yellow]")
+
             # Append the current user input as the last message in the list.
             conversation_input: list | str
             if history_context:
