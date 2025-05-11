@@ -1332,9 +1332,7 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
             border_style="red" if agent_name == "Reasoner Agent" else "blue",
             box=ROUNDED,
             padding=(1, 1),  # Increased padding for better appearance
-            title=("[bold]Reasoning Analysis[/bold]"
-                  if agent_name == "Reasoner Agent"
-                  else "[bold]Agent Interaction[/bold]"),
+            title="",
             title_align="left"
         )
     else:
@@ -1344,12 +1342,9 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
             border_style="red" if agent_name == "Reasoner Agent" else "blue",
             box=ROUNDED,
             padding=(0, 1),
-            title=("[bold]Reasoning Analysis[/bold]"
-                  if agent_name == "Reasoner Agent"
-                  else "[bold]Agent Interaction[/bold]"),
+            title="",
             title_align="left"
         )
-    
     #console.print("\n")
     console.print(panel)
     
@@ -1417,7 +1412,7 @@ def create_agent_streaming_context(agent_name, counter, model):
             border_style="blue",
             box=ROUNDED,
             padding=(0, 1),  
-            title="[bold]Agent Streaming Response[/bold]",
+            title="Stream",
             title_align="left",
             width=panel_width,
             expand=True 
@@ -1478,7 +1473,7 @@ def update_agent_streaming_content(context, text_delta):
             border_style="blue",
             box=ROUNDED,
             padding=(0, 1), 
-            title="[bold]Agent Streaming Response[/bold]",
+            title="Stream",
             title_align="left",
             width=context.get("panel_width", 100),
             expand=True
@@ -1588,7 +1583,7 @@ def finish_agent_streaming(context, final_stats=None):
             border_style="blue",
             box=ROUNDED,
             padding=(0, 1), 
-            title="[bold]Agent Streaming Response[/bold]",
+            title="Stream",
             title_align="left",
             width=context.get("panel_width", 100),
             expand=True
@@ -1744,13 +1739,13 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
                     
                 # Create panel title based on status
                 if status == "running":
-                    title = "[bold yellow]Tool Execution [Running][/bold yellow]"
+                    title = "[bold yellow]Running[/bold yellow]"
                 elif status == "completed":
-                    title = "[bold green]Tool Execution [Completed][/bold green]"
+                    title = "[bold green]Completed[/bold green]"
                 elif status == "error":
-                    title = "[bold red]Tool Execution [Error][/bold red]"
+                    title = "[bold red]Error[/bold red]"
                 elif status == "timeout":
-                    title = "[bold red]Tool Execution [Timeout][/bold red]"
+                    title = "[bold red]Timeout[/bold red]"
                 else:
                     title = "[bold blue]Tool Execution[/bold blue]"
                 
@@ -1833,17 +1828,17 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
             status = execution_info.get('status', 'completed')
             if status == "completed":
                 border_style = "green"
-                title = "[bold green]Tool Output [Completed][/bold green]"
+                title = f"[bold green]{tool_name}({args_str}) [Completed][/bold green]"
             elif status == "error":
                 border_style = "red"
-                title = "[bold red]Tool Output [Error][/bold red]"
+                title = f"[bold red]{tool_name}({args_str}) [Error][/bold red]"
             elif status == "timeout":
                 border_style = "red"
-                title = "[bold red]Tool Output [Timeout][/bold red]"
+                title = f"[bold red]{tool_name}({args_str}) [Timeout][/bold red]"
             else:
-                title = "[bold blue]Tool Output[/bold blue]"
+                title = f"[bold blue]{tool_name}({args_str})[/bold blue]"
         else:
-            title = "[bold blue]Tool Output[/bold blue]"
+            title = f"[bold blue]{tool_name}({args_str})[/bold blue]"
         
         # Create the panel
         panel = Panel(
