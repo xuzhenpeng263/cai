@@ -420,6 +420,10 @@ class OpenAIChatCompletionsModel(Model):
 
             # Only display the agent message if we haven't already shown the tool output
             if should_display_message:
+                # Ensure we're in non-streaming mode for proper markdown parsing
+                previous_stream_setting = os.environ.get('CAI_STREAM', 'false')
+                os.environ['CAI_STREAM'] = 'false'  # Force non-streaming mode for markdown parsing
+                
                 # Print the agent message for CLI display
                 cli_print_agent_messages(
                     agent_name=getattr(self, 'agent_name', 'Agent'),
@@ -444,6 +448,9 @@ class OpenAIChatCompletionsModel(Model):
                     tool_output=None,  # Don't pass tool output here, we're using direct display
                     suppress_empty=True  # Suppress empty panels
                 )
+                
+                # Restore previous streaming setting
+                os.environ['CAI_STREAM'] = previous_stream_setting
 
             # --- Add assistant tool call to message_history if present ---
             # If the response contains tool_calls, add them to message_history as assistant messages

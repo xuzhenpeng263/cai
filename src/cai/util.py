@@ -970,28 +970,116 @@ def parse_message_content(message):
     """
     Parse a message object to extract its textual content.
     Only processes messages that don't have tool calls.
+    Detects markdown code blocks and applies syntax highlighting in non-streaming mode.
+    Also formats other markdown elements like headers, lists, and text formatting.
     
     Args:
         message: Can be a string or a Message object with content attribute
         
     Returns:
-        str: The extracted content as a string
+        str or rich.console.Group: The extracted content as a string or as a rich Group with Syntax highlighting
     """
-    # Check if this is a duplicate print from OpenAIChatCompletionsModel    
-    # If message is already a string, return it
+    from rich.console import Group
+    from rich.syntax import Syntax
+    from rich.text import Text
+    from rich.markdown import Markdown
+    import re
+    
+    # Extract the raw content
+    raw_content = ""
+    
+    # If message is already a string, use it
     if isinstance(message, str):
-        return message
-        
+        raw_content = message
     # If message is a Message object with content attribute
-    if hasattr(message, 'content') and message.content is not None:
-        return message.content
-        
+    elif hasattr(message, 'content') and message.content is not None:
+        raw_content = message.content
     # If message is a dict with content key
-    if isinstance(message, dict) and 'content' in message:
-        return message['content']
-        
+    elif isinstance(message, dict) and 'content' in message:
+        raw_content = message['content']
     # If we can't extract content, convert to string
-    return str(message)
+    else:
+        raw_content = str(message)
+
+    # Check if streaming is enabled
+    streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+    
+    # Only apply markdown formatting in non-streaming mode
+    if not streaming_enabled and raw_content:
+        # Check if content contains markdown code blocks with improved regex
+        code_block_pattern = r'```(\w*)\s*([\s\S]*?)\s*```'
+        matches = re.findall(code_block_pattern, raw_content, re.DOTALL)
+        
+        if matches:
+            # Prepare to process markdown with code blocks highlighted
+            elements = []
+            last_end = 0
+            
+            # Find all code blocks with improved regex pattern
+            for match in re.finditer(r'```(\w*)\s*([\s\S]*?)\s*```', raw_content, re.DOTALL):
+                # Get text before the code block
+                start = match.start()
+                if start > last_end:
+                    text_before = raw_content[last_end:start]
+                    
+                    # Process markdown in the text before the code block
+                    if text_before.strip():
+                        md = Markdown(text_before)
+                        elements.append(md)
+                
+                # Process the code block
+                lang = match.group(1) or "text"
+                code = match.group(2)
+                
+                # Use the language mapping helper to get proper syntax highlighting
+                syntax_lang = get_language_from_code_block(lang)
+                
+                # Create syntax highlighted code
+                syntax = Syntax(
+                    code,
+                    syntax_lang,
+                    theme="monokai",
+                    line_numbers=True,
+                    word_wrap=True,
+                    background_color="#272822"
+                )
+                elements.append(syntax)
+                
+                last_end = match.end()
+            
+            # Add any remaining text after the last code block
+            if last_end < len(raw_content):
+                text_after = raw_content[last_end:]
+                
+                # Process markdown in the text after the code block
+                if text_after.strip():
+                    md = Markdown(text_after)
+                    elements.append(md)
+            
+            return Group(*elements)
+        else:
+            # If no code blocks, but still contains markdown, use Rich's markdown renderer
+            # Check for markdown elements (headers, lists, formatting)
+            has_markdown = any([
+                # Headers
+                re.search(r'^#{1,6}\s+\w+', raw_content, re.MULTILINE),
+                # Lists
+                re.search(r'^\s*[-*+]\s+\w+', raw_content, re.MULTILINE),
+                re.search(r'^\s*\d+\.\s+\w+', raw_content, re.MULTILINE),
+                # Bold/Italic
+                '**' in raw_content,
+                '*' in raw_content and not '**' in raw_content,
+                '__' in raw_content,
+                '_' in raw_content and not '__' in raw_content,
+                # Links
+                re.search(r'\[.+?\]\(.+?\)', raw_content)
+            ])
+            
+            if has_markdown:
+                return Group(Markdown(raw_content))
+    
+    # For streaming mode or no markdown, return the raw content
+    return raw_content
 
 def parse_message_tool_call(message, tool_output=None):
     """
@@ -1152,23 +1240,33 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
     if suppress_empty and not parsed_message and not tool_panels:
         return
         
+    # Check if parsed_message is empty or "null"
+    is_empty_message = (parsed_message == "null" or parsed_message == "" or 
+                       (isinstance(parsed_message, str) and not parsed_message.strip()))
+        
     # Also skip if the only message is "null" or empty
-    if parsed_message == "null" or parsed_message == "":
+    if is_empty_message:
         if suppress_empty and not tool_panels:
             return
+
+    # Check if we have Group content from markdown parsing
+    is_rich_content = False
+    from rich.console import Group
+    if isinstance(parsed_message, Group):
+        is_rich_content = True
 
     # Special handling for Reasoner Agent
     if agent_name == "Reasoner Agent":
         text.append(f"[{counter}] ", style="bold red")
         text.append(f"Agent: {agent_name} ", style="bold yellow")
-        if parsed_message:
+        if parsed_message and not is_rich_content:
             text.append(f">> {parsed_message} ", style="green")
         text.append(f"[{timestamp}", style="dim")
         if model:
             text.append(f" ({os.getenv('CAI_SUPPORT_MODEL')})",
                         style="bold blue")
         text.append("]", style="dim")
-    elif not parsed_message: 
+    elif is_empty_message: 
         # When parsed_message is empty, only include timestamp and model info
         text.append(f"Agent: {agent_name} ", style="bold green")
         text.append(f"[{timestamp}", style="dim")
@@ -1178,7 +1276,7 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
     else:
         text.append(f"[{counter}] ", style="bold cyan")
         text.append(f"Agent: {agent_name} ", style="bold green")
-        if parsed_message:
+        if parsed_message and not is_rich_content:
             text.append(f">> {parsed_message} ", style="yellow")
         text.append(f"[{timestamp}", style="dim")
         if model:
@@ -1206,19 +1304,52 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
             total_cost
         )
         # Only append token information if there is a parsed message
-        if parsed_message:
+        if parsed_message and not is_rich_content:
             text.append(tokens_text)
 
-    panel = Panel(
-        text,
-        border_style="red" if agent_name == "Reasoner Agent" else "blue",
-        box=ROUNDED,
-        padding=(0, 1),
-        title=("[bold]Reasoning Analysis[/bold]"
-               if agent_name == "Reasoner Agent"
-               else "[bold]Agent Interaction[/bold]"),
-        title_align="left"
-    )
+    # Create the panel content based on whether we have rich content or not
+    from rich.panel import Panel
+    from rich.console import Group
+    
+    if is_rich_content:
+        # For rich content, create a Group with the header, content, and tokens
+        panel_content = []
+        panel_content.append(text)
+        
+        # Add spacing between header and content for better readability
+        panel_content.append(Text("\n"))
+        
+        # Add the Group with highlighted content
+        panel_content.append(parsed_message)
+        
+        # Add token information at the bottom with proper spacing
+        if tokens_text:
+            panel_content.append(Text("\n"))
+            panel_content.append(tokens_text)
+        
+        panel = Panel(
+            Group(*panel_content),
+            border_style="red" if agent_name == "Reasoner Agent" else "blue",
+            box=ROUNDED,
+            padding=(1, 1),  # Increased padding for better appearance
+            title=("[bold]Reasoning Analysis[/bold]"
+                  if agent_name == "Reasoner Agent"
+                  else "[bold]Agent Interaction[/bold]"),
+            title_align="left"
+        )
+    else:
+        # For regular text content, use the original panel format
+        panel = Panel(
+            text,
+            border_style="red" if agent_name == "Reasoner Agent" else "blue",
+            box=ROUNDED,
+            padding=(0, 1),
+            title=("[bold]Reasoning Analysis[/bold]"
+                  if agent_name == "Reasoner Agent"
+                  else "[bold]Agent Interaction[/bold]"),
+            title_align="left"
+        )
+    
     #console.print("\n")
     console.print(panel)
     
@@ -1490,6 +1621,7 @@ def finish_agent_streaming(context, final_stats=None):
             
         return False
 
+
 def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execution_info=None, token_info=None, streaming=False):
     """
     Print a tool call output to the command line.
@@ -1510,6 +1642,10 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
     """
     # If it's an empty output, don't print anything except for streaming sessions
     if not output and not call_id and not streaming:
+        return
+    
+    # Skip early for execute_code tool in non-streaming mode
+    if tool_name == "execute_code" and not streaming:
         return
     
     # Set up global tracker for streaming sessions
@@ -1723,20 +1859,20 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         console.print(panel)
         
     except ImportError:
-        # Fall back to simple formatting if Rich is not available
-        _print_simple_tool_output(tool_name, args, output, execution_info, token_info)
+        pass
+
 
 # Helper function to create tool panel content
 def _create_tool_panel_content(tool_name, args, output, execution_info=None, token_info=None):
     """Create the header and content for a tool output panel."""
     from rich.text import Text
-    from rich.syntax import Syntax  # Import Syntax for highlighting
+    from rich.syntax import Syntax # Import Syntax for highlighting
     from rich.panel import Panel
     from rich.console import Group
     from rich.box import ROUNDED
     
-    # Format arguments for display
-    args_str = _format_tool_args(args)
+    # Format arguments for display, passing tool_name for specific formatting
+    args_str = _format_tool_args(args, tool_name=tool_name)
     
     # Get timing information
     timing_info, tool_time = _get_timing_info(execution_info)
@@ -1778,73 +1914,72 @@ def _create_tool_panel_content(tool_name, args, output, execution_info=None, tok
     
     # Determine if we need specialized content formatting
     group_content = [header]
-    
+
     # Special handling for execute_code tool
-    if tool_name == "execute_code":
-        try:
-            # Parse args to get language and code
-            language = "python"  # Default
-            code = ""
-            filename = "exploit"
+    if tool_name == "execute_code" and isinstance(args, dict):
+        command_type = args.get("command")
+        actual_code = args.get("code")
+        language = args.get("language", "python") # Default to python
+        
+        # For execute command, show code and output panels
+        if command_type == "execute" and actual_code:
+            # Ensure language is a string for Syntax
+            language_str = get_language_from_code_block(str(language))
             
-            if isinstance(args, dict):
-                language = args.get("language", "python")
-                code = args.get("code", "")
-                filename = args.get("filename", "exploit")
-            elif isinstance(args, str):
-                # Try to extract language and code from args string
-                import re
-                lang_match = re.search(r"language\s*=\s*['\"]?([a-zA-Z0-9+]+)['\"]?", args)
-                if lang_match:
-                    language = lang_match.group(1)
-                    
-            # Create syntax highlighted code panel if we have code
-            if code:
-                syntax = Syntax(code, language, theme="monokai", line_numbers=True,
-                               background_color="#272822", indent_guides=True)
-                code_panel = Panel(
-                    syntax,
-                    title=f"Code ({language})",
-                    border_style="cyan",
-                    title_align="left",
-                    box=ROUNDED,
-                    padding=(0, 1)
-                )
+            code_syntax = Syntax(actual_code, language_str, theme="monokai", 
+                                 line_numbers=True, background_color="#272822", 
+                                 indent_guides=True, word_wrap=True)
+            code_panel = Panel(
+                code_syntax,
+                title=f"Code ({language_str})",
+                border_style="cyan",
+                title_align="left",
+                box=ROUNDED,
+                padding=(0,1)
+            )
+            group_content.extend([Text("\n"), code_panel])
+
+            # Panel for the output of the executed code
+            if output:
+                # Try to highlight output as text, or specific language if known (e.g. json)
+                output_lang = "text"
+                try:
+                    json.loads(output) # Check if output is JSON
+                    output_lang = "json"
+                except json.JSONDecodeError:
+                    pass # Not JSON, keep as text
                 
-                # Create output panel with proper highlighting
-                output_syntax = Syntax(output, "text", theme="monokai", 
-                                       background_color="#272822")
+                output_syntax = Syntax(output, output_lang, theme="monokai", 
+                                       background_color="#272822", word_wrap=True)
                 output_panel = Panel(
                     output_syntax,
                     title="Output",
                     border_style="green",
                     title_align="left",
                     box=ROUNDED,
-                    padding=(0, 1)
+                    padding=(0,1)
                 )
-                
-                # Add code and output panels to content
-                group_content.append("\n")
-                group_content.append(code_panel)
-                group_content.append("\n")
-                group_content.append(output_panel)
-                
-                # Add token info if available
-                if token_content:
-                    group_content.append("\n")
-                    group_content.append(token_content)
-                
-                return header, Group(*group_content)
-        except Exception:
-            # Fallback if syntax highlighting fails
-            pass
-            
-    # Special handling for generic_linux_command
-    elif tool_name == "generic_linux_command" or "command" in tool_name:
+                group_content.extend([Text("\n"), output_panel])
+        # For other commands (like cat) or if no code, just show output if any
+        elif output: 
+            output_syntax = Syntax(output, "text", theme="monokai", 
+                                   background_color="#272822", word_wrap=True)
+            output_panel = Panel(
+                output_syntax,
+                title="Output",
+                border_style="green",
+                title_align="left",
+                box=ROUNDED,
+                padding=(0,1)
+            )
+            group_content.extend([Text("\n"), output_panel])
+
+    # Special handling for generic_linux_command or any command containing 'command'
+    elif "command" in tool_name.lower() or "shell" in tool_name.lower():
         try:
             # Highlight the output as bash
             output_syntax = Syntax(output, "bash", theme="monokai", 
-                                  background_color="#272822")
+                                  background_color="#272822", word_wrap=True)
             
             # Create a panel for the formatted output
             output_panel = Panel(
@@ -1857,34 +1992,20 @@ def _create_tool_panel_content(tool_name, args, output, execution_info=None, tok
             )
             
             # Assemble content with highlighted output
-            group_content.append("\n")
-            group_content.append(output_panel)
+            group_content.extend([Text("\n"), output_panel])
             
-            # Add token info if available
-            if token_content:
-                group_content.append("\n")
-                group_content.append(token_content)
-            
-            return header, Group(*group_content)
         except Exception:
-            # Fallback if syntax highlighting fails
-            pass
-    
-    # Default content assembly for other tools
-    content = Text()
-    content.append(header)
-    content.append("\n\n")
-    content.append(output)
+            # Fallback if syntax highlighting fails, just add raw output
+            group_content.extend([Text("\n"), Text(output)])
     
     # Add token info if available
     if token_content:
-        content.append("\n\n")
-        content.append(token_content)
+        group_content.extend([Text("\n"), token_content])
     
-    return header, content
+    return header, Group(*group_content)
 
 # Helper function to format tool arguments
-def _format_tool_args(args):
+def _format_tool_args(args, tool_name=None):
     """Format tool arguments as a clean string."""
     # If args is already a string, it might be pre-formatted or a simple arg string
     if isinstance(args, str):
@@ -1894,7 +2015,7 @@ def _format_tool_args(args):
 
                 parsed_dict = json.loads(args)
                 # Recursively call with the parsed dict for consistent formatting
-                return _format_tool_args(parsed_dict) 
+                return _format_tool_args(parsed_dict, tool_name=tool_name) 
             except json.JSONDecodeError:
                 # Not valid JSON, or not a dict; return as is
                 return args
@@ -1913,11 +2034,17 @@ def _format_tool_args(args):
             # Skip special flags
             if key in ["async_mode", "streaming"] and not value:
                 continue
+
+            value_str = str(value)
+
             # Format the value
             if isinstance(value, str):
-                arg_parts.append(f"{key}={value}")
+                # Truncate long string values that are not specifically handled above
+                if len(value_str) > 70 and key not in ["code", "args"]:
+                     value_str = value_str[:67] + "..."
+                arg_parts.append(f"{key}={value_str}")
             else:
-                arg_parts.append(f"{key}={value}")
+                arg_parts.append(f"{key}={value_str}")
         return ", ".join(arg_parts)
     else:
         return str(args)
@@ -1947,7 +2074,6 @@ def _get_timing_info(execution_info=None):
         timing_info.append(f"Tool: {format_time(tool_time)}")
     
     return timing_info, tool_time
-
 # Helper function to create token info display
 def _create_token_info_display(token_info=None):
     """Create token information display text."""
@@ -2280,3 +2406,69 @@ def print_message_history(messages, title="Message History"):
     console.print(panel)
     
     return len(messages)  # Return message count for convenience
+
+def get_language_from_code_block(lang_identifier):
+    """
+    Maps a language identifier from a markdown code block to a proper syntax 
+    highlighting language name. Handles common aliases and defaults.
+    
+    Args:
+        lang_identifier (str): Language identifier from markdown code block
+        
+    Returns:
+        str: Proper language name for syntax highlighting
+    """
+    # Convert to lowercase and strip whitespace
+    lang = lang_identifier.lower().strip() if lang_identifier else ""
+    
+    # Map common language aliases to their proper names
+    lang_map = {
+        # Empty strings or unknown
+        "": "text",
+        # Python variants
+        "py": "python",
+        "python3": "python",
+        # JavaScript variants
+        "js": "javascript",
+        "jsx": "jsx",
+        "ts": "typescript",
+        "tsx": "tsx",
+        "typescript": "typescript",
+        # Shell variants
+        "sh": "bash",
+        "shell": "bash",
+        "console": "bash",
+        "terminal": "bash",
+        # Web languages
+        "html": "html",
+        "css": "css",
+        "json": "json",
+        "xml": "xml",
+        "yml": "yaml",
+        "yaml": "yaml",
+        # C family
+        "c": "c",
+        "cpp": "cpp",
+        "c++": "cpp",
+        "csharp": "csharp",
+        "cs": "csharp",
+        "java": "java",
+        # Other common languages
+        "go": "go",
+        "golang": "go",
+        "ruby": "ruby",
+        "rb": "ruby",
+        "rust": "rust",
+        "php": "php",
+        "sql": "sql",
+        "diff": "diff",
+        "markdown": "markdown",
+        "md": "markdown",
+        # Default fallback
+        "text": "text",
+        "plaintext": "text",
+        "txt": "text",
+    }
+    
+    # Return mapped language or default to the original if not in map
+    return lang_map.get(lang, lang or "text")
