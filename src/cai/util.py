@@ -535,150 +535,154 @@ def fix_litellm_transcription_annotations():
 def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     """
     Sanitizes the message list passed as a parameter to align with the
-    OpenAI API message format, with special attention to tool call sequencing.
+    OpenAI API message format.
 
     Adjusts the message list to comply with the following rules:
-        1. Each assistant message with tool_calls must be immediately
-           followed by a tool message for each tool_call, in order.
-        2. If a tool message is missing or misplaced, a synthetic one is inserted.
-           Actual but misplaced/orphaned tool messages are discarded.
-        3. Empty user messages are removed. System messages get "" if content is None.
-        4. Content of tool messages is ensured to be a string.
-        5. Basic deduplication of consecutive identical messages is performed.
+        1. A tool call id appears no more than twice.
+        2. Each tool call id appears as a pair, and both messages
+            must have content.
+        3. If a tool call id appears alone (without a pair), it is removed.
+        4. There cannot be empty messages.
+        5. Each tool_use block (assistant with tool_calls) must be followed by
+           a tool_result block (tool message with matching tool_call_id).
 
     Args:
-        messages (List[dict]): List of message dictionaries.
+        messages (List[dict]): List of message dictionaries containing
+                            role, content, and optionally tool_calls or
+                            tool_call_id fields.
 
     Returns:
-        List[dict]: Sanitized list of messages.
+        List[dict]: Sanitized list of messages with invalid tool calls
+                   and empty messages removed.
     """
-    if not messages:
-        return []
-
-    # Pass 1: Initial filtering and basic content adjustments (same as before)
-    temp_messages = []
-    for msg in messages:
-        role = msg.get("role")
-        content = msg.get("content")
-        tool_calls = msg.get("tool_calls")
-        if role == "user" and (content is None or str(content).strip() == ""):
-            continue
-        if role == "system" and content is None:
-            msg["content"] = ""
-        if role == "assistant" and tool_calls and content == "":
-             msg["content"] = None
-        if role == "assistant" and tool_calls:
-            for tc_idx, tc in enumerate(tool_calls):
-                if not tc.get("id"):
-                    import uuid 
-                    generated_id = f"generated_id_{uuid.uuid4().hex[:8]}_{tc_idx}"
-                    tc["id"] = generated_id
-                    tc_name = tc.get("function", {}).get("name", "unknown")
-                    # print(color(f"Warning: Generated missing tool_call_id '{generated_id}' for tool '{tc_name}'. Input messages should have tool_call_ids.", "yellow"))
-        temp_messages.append(msg)
+    # Deep-copy to ensure we don't modify the input
+    sanitized_messages = []
     
-    if not temp_messages:
-        return []
-
-    # Pass 2: Enforce strict tool_call -> tool_result sequencing and remove orphans.
-    final_messages_pass2 = []
-    temp_msg_idx = 0
-    # Keep track of tool_call_ids that are expecting a result from the current assistant batch
-    expecting_results_for_ids = [] 
-
-    while temp_msg_idx < len(temp_messages):
-        current_msg = temp_messages[temp_msg_idx]
-
-        if current_msg.get("role") == "assistant" and current_msg.get("tool_calls"):
-            final_messages_pass2.append(current_msg) # Add assistant msg
-            temp_msg_idx += 1 # Consume assistant msg from temp_messages
+    # First pass - identify tool_call_ids from assistant messages and tool messages
+    tool_call_map = {}  # Map from tool_call_id to (assistant_idx, tool_idx)
+    
+    for i, msg in enumerate(messages):
+        # Skip empty messages (considered empty if 'content' is None or only whitespace)
+        if msg.get("role") in ["user", "system"] and (msg.get("content") is None or not str(msg.get("content", "")).strip()):
+            # Special case: if it's a system message, set content to empty string instead of skipping
+            if msg.get("role") == "system":
+                # Replace None with empty string
+                msg["content"] = ""
+                sanitized_messages.append(msg)
+            # Skip empty user messages entirely
+            continue
             
-            # This assistant message made tool calls, so we now expect their results.
-            expecting_results_for_ids = [(tc.get("id"), tc.get("function", {}).get("name", "unknown")) for tc in current_msg.get("tool_calls", [])]
-
-            for tc_id, tool_name in expecting_results_for_ids:
-                # Check if the *next* message in temp_messages is the correct tool result
-                if (temp_msg_idx < len(temp_messages) and 
-                    temp_messages[temp_msg_idx].get("role") == "tool" and 
-                    temp_messages[temp_msg_idx].get("tool_call_id") == tc_id):
-                    # Correct tool result found and is next, add it.
-                    final_messages_pass2.append(temp_messages[temp_msg_idx])
-                    temp_msg_idx += 1 # Consume this tool result from temp_messages
-                else:
-                    # Expected tool result is not immediately next or is missing.
-                    # Insert a synthetic one.
-                    synthetic_tool_msg = {
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "content": f"Synthetic placeholder: Result for {tool_name} (ID: {tc_id}). Original result missing or misplaced immediately after call."
-                    }
-                    final_messages_pass2.append(synthetic_tool_msg)
-            expecting_results_for_ids = [] # Reset expectations after processing this assistant's calls
-
-        elif current_msg.get("role") == "tool":
-            # A tool message is encountered. It should only be here if it was part of an expected sequence handled above.
-            # If `expecting_results_for_ids` is empty, it means we are not currently inside an assistant->tool sequence.
-            # Any tool message encountered now is either a duplicate of one already processed (if it matched an expectation)
-            # or it's orphaned/misplaced. We discard it to prevent sequence errors.
-            # The previous block (assistant with tool_calls) would have consumed this tool message if it was correctly placed.
-            # So, if we reach this `elif` for a "tool" message, it means it was NOT consumed as an expected result.
-            # print(color(f"Warning: Discarding tool message (ID: {current_msg.get('tool_call_id')}) as it was not an expected immediate result.", "yellow"))
-            temp_msg_idx += 1 # Consume (discard) this tool message from temp_messages
+        # Add valid messages to our sanitized list first
+        sanitized_messages.append(msg)
         
-        else: # User, System, or Assistant (text-only, no tool_calls processed in this iteration)
-            final_messages_pass2.append(current_msg)
-            temp_msg_idx += 1
-            expecting_results_for_ids = [] # Text-only assistant resets expectation of tool results.
-
-    # Pass 3: Content normalization (ensure required content fields are present and appropriately typed)
-    # ... (This part remains the same as your existing Pass 3)
-    for msg in final_messages_pass2:
-        role = msg.get("role")
-        content = msg.get("content")
-        tool_calls = msg.get("tool_calls")
-
-        if role == "assistant":
-            if tool_calls and content is None:
-                if msg.get("content") == "": msg["content"] = None
-            elif not tool_calls and content is None:
-                msg["content"] = ""
-        elif role == "tool":
-            if content is None:
-                msg["content"] = f"No output from tool {msg.get('tool_call_id', 'unknown_id')}"
-            elif not isinstance(content, str):
-                 msg["content"] = str(content) 
-        elif role in ["user", "system"]:
-            if content is None:
-                msg["content"] = ""
-            elif isinstance(content, list):
-                for part_idx, part in enumerate(content):
-                    if isinstance(part, dict) and part.get("type") == "text" and part.get("text") is None:
-                        content[part_idx]["text"] = ""
-
-    # Pass 4: Basic deduplication of consecutive identical messages (remains the same)
-    if not final_messages_pass2:
-        return []
-    deduplicated_messages = [final_messages_pass2[0]]
-    for i in range(1, len(final_messages_pass2)):
-        prev_msg = deduplicated_messages[-1]
-        curr_msg = final_messages_pass2[i]
-        is_duplicate = False
-        if prev_msg.get("role") == curr_msg.get("role"):
-            if curr_msg.get("role") == "tool":
-                if prev_msg.get("tool_call_id") == curr_msg.get("tool_call_id") and \
-                   prev_msg.get("content") == curr_msg.get("content"):
-                    is_duplicate = True
-            elif curr_msg.get("role") == "assistant" and curr_msg.get("tool_calls"):
-                if (prev_msg.get("role") == "assistant" and prev_msg.get("tool_calls") and 
-                    prev_msg.get("tool_calls") == curr_msg.get("tool_calls") and
-                    prev_msg.get("content") == curr_msg.get("content")):
-                    is_duplicate = True
-            elif prev_msg.get("content") == curr_msg.get("content") and not curr_msg.get("tool_calls") and not prev_msg.get("tool_calls"):
-                is_duplicate = True
-        if not is_duplicate:
-            deduplicated_messages.append(curr_msg)
+        # Now track tool calls and tool messages for pairing 
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                if tc.get("id"):
+                    tool_id = tc.get("id")
+                    if tool_id not in tool_call_map:
+                        tool_call_map[tool_id] = {"assistant_idx": len(sanitized_messages) - 1, "tool_idx": None}
+        
+        if msg.get("role") == "tool" and msg.get("tool_call_id"):
+            tool_id = msg.get("tool_call_id")
+            if tool_id in tool_call_map:
+                tool_call_map[tool_id]["tool_idx"] = len(sanitized_messages) - 1
+            else:
+                # Tool response without a matching tool call - create a synthetic pair
+                # by adding a dummy assistant message with a tool_call
+                assistant_msg = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{
+                        "id": tool_id,
+                        "type": "function",
+                        "function": {
+                            "name": "unknown_function",
+                            "arguments": "{}"
+                        }
+                    }]
+                }
+                # Insert the assistant message *before* the tool message
+                sanitized_messages.insert(len(sanitized_messages) - 1, assistant_msg)
+                # Update mapping
+                tool_call_map[tool_id] = {"assistant_idx": len(sanitized_messages) - 2, "tool_idx": len(sanitized_messages) - 1}
+    
+    # Final validation - ensure all tool calls have responses
+    for tool_id, indices in list(tool_call_map.items()):
+        if indices["tool_idx"] is None:
+            # Tool call without a response - create a synthetic tool message
+            assistant_idx = indices["assistant_idx"]
+            assistant_msg = sanitized_messages[assistant_idx]
             
-    return deduplicated_messages
+            # Find the relevant tool call
+            tool_name = "unknown_function"
+            for tc in assistant_msg["tool_calls"]:
+                if tc.get("id") == tool_id:
+                    if tc.get("function") and tc["function"].get("name"):
+                        tool_name = tc["function"]["name"]
+                    break
+            
+            # Create an automatic tool response message
+            tool_msg = {
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": f"Auto-generated response for {tool_name}"
+            }
+            
+            # Insert immediately after the assistant message
+            if assistant_idx + 1 < len(sanitized_messages):
+                # Insert at the position after assistant
+                sanitized_messages.insert(assistant_idx + 1, tool_msg)
+            else:
+                # Just append if we're at the end
+                sanitized_messages.append(tool_msg)
+            
+            # Update the map to note that this tool call now has a response
+            tool_call_map[tool_id]["tool_idx"] = assistant_idx + 1
+    
+    # Ensure messages have non-null content (required by some providers)
+    for msg in sanitized_messages:
+        if msg.get("role") != "tool" and msg.get("content") is None and not msg.get("tool_calls"):
+            msg["content"] = ""
+            
+        # For tool messages, ensure content is never null
+        if msg.get("role") == "tool" and msg.get("content") is None:
+            msg["content"] = f"Tool response for {msg.get('tool_call_id', 'unknown')}"
+    
+    # Special case for Claude: ensure strict alternating pattern between assistant tool_calls and tool results
+    # If multiple consecutive assistant messages with tool_calls exist, interleave them with tool responses
+    i = 0
+    while i < len(sanitized_messages) - 1:
+        current_msg = sanitized_messages[i]
+        next_msg = sanitized_messages[i + 1]
+        
+        # When current message is assistant with tool_calls and next message is NOT a tool response
+        if (current_msg.get("role") == "assistant" and 
+            current_msg.get("tool_calls") and 
+            (next_msg.get("role") != "tool" or not next_msg.get("tool_call_id"))):
+            
+            # Get the first tool call ID
+            tool_id = current_msg["tool_calls"][0].get("id", "unknown")
+            tool_name = "unknown_function"
+            if current_msg["tool_calls"][0].get("function"):
+                tool_name = current_msg["tool_calls"][0]["function"].get("name", "unknown_function")
+            
+            # Create a tool result message
+            tool_msg = {
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": f"Auto-generated response for {tool_name}"
+            }
+            
+            # Insert the tool message after the current assistant message
+            sanitized_messages.insert(i + 1, tool_msg)
+            
+            # Skip over the newly inserted message
+            i += 2
+        else:
+            i += 1
+    
+    return sanitized_messages
 
 def cli_print_tool_call(tool_name="", args="", output="", prefix="  "):
     """Print a tool call with pretty formatting"""
@@ -1538,21 +1542,7 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
                 else:
                     # Create a new live panel
                     console = Console(theme=theme)
-                    
-                    # Set refresh rate - lower for generic_linux_command
-                    refresh_rate = 4  # Default refresh rate
-                    
-                    # Override the refresh rate for specific tools
-                    if tool_name == "generic_linux_command":
-                        refresh_rate = 2  # Lower refresh rate for terminal commands
-                    
-                    # Custom refresh rate from execution_info takes precedence
-                    if execution_info and "refresh_rate" in execution_info:
-                        refresh_rate = execution_info.get("refresh_rate")
-                    
-                    # Create live panel with the appropriate refresh rate
-                    live = Live(panel, console=console, refresh_per_second=refresh_rate, auto_refresh=True)
-                    
+                    live = Live(panel, console=console, refresh_per_second=4, auto_refresh=True)
                     # Start and store the live panel
                     live.start()
                     _LIVE_STREAMING_PANELS[call_id] = live
@@ -1623,9 +1613,6 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
 def _create_tool_panel_content(tool_name, args, output, execution_info=None, token_info=None):
     """Create the header and content for a tool output panel."""
     from rich.text import Text
-    from rich.panel import Panel
-    from rich.box import ROUNDED
-    from rich.console import Group
     
     # Format arguments for display
     args_str = _format_tool_args(args)
@@ -1668,131 +1655,6 @@ def _create_tool_panel_content(tool_name, args, output, execution_info=None, tok
     # Create token information if available
     token_content = _create_token_info_display(token_info)
     
-    # Prepare the content for the panel
-    group_content = [header, Text("\n\n")]
-    
-    # Calculate title width for simplified display option
-    title_width = len(header.plain)
-    max_title_width = 100  # Maximum width before simplifying display
-    
-    # Extract filtered args for special tool displays
-    filtered_args = {}
-    if isinstance(args, dict):
-        filtered_args = args
-    else:
-        try:
-            # Try to parse the args as JSON if it's a string
-            import json
-            if isinstance(args, str) and args.strip().startswith('{'):
-                filtered_args = json.loads(args)
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
-    
-    # Special handling for execute_code tool
-    if tool_name == "execute_code" and "language" in filtered_args:
-        try:
-            from rich.syntax import Syntax  # pylint: disable=import-outside-toplevel,import-error # noqa: E402,E501
-            
-            language = filtered_args.get("language", "python")
-            code = filtered_args.get("code", "")
-            
-            # Create syntax highlighted code panel
-            syntax = Syntax(code, language, theme="monokai", line_numbers=True,
-                           background_color="#272822", indent_guides=True)
-            code_panel = Panel(
-                syntax,
-                title="Code",
-                border_style="arrow", 
-                title_align="left",
-                box=ROUNDED,
-                padding=(1, 2)
-            )
-            
-            # Create output panel
-            output_panel = Panel(
-                Text(output, style="yellow"),
-                title="Output",
-                border_style="border",
-                title_align="left", 
-                box=ROUNDED,
-                padding=(1, 2)
-            )
-            
-            # Don't show code in arguments for execute_code tool
-            if title_width > max_title_width:
-                # Just show the tool name without the code in args
-                simplified_text = Text()
-                simplified_text.append(f"{tool_name}(", style="bold cyan")
-                simplified_text.append("...", style="yellow")
-                simplified_text.append(")", style="bold cyan")
-                
-                # Show timeout and filename in the simplified display
-                timeout = filtered_args.get("timeout", 100)
-                filename = filtered_args.get("filename", "exploit")
-                
-                # Format the simplified timing display
-                total_elapsed = "N/A"
-                tool_elapsed = "N/A"
-                if timing_info:
-                    for info in timing_info:
-                        if info.startswith("Total:"):
-                            total_elapsed = info.replace("Total: ", "")
-                        elif info.startswith("Tool:"):
-                            tool_elapsed = info.replace("Tool: ", "")
-                
-                simplified_text.append(
-                    f" [File: {filename} | Timeout: {timeout}s | "
-                    f"Total: {total_elapsed} | Tool: {tool_elapsed}]",
-                    style="bold magenta")
-                
-                group_content[0] = simplified_text
-            
-            # Add the code and output panels
-            group_content.extend([
-                code_panel,
-                output_panel
-            ])
-            
-            # Add token info if available
-            if token_content:
-                group_content.append(token_content)
-                
-            # Create the full content
-            content = Group(*group_content)
-            return header, content
-            
-        except Exception as e:  # pylint: disable=broad-exception-caught # noqa: E722,E501
-            # Fallback if syntax highlighting fails
-            # Just continue with standard output display
-            pass
-    
-    # Special handling for generic_linux_command tool in bash output
-    elif tool_name == "generic_linux_command":
-        try:
-            from rich.syntax import Syntax  # pylint: disable=import-outside-toplevel,import-error # noqa: E402,E501
-            
-            # Create a syntax highlighted bash output
-            bash_syntax = Syntax(output, "bash", theme="monokai", 
-                              background_color="#272822", word_wrap=True)
-            
-            # Add the syntax highlighted output
-            group_content.append(bash_syntax)
-            
-            # Add token info if available
-            if token_content:
-                group_content.append(Text("\n"))
-                group_content.append(token_content)
-                
-            # Create the full content
-            content = Group(*group_content)
-            return header, content
-            
-        except Exception as e:  # pylint: disable=broad-exception-caught # noqa: E722,E501
-            # Fallback if syntax highlighting fails
-            # Just continue with standard output display
-            pass
-    
-    # Standard output display for other tools
     # Assemble the full content
     content = Text()
     content.append(header)
@@ -2037,31 +1899,13 @@ def start_tool_streaming(tool_name, args, call_id=None):
         if current_time - v.get('timestamp', 0) < 30  # Keep entries from last 30 seconds
     }
     
-    # Custom starting message for generic_linux_command
-    initial_output = "Starting tool execution..."
-    tool_specific_info = {}
-    
-    # Special handling for generic_linux_command - show command being executed
-    if tool_name == "generic_linux_command":
-        # Extract the command being executed for display
-        if isinstance(args, str):
-            cmd_display = args
-        else:
-            # If it's a dictionary, try to combine command and args
-            command_val = args.get("command", "")
-            args_val = args.get("args", "")
-            cmd_display = f"{command_val} {args_val}".strip()
-        
-        initial_output = f"Executing: {cmd_display}\n\nWaiting for output..."
-        tool_specific_info = {"refresh_rate": 2}  # Lower refresh rate for terminal output
-    
     # Show initial message with "Starting..." output
     cli_print_tool_output(
         tool_name=tool_name,
         args=args,
-        output=initial_output,
+        output="Starting tool execution...",
         call_id=call_id,
-        execution_info={"status": "running", "start_time": time.time(), **tool_specific_info},
+        execution_info={"status": "running", "start_time": time.time()},
         streaming=True
     )
     
@@ -2138,43 +1982,3 @@ def finish_tool_streaming(tool_name, args, output, call_id, execution_info=None,
     # Mark the streaming session as complete
     if hasattr(cli_print_tool_output, '_streaming_sessions') and call_id in cli_print_tool_output._streaming_sessions:
         cli_print_tool_output._streaming_sessions[call_id]['is_complete'] = True
-
-# Function to add a message to history if it's not a duplicate
-def add_to_message_history(msg):
-    """Add a message to history with refined deduplication logic."""
-    if not message_history:
-        message_history.append(msg)
-        return
-
-    is_duplicate = False
-    last_msg = message_history[-1]
-
-    # General check for exact same message object or deep equality with the last one
-    if msg == last_msg:
-        is_duplicate = True
-    else:
-        current_role = msg.get("role")
-        last_role = last_msg.get("role")
-
-        if current_role == last_role:
-            if current_role in ["system", "user"]:
-                if msg.get("content") == last_msg.get("content"):
-                    is_duplicate = True
-            elif current_role == "assistant":
-                if msg.get("tool_calls") and last_msg.get("tool_calls"):
-                    # Compare entire tool_calls structure and content
-                    if (msg.get("tool_calls") == last_msg.get("tool_calls") and
-                            msg.get("content") == last_msg.get("content")):
-                        is_duplicate = True
-                elif not msg.get("tool_calls") and not last_msg.get("tool_calls"):
-                    # Assistant text messages
-                    if msg.get("content") == last_msg.get("content"):
-                        is_duplicate = True
-                # If one has tool_calls and the other doesn't, they are not duplicates
-            elif current_role == "tool":
-                if (msg.get("tool_call_id") == last_msg.get("tool_call_id") and
-                        msg.get("content") == last_msg.get("content")):
-                    is_duplicate = True
-
-    if not is_duplicate:
-        message_history.append(msg)

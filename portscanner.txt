@@ -1,0 +1,63 @@
+package main
+
+import (
+	"fmt"
+	"net"
+	"sync"
+	"time"
+)
+
+func main() {
+	target := "192.168.1.1"
+	fmt.Printf("Escaneando puertos en %s...\n", target)
+	
+	var wg sync.WaitGroup
+	
+	// Semáforo para limitar la cantidad de conexiones concurrentes
+	// y evitar sobrecargar la red
+	sem := make(chan struct{}, 100)
+	
+	// Variable para almacenar los puertos abiertos con un mutex para
+	// evitar condiciones de carrera
+	var openPorts []int
+	var mutex sync.Mutex
+	
+	startTime := time.Now()
+	
+	// Escanea los primeros 1024 puertos (los más comunes)
+	for port := 1; port <= 1024; port++ {
+		wg.Add(1)
+		sem <- struct{}{} // Adquirir semáforo
+		
+		go func(p int) {
+			defer wg.Done()
+			defer func() { <-sem }() // Liberar semáforo
+			
+			address := fmt.Sprintf("%s:%d", target, p)
+			conn, err := net.DialTimeout("tcp", address, 500*time.Millisecond)
+			
+			if err == nil {
+				mutex.Lock()
+				openPorts = append(openPorts, p)
+				mutex.Unlock()
+				conn.Close()
+			}
+		}(port)
+	}
+	
+	// Esperar a que terminen todas las goroutines
+	wg.Wait()
+	
+	// Ordenar e imprimir los resultados
+	fmt.Printf("\nEscaneo completado en %s\n", time.Since(startTime))
+	fmt.Printf("Puertos abiertos en %s:\n", target)
+	
+	if len(openPorts) == 0 {
+		fmt.Println("No se encontraron puertos abiertos")
+	} else {
+		for _, port := range openPorts {
+			fmt.Printf("- Puerto %d: abierto\n", port)
+		}
+		fmt.Printf("\nTotal de puertos abiertos: %d\n", len(openPorts))
+	}
+}
