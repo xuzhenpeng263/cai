@@ -1433,10 +1433,17 @@ class OpenAIChatCompletionsModel(Model):
         if tracing.include_data():
             span.span_data.input = converted_messages
 
-        # Ensure message list has correct structure regardless of error condition
+        # IMPORTANT: Always sanitize the message list to prevent tool call errors
+        # This is critical to fix common errors with tool/assistant sequences
         try:
             from cai.util import fix_message_list
+            prev_length = len(converted_messages)
             converted_messages = fix_message_list(converted_messages)
+            new_length = len(converted_messages)
+            
+            # Log if the message list was changed significantly
+            if new_length != prev_length:
+                logger.debug(f"Message list was fixed: {prev_length} -> {new_length} messages")
         except Exception as e:
             logger.warning(f"Failed to fix message list: {e}")
 
@@ -1623,15 +1630,49 @@ class OpenAIChatCompletionsModel(Model):
                         
             elif ("An assistant message with 'tool_calls'" in str(e) or
                 "`tool_use` blocks must be followed by a user message with `tool_result`" in str(e) or  # noqa: E501 # pylint: disable=C0301
-                "An assistant message with 'tool_calls' must be followed by tool messages" in str(e)):  # Añadir esta condición
+                "An assistant message with 'tool_calls' must be followed by tool messages" in str(e) or
+                "messages with role 'tool' must be a response to a preceeding message with 'tool_calls'" in str(e)):
                 print(f"Error: {str(e)}")
+                
+                # Use the pretty message history printer instead of the simple loop
+                try:
+                    from cai.util import print_message_history
+                    print("\nCurrent message sequence causing the error:")
+                    print_message_history(kwargs["messages"], title="Message Sequence Error")
+                except ImportError:
+                    # Fall back to simple printing if the function isn't available
+                    print("\nCurrent message sequence causing the error:")
+                    for i, msg in enumerate(kwargs["messages"]):
+                        role = msg.get("role", "unknown")
+                        content_type = (
+                            "text" if isinstance(msg.get("content"), str) else 
+                            "list" if isinstance(msg.get("content"), list) else 
+                            "None" if msg.get("content") is None else 
+                            type(msg.get("content")).__name__
+                        )
+                        tool_calls = "with tool_calls" if msg.get("tool_calls") else ""
+                        tool_call_id = f", tool_call_id: {msg.get('tool_call_id')}" if msg.get("tool_call_id") else ""
+                        
+                        print(f"  [{i}] {role}{tool_call_id} (content: {content_type}) {tool_calls}")
+                
                 # NOTE: EDGE CASE: Report Agent CTRL C error
                 #
                 # This fix CTRL-C error when message list is incomplete
                 # When a tool is not finished but the LLM generates a tool call
                 try:
                     from cai.util import fix_message_list
-                    kwargs["messages"] = fix_message_list(kwargs["messages"])
+                    print("Attempting to fix message sequence...")
+                    fixed_messages = fix_message_list(kwargs["messages"])
+                    
+                    # Show the fixed messages if they're different
+                    if fixed_messages != kwargs["messages"]:
+                        try:
+                            from cai.util import print_message_history
+                            print_message_history(fixed_messages, title="Fixed Message Sequence")
+                        except ImportError:
+                            print("Messages fixed successfully.")
+                            
+                    kwargs["messages"] = fixed_messages
                 except Exception as fix_error:
                     print(f"Failed to fix message sequence: {fix_error}")
                 
@@ -2446,6 +2487,41 @@ class _Converter:
                 
                 # Continue with normal processing
                 flush_assistant_message()
+                
+                # CRITICAL: Verify this tool message has a matching assistant message before adding it
+                # Find if there's any assistant message with a tool call matching this ID
+                has_matching_assistant_message = False
+                for msg in result:
+                    if (
+                        msg.get("role") == "assistant" and 
+                        msg.get("tool_calls") and 
+                        any(tc.get("id") == call_id for tc in msg.get("tool_calls", []))
+                    ):
+                        has_matching_assistant_message = True
+                        break
+                
+                # If no matching assistant message, create one
+                if not has_matching_assistant_message:
+                    # Create a synthetic assistant message with this tool call
+                    asst_msg = {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": call_id,
+                                "type": "function",
+                                "function": {
+                                    "name": tool_name,
+                                    "arguments": "{}"  # Use empty object as default arguments
+                                }
+                            }
+                        ]
+                    }
+                    # Add to result list
+                    result.append(asst_msg)
+                    logger.debug(f"Created synthetic assistant message for tool call {call_id}")
+                
+                # Now add the tool message
                 msg: ChatCompletionToolMessageParam = {
                     "role": "tool",
                     "tool_call_id": func_output["call_id"],

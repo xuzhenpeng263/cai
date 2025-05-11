@@ -490,14 +490,85 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
             else:
                 # Use non-streamed response
                 response = asyncio.run(Runner.run(agent, conversation_input))
+                
+                # Process the response items
                 for item in response.new_items:
+                    # Handle tool call output items (tool results)
                     if isinstance(item, ToolCallOutputItem):
+                        # First, ensure there's a corresponding assistant message with tool_calls
+                        # before adding the tool response to prevent the OpenAI error
+                        assistant_with_tool_call_exists = False
+                        tool_call_id = item.raw_item["call_id"]
+                        
+                        for msg in message_history:
+                            if (msg.get("role") == "assistant" and 
+                                msg.get("tool_calls") and 
+                                any(tc.get("id") == tool_call_id for tc in msg.get("tool_calls", []))):
+                                assistant_with_tool_call_exists = True
+                                break
+                        
+                        # If no matching assistant message exists, create one first
+                        if not assistant_with_tool_call_exists:
+                            tool_call_msg = {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [{
+                                    "id": tool_call_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": "unknown_function",
+                                        "arguments": "{}"
+                                    }
+                                }]
+                            }
+                            add_to_message_history(tool_call_msg)
+                        
+                        # Now add the tool response
                         tool_msg = {
                             "role": "tool",
-                            "tool_call_id": item.raw_item["call_id"],  # Use consistent format with streaming
+                            "tool_call_id": tool_call_id,
                             "content": item.output,
                         }
                         add_to_message_history(tool_msg)
+                
+                # Make sure that assistant messages with tool calls are also added to message_history
+                # This is especially important for non-streaming mode
+                if hasattr(agent, 'model'):
+                    # Access the _Converter directly from the OpenAIChatCompletionsModel implementation
+                    from cai.sdk.agents.models.openai_chatcompletions import _Converter
+                    
+                    # Check if recent_tool_calls exists and process them
+                    if hasattr(_Converter, 'recent_tool_calls'):
+                        for call_id, call_info in _Converter.recent_tool_calls.items():
+                            # Only process new tool calls that haven't been added to message history yet
+                            tool_call_found = False
+                            for msg in message_history:
+                                if (msg.get("role") == "assistant" and 
+                                    msg.get("tool_calls") and 
+                                    any(tc.get("id") == call_id for tc in msg.get("tool_calls", []))):
+                                    tool_call_found = True
+                                    break
+                                    
+                            if not tool_call_found:
+                                # Add the assistant message with the tool call
+                                tool_call_msg = {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [{
+                                        "id": call_id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": call_info.get('name', ''),
+                                            "arguments": call_info.get('arguments', '{}')
+                                        }
+                                    }]
+                                }
+                                add_to_message_history(tool_call_msg)
+                                
+                # Final validation to ensure message history follows OpenAI's requirements
+                # Ensure every tool message has a preceding assistant message with matching tool_call_id
+                from cai.util import fix_message_list
+                message_history[:] = fix_message_list(message_history)
             turn_count += 1
 
             # Stop measuring active time and start measuring idle time again

@@ -26,6 +26,7 @@ from rich.syntax import Syntax  # Import Syntax for highlighting
 from rich.panel import Panel
 from rich.console import Group
 from rich.box import ROUNDED
+from rich.table import Table
 
 # Global timing variables for tracking active and idle time
 _active_timer_start = None
@@ -549,6 +550,8 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
         4. There cannot be empty messages.
         5. Each tool_use block (assistant with tool_calls) must be followed by
            a tool_result block (tool message with matching tool_call_id).
+        6. Each 'tool' message must be immediately preceded by an 'assistant' message
+           with matching tool_call_id in its tool_calls.
 
     Args:
         messages (List[dict]): List of message dictionaries containing
@@ -610,6 +613,101 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                 sanitized_messages.insert(len(sanitized_messages) - 1, assistant_msg)
                 # Update mapping
                 tool_call_map[tool_id] = {"assistant_idx": len(sanitized_messages) - 2, "tool_idx": len(sanitized_messages) - 1}
+    
+    # Second pass - ensure correct sequence (tool messages must directly follow their assistant messages)
+    # This fixes the error "messages with role 'tool' must be a response to a preceeding message with 'tool_calls'"
+    i = 0
+    while i < len(sanitized_messages):
+        msg = sanitized_messages[i]
+        
+        # Check if this is a tool message that might be out of sequence
+        if msg.get("role") == "tool" and msg.get("tool_call_id"):
+            tool_id = msg.get("tool_call_id")
+            
+            # If this isn't the first message, check if the previous message is a matching assistant message
+            if i > 0:
+                prev_msg = sanitized_messages[i-1]
+                
+                # Check if the previous message is an assistant message with matching tool_call_id
+                is_valid_sequence = (
+                    prev_msg.get("role") == "assistant" and 
+                    prev_msg.get("tool_calls") and 
+                    any(tc.get("id") == tool_id for tc in prev_msg.get("tool_calls", []))
+                )
+                
+                if not is_valid_sequence:
+                    # Find the assistant message with this tool_call_id
+                    assistant_idx = None
+                    for j, assistant_msg in enumerate(sanitized_messages):
+                        if (assistant_msg.get("role") == "assistant" and 
+                            assistant_msg.get("tool_calls") and
+                            any(tc.get("id") == tool_id for tc in assistant_msg.get("tool_calls", []))):
+                            assistant_idx = j
+                            break
+                    
+                    # If we found a matching assistant message, move this tool message right after it
+                    if assistant_idx is not None:
+                        # Remember to save the tool message
+                        tool_msg = sanitized_messages.pop(i)
+                        
+                        # Insert right after the assistant message
+                        sanitized_messages.insert(assistant_idx + 1, tool_msg)
+                        
+                        # Adjust i to account for the move
+                        if assistant_idx < i:
+                            # We moved the message backward, so i should point to the next message
+                            # which is now at position i (since we removed a message before it)
+                            continue
+                        else:
+                            # We moved the message forward, so i should now point to the message
+                            # that is now at position i
+                            continue
+                    else:
+                        # No matching assistant message found - create one
+                        assistant_msg = {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [{
+                                "id": tool_id,
+                                "type": "function",
+                                "function": {
+                                    "name": "unknown_function",
+                                    "arguments": "{}"
+                                }
+                            }]
+                        }
+                        
+                        # Insert the assistant message before the tool message
+                        sanitized_messages.insert(i, assistant_msg)
+                        
+                        # Skip past both messages
+                        i += 2
+                        continue
+            else:
+                # This tool message is at index 0, which means there's no preceding assistant message
+                # Create a dummy assistant message
+                assistant_msg = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{
+                        "id": tool_id,
+                        "type": "function",
+                        "function": {
+                            "name": "unknown_function",
+                            "arguments": "{}"
+                        }
+                    }]
+                }
+                
+                # Insert the assistant message before the tool message
+                sanitized_messages.insert(0, assistant_msg)
+                
+                # Skip past both messages
+                i += 2
+                continue
+        
+        # Move to the next message
+        i += 1
     
     # Final validation - ensure all tool calls have responses
     for tool_id, indices in list(tool_call_map.items()):
@@ -2099,3 +2197,86 @@ def finish_tool_streaming(tool_name, args, output, call_id, execution_info=None,
     # Mark the streaming session as complete
     if hasattr(cli_print_tool_output, '_streaming_sessions') and call_id in cli_print_tool_output._streaming_sessions:
         cli_print_tool_output._streaming_sessions[call_id]['is_complete'] = True
+
+def print_message_history(messages, title="Message History"):
+    """
+    Pretty-print a sequence of messages with enhanced debug information.
+    
+    Args:
+        messages (List[dict]): List of message dictionaries to display
+        title (str, optional): Title to display above the message history
+    """
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich.table import Table
+    
+    console = Console()
+    
+    # Create a table for displaying messages
+    table = Table(show_header=True, header_style="bold magenta", expand=True)
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Role", style="cyan", width=10)
+    table.add_column("Content", width=40)
+    table.add_column("Metadata", width=30)
+    
+    # Process each message
+    for i, msg in enumerate(messages):
+        # Get role with color based on type
+        role = msg.get("role", "unknown")
+        role_style = {
+            "user": "green",
+            "assistant": "blue",
+            "system": "yellow",
+            "tool": "magenta"
+        }.get(role, "white")
+        
+        # Get content preview
+        content = msg.get("content")
+        content_preview = ""
+        if content is None:
+            content_preview = "[dim]None[/dim]"
+        elif isinstance(content, str):
+            # Truncate and escape long content
+            content_preview = (content[:37] + "...") if len(content) > 40 else content
+            content_preview = content_preview.replace("\n", "\\n")
+        elif isinstance(content, list):
+            content_preview = f"[list with {len(content)} items]"
+        else:
+            content_preview = f"[{type(content).__name__}]"
+        
+        # Gather metadata
+        metadata = []
+        if msg.get("tool_calls"):
+            tc_count = len(msg["tool_calls"])
+            tc_info = []
+            for tc in msg["tool_calls"]:
+                tc_id = tc.get("id", "unknown")
+                tc_name = tc.get("function", {}).get("name", "unknown") if "function" in tc else "unknown"
+                tc_info.append(f"{tc_name}({tc_id})")
+            metadata.append(f"tool_calls[{tc_count}]: {', '.join(tc_info)}")
+            
+        if msg.get("tool_call_id"):
+            metadata.append(f"tool_call_id: {msg['tool_call_id']}")
+            
+        metadata_str = ", ".join(metadata)
+        
+        # Add row to table
+        table.add_row(
+            str(i),
+            f"[{role_style}]{role}[/{role_style}]",
+            content_preview,
+            metadata_str
+        )
+    
+    # Create the panel with the table
+    panel = Panel(
+        table,
+        title=f"[bold]{title}[/bold]",
+        expand=False
+    )
+    
+    # Display the panel
+    console.print(panel)
+    
+    return len(messages)  # Return message count for convenience
