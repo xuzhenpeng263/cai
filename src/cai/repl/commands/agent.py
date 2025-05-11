@@ -238,7 +238,7 @@ class AgentCommand(Command):
         os.environ["CAI_AGENT_TYPE"] = selected_agent_key
         
         console.print(
-                    f"[green]Switched to agent: {agent_name}[/green]")           
+                    f"[green]Switched to agent: {agent_name}[/green]", end="")           
         visualize_agent_graph(agent)
         return True
 

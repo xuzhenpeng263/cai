@@ -421,7 +421,7 @@ class ModelCommand(Command):
                 change_message,
                 border_style="green",
                 title="Model Changed"
-            )
+            ), end=""
         )
         return True
 

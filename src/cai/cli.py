@@ -355,7 +355,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                         title="[bold]Session Summary[/bold]",
                         title_align="left"
                     )
-                    console.print(time_panel)
+                    console.print(time_panel, end="")
 
                 print_session_summary(console, metrics, logging_path)
 

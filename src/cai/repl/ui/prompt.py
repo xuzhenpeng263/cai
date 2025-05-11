@@ -96,7 +96,7 @@ def get_user_input(
 
     # Get user input with all features
     return prompt(
-        [('class:prompt', '\nCAI> ')],
+        [('class:prompt', 'CAI> ')],
         completer=command_completer,
         style=create_prompt_style(),
         history=FileHistory(str(history_file)),

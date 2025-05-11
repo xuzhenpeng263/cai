@@ -434,7 +434,7 @@ def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None):
         return error_msg
 
 
-def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None, workspace_dir=None):
+def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None, workspace_dir=None, custom_args=None):
     """Runs command locally in the specified workspace_dir."""
     # Make sure we're in active time mode for tool execution
     stop_idle_timer()
@@ -453,17 +453,17 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             
             # Parse command into parts for display
             parts = command.strip().split(' ', 1)
-            cmd = parts[0] if parts else ""
+            cmd_var = parts[0] if parts else ""
             args_param_val = parts[1] if len(parts) > 1 else "" # Renamed to avoid conflict with tool_args dict key
             
             # For generic Linux commands, standardize the tool_name format
             if not tool_name:
-                tool_name = f"{cmd}_command" if cmd else "command"
+                tool_name = f"{cmd_var}_command" if cmd_var else "command"
             
             # Create args dictionary with non-empty values only
             tool_args = {}
-            if cmd:
-                tool_args["command"] = cmd
+            if cmd_var:
+                tool_args["command"] = cmd_var
             if args_param_val and args_param_val.strip():
                 tool_args["args"] = args_param_val
             
@@ -471,9 +471,16 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             tool_args["workspace"] = os.path.basename(target_dir)
             tool_args["full_command"] = command
             
+            # If custom args were provided, merge them with the default args
+            if custom_args is not None:
+                if isinstance(custom_args, dict):
+                    # Merge the dictionaries, with custom args taking precedence
+                    for key, value in custom_args.items():
+                        tool_args[key] = value
+            
             # For generic commands, ensure we have a unique call_id
             if not call_id:
-                call_id = f"cmd_{cmd}_{str(uuid.uuid4())[:8]}"
+                call_id = f"cmd_{cmd_var}_{str(uuid.uuid4())[:8]}"
             
             # Initialize/use the call_id for this streaming session
             call_id = start_tool_streaming(tool_name, tool_args, call_id)
@@ -561,11 +568,11 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             # If this is the same command that was recently streamed, don't display it again
             # We'll create a similar tool_args structure to what streaming would use
             parts = command.strip().split(' ', 1)
-            cmd = parts[0] if parts else ""
+            cmd_var = parts[0] if parts else ""
             args_param_val = parts[1] if len(parts) > 1 else ""
             
             # Generate a standard tool name for consistency with streaming
-            standard_tool_name = tool_name or (f"{cmd}_command" if cmd else "command")
+            standard_tool_name = tool_name or (f"{cmd_var}_command" if cmd_var else "command")
             
             # Calculate a consistent command key - must match the format used in cli_print_tool_output
             command_key = f"{standard_tool_name}:{args_param_val}"
@@ -575,7 +582,37 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
                 return output.strip()
                 
             if stdout:
-                print(f"\033[32m{context_msg} $ {original_cmd_for_msg}\n{output}\033[0m")
+                # Create a tool_args dictionary for non-streaming display 
+                # that matches the format used in streaming
+                tool_display_args = {
+                    "command": cmd_var,
+                    "args": args_param_val,
+                    "full_command": command,
+                    "workspace": os.path.basename(target_dir)
+                }
+                
+                # If custom args were provided, merge them with the default args
+                if custom_args is not None and isinstance(custom_args, dict):
+                    for key, value in custom_args.items():
+                        tool_display_args[key] = value
+                
+                # Calculate execution info
+                tool_execution_time = time.time() - process_start_time
+                exec_info = {
+                    "status": "completed" if result.returncode == 0 else "error",
+                    "return_code": result.returncode,
+                    "environment": "Local",
+                    "host": os.path.basename(target_dir),
+                    "tool_time": tool_execution_time
+                }
+                
+                # Display the command output with rich formatting
+                cli_print_tool_output(
+                    tool_name=standard_tool_name,
+                    args=tool_display_args,
+                    output=output,
+                    execution_info=exec_info
+                )
                 
             return output.strip()
     except subprocess.TimeoutExpired as e:
@@ -587,13 +624,13 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             from cai.util import finish_tool_streaming
             # Parse the command the same way we did for streaming
             parts = command.strip().split(' ', 1)
-            cmd = parts[0] if parts else ""
-            args = parts[1] if len(parts) > 1 else ""
+            cmd_var = parts[0] if parts else ""
+            args_var = parts[1] if len(parts) > 1 else ""
             
             # Ensure tool_args has complete information
             tool_args = {
-                "command": cmd,
-                "args": args if args.strip() else "",
+                "command": cmd_var,
+                "args": args_var if args_var.strip() else "",
                 "full_command": command,
                 "environment": "Local",
                 "workspace": os.path.basename(target_dir)
@@ -604,7 +641,7 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
                 "environment": "Local",
                 "host": os.path.basename(target_dir)
             }
-            finish_tool_streaming(tool_name or f"{cmd}_command", tool_args, error_msg, call_id, execution_info)
+            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info)
             
         if stdout:
             print("\033[32m" + error_msg + "\033[0m")
@@ -618,13 +655,13 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             from cai.util import finish_tool_streaming
             # Parse the command the same way we did for streaming
             parts = command.strip().split(' ', 1)
-            cmd = parts[0] if parts else ""
-            args = parts[1] if len(parts) > 1 else ""
+            cmd_var = parts[0] if parts else ""
+            args_var = parts[1] if len(parts) > 1 else ""
             
             # Ensure tool_args has complete information
             tool_args = {
-                "command": cmd,
-                "args": args if args.strip() else "",
+                "command": cmd_var,
+                "args": args_var if args_var.strip() else "",
                 "full_command": command,
                 "environment": "Local",
                 "workspace": os.path.basename(target_dir)
@@ -635,7 +672,7 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
                 "environment": "Local",
                 "host": os.path.basename(target_dir)
             }
-            finish_tool_streaming(tool_name or f"{cmd}_command", tool_args, error_msg, call_id, execution_info)
+            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info)
             
         print(color(error_msg, fg="red"))
         return error_msg
@@ -647,7 +684,7 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
 
 def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arguments # noqa: E501
                 async_mode=False, session_id=None,
-                timeout=100, stream=False, call_id=None, tool_name=None):
+                timeout=100, stream=False, call_id=None, tool_name=None, args=None):
     """
     Run command in the appropriate environment (Docker, CTF, SSH, Local)
     and workspace.
@@ -663,6 +700,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
         call_id: Unique ID for the command execution (for streaming)
         tool_name: Name of the tool being executed (for display in streaming output).
                   If None, the tool name will be derived from the command.
+        args: Additional arguments for the tool (for display and context).
 
     Returns:
         str: Command output, status message, or session ID.
@@ -673,17 +711,17 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
     
     # Parse command into standard parts to ensure consistent naming
     parts = command.strip().split(' ', 1)
-    cmd = parts[0] if parts else ""
-    args = parts[1] if len(parts) > 1 else ""
+    cmd_name = parts[0] if parts else ""
+    cmd_args = parts[1] if len(parts) > 1 else ""
     
     # Generate a call_id if we're streaming and one wasn't provided
     # Use a more specific format that includes the command name for easier tracking
     if not call_id and stream:
-        call_id = f"cmd_{cmd}_{str(uuid.uuid4())[:8]}"
+        call_id = f"cmd_{cmd_name}_{str(uuid.uuid4())[:8]}"
         
     # If no tool_name is provided, derive it from the command in a consistent way
     if not tool_name:
-        tool_name = f"{cmd}_command" if cmd else "command"
+        tool_name = f"{cmd_name}_command" if cmd_name else "command"
     
     try:
         # If session_id is provided, send command to that session
@@ -750,8 +788,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 
                 # Create args dictionary with standardized format
                 tool_args = {
-                    "command": cmd,
-                    "args": args if args.strip() else "",
+                    "command": cmd_name,
+                    "args": cmd_args if cmd_args.strip() else "",
                     "full_command": command,
                     "container": container_id[:12],
                     "environment": "Container",
@@ -887,7 +925,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     start_idle_timer()
                     # Fallback to local execution on timeout
                     print(color("Container execution timed out. Attempting execution on host instead.", fg="yellow"))
-                    return _run_local(command, stdout, timeout, False, None, tool_name, _get_workspace_dir())
+                    return _run_local(command, stdout, timeout, False, None, tool_name, _get_workspace_dir(), args)
                 
                 except Exception as e:
                     # Handle other errors
@@ -908,7 +946,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     start_idle_timer()
                     # Fallback to local execution on error
                     print(color("Container execution failed. Attempting execution on host instead.", fg="yellow"))
-                    return _run_local(command, stdout, timeout, False, None, tool_name, _get_workspace_dir())
+                    return _run_local(command, stdout, timeout, False, None, tool_name, _get_workspace_dir(), args)
 
             # Handle Synchronous Execution in Container
             try:
@@ -945,7 +983,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     stop_active_timer()
                     start_idle_timer()
                     # Fallback to local execution, preserving workspace context
-                    return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir()) # noqa E501
+                    return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir(), args) # noqa E501
 
                 # Switch back to idle mode after command completes
                 stop_active_timer()
@@ -961,7 +999,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 stop_active_timer()
                 start_idle_timer()
                 # Fallback to local execution on timeout
-                return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir()) # noqa E501
+                return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir(), args) # noqa E501
             except Exception as e:  # pylint: disable=broad-except
                 error_msg = f"Error executing command in container: {str(e)}"
                 print(color(f"{context_msg} {error_msg}", fg="red"))
@@ -970,7 +1008,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 stop_active_timer()
                 start_idle_timer()
                 # Fallback to local execution on other errors
-                return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir()) # noqa E501
+                return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir(), args) # noqa E501
 
         # --- CTF Execution ---
         if ctf:
@@ -981,8 +1019,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 
                 # Create args dictionary with standardized format
                 tool_args = {
-                    "command": cmd,
-                    "args": args if args.strip() else "",
+                    "command": cmd_name,
+                    "args": cmd_args if cmd_args.strip() else "",
                     "full_command": command,
                     "environment": "CTF",
                     "workspace": os.path.basename(_get_workspace_dir())
@@ -1066,8 +1104,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 
                 # Create args dictionary with standardized format
                 tool_args = {
-                    "command": cmd,
-                    "args": args if args.strip() else "",
+                    "command": cmd_name,
+                    "args": cmd_args if cmd_args.strip() else "",
                     "full_command": command,
                     "ssh_host": ssh_connection,
                     "environment": "SSH"
@@ -1213,7 +1251,9 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
             timeout, 
             stream=stream, 
             call_id=call_id,
-            tool_name=tool_name
+            tool_name=tool_name,
+            workspace_dir=_get_workspace_dir(),
+            custom_args=args
         )
         
         # Switch back to idle mode after local command completes

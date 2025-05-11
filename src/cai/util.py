@@ -22,6 +22,10 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional
 import time
 import threading
+from rich.syntax import Syntax  # Import Syntax for highlighting
+from rich.panel import Panel
+from rich.console import Group
+from rich.box import ROUNDED
 
 # Global timing variables for tracking active and idle time
 _active_timer_start = None
@@ -1183,7 +1187,7 @@ def create_agent_streaming_context(agent_name, counter, model):
             Text.assemble(header, content, footer),
             border_style="blue",
             box=ROUNDED,
-            padding=(1, 2),  
+            padding=(0, 1),  
             title="[bold]Agent Streaming Response[/bold]",
             title_align="left",
             width=panel_width,
@@ -1244,7 +1248,7 @@ def update_agent_streaming_content(context, text_delta):
             Text.assemble(context["header"], context["content"], context["footer"]),
             border_style="blue",
             box=ROUNDED,
-            padding=(1, 2), 
+            padding=(0, 1), 
             title="[bold]Agent Streaming Response[/bold]",
             title_align="left",
             width=context.get("panel_width", 100),
@@ -1349,13 +1353,12 @@ def finish_agent_streaming(context, final_stats=None):
             Text.assemble(
                 context["header"], 
                 context["content"], 
-                Text("\n\n"), 
-                tokens_text if tokens_text else Text(""),
+                tokens_text if tokens_text else Text(""), 
                 context["footer"]
             ),
             border_style="blue",
             box=ROUNDED,
-            padding=(1, 2), 
+            padding=(0, 1), 
             title="[bold]Agent Streaming Response[/bold]",
             title_align="left",
             width=context.get("panel_width", 100),
@@ -1522,7 +1525,7 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
                     content,
                     title=title,
                     border_style=border_style,
-                    padding=(1, 2),
+                    padding=(0, 1),
                     box=ROUNDED,
                     title_align="left"
                 )
@@ -1586,18 +1589,34 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         # Create a console for output
         console = Console(theme=theme)
         
-        # Get the panel content
+        # Get the panel content - with syntax highlighting
         header, content = _create_tool_panel_content(tool_name, args, output, execution_info, token_info)
         
-        # Determine border style
+        # Determine border style based on status
         border_style = "blue"  # Default for non-streaming
+        
+        if execution_info:
+            status = execution_info.get('status', 'completed')
+            if status == "completed":
+                border_style = "green"
+                title = "[bold green]Tool Output [Completed][/bold green]"
+            elif status == "error":
+                border_style = "red"
+                title = "[bold red]Tool Output [Error][/bold red]"
+            elif status == "timeout":
+                border_style = "red"
+                title = "[bold red]Tool Output [Timeout][/bold red]"
+            else:
+                title = "[bold blue]Tool Output[/bold blue]"
+        else:
+            title = "[bold blue]Tool Output[/bold blue]"
         
         # Create the panel
         panel = Panel(
             content,
-            title="[bold blue]Tool Output[/bold blue]",
+            title=title,
             border_style=border_style,
-            padding=(1, 2),
+            padding=(0, 1),
             box=ROUNDED,
             title_align="left"
         )
@@ -1613,6 +1632,10 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
 def _create_tool_panel_content(tool_name, args, output, execution_info=None, token_info=None):
     """Create the header and content for a tool output panel."""
     from rich.text import Text
+    from rich.syntax import Syntax  # Import Syntax for highlighting
+    from rich.panel import Panel
+    from rich.console import Group
+    from rich.box import ROUNDED
     
     # Format arguments for display
     args_str = _format_tool_args(args)
@@ -1655,7 +1678,101 @@ def _create_tool_panel_content(tool_name, args, output, execution_info=None, tok
     # Create token information if available
     token_content = _create_token_info_display(token_info)
     
-    # Assemble the full content
+    # Determine if we need specialized content formatting
+    group_content = [header]
+    
+    # Special handling for execute_code tool
+    if tool_name == "execute_code":
+        try:
+            # Parse args to get language and code
+            language = "python"  # Default
+            code = ""
+            filename = "exploit"
+            
+            if isinstance(args, dict):
+                language = args.get("language", "python")
+                code = args.get("code", "")
+                filename = args.get("filename", "exploit")
+            elif isinstance(args, str):
+                # Try to extract language and code from args string
+                import re
+                lang_match = re.search(r"language\s*=\s*['\"]?([a-zA-Z0-9+]+)['\"]?", args)
+                if lang_match:
+                    language = lang_match.group(1)
+                    
+            # Create syntax highlighted code panel if we have code
+            if code:
+                syntax = Syntax(code, language, theme="monokai", line_numbers=True,
+                               background_color="#272822", indent_guides=True)
+                code_panel = Panel(
+                    syntax,
+                    title=f"Code ({language})",
+                    border_style="cyan",
+                    title_align="left",
+                    box=ROUNDED,
+                    padding=(0, 1)
+                )
+                
+                # Create output panel with proper highlighting
+                output_syntax = Syntax(output, "text", theme="monokai", 
+                                       background_color="#272822")
+                output_panel = Panel(
+                    output_syntax,
+                    title="Output",
+                    border_style="green",
+                    title_align="left",
+                    box=ROUNDED,
+                    padding=(0, 1)
+                )
+                
+                # Add code and output panels to content
+                group_content.append("\n")
+                group_content.append(code_panel)
+                group_content.append("\n")
+                group_content.append(output_panel)
+                
+                # Add token info if available
+                if token_content:
+                    group_content.append("\n")
+                    group_content.append(token_content)
+                
+                return header, Group(*group_content)
+        except Exception:
+            # Fallback if syntax highlighting fails
+            pass
+            
+    # Special handling for generic_linux_command
+    elif tool_name == "generic_linux_command" or "command" in tool_name:
+        try:
+            # Highlight the output as bash
+            output_syntax = Syntax(output, "bash", theme="monokai", 
+                                  background_color="#272822")
+            
+            # Create a panel for the formatted output
+            output_panel = Panel(
+                output_syntax,
+                title="Command Output",
+                border_style="green",
+                title_align="left",
+                box=ROUNDED,
+                padding=(0, 1)
+            )
+            
+            # Assemble content with highlighted output
+            group_content.append("\n")
+            group_content.append(output_panel)
+            
+            # Add token info if available
+            if token_content:
+                group_content.append("\n")
+                group_content.append(token_content)
+            
+            return header, Group(*group_content)
+        except Exception:
+            # Fallback if syntax highlighting fails
+            pass
+    
+    # Default content assembly for other tools
     content = Text()
     content.append(header)
     content.append("\n\n")
