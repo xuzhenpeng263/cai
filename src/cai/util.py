@@ -1480,13 +1480,14 @@ def create_agent_streaming_context(agent_name, counter, model):
         print(f"Error creating streaming context: {e}", file=sys.stderr)
         return None
 
-def update_agent_streaming_content(context, text_delta):
+def update_agent_streaming_content(context, text_delta, token_stats=None):
     """
     Update the streaming content with new text.
     
     Args:
         context: The streaming context created by create_agent_streaming_context
         text_delta: The new text to add
+        token_stats: Optional token statistics to show with each update
     """
     if not context:
         return False
@@ -1501,6 +1502,46 @@ def update_agent_streaming_content(context, text_delta):
         
         # Add the parsed text to the content
         context["content"].append(parsed_delta)
+        
+        # Update the footer with token stats if provided
+        if token_stats:
+            # Create token stats display
+            from rich.text import Text
+            footer_stats = Text()
+            
+            # Add timestamp and model info
+            footer_stats.append(f"\n[{context['timestamp']}", style="dim")
+            if context['model']:
+                footer_stats.append(f" ({context['model']})", style="bold magenta")
+            footer_stats.append("]", style="dim")
+            
+            # Add token stats
+            input_tokens = token_stats.get('input_tokens', 0)
+            output_tokens = token_stats.get('output_tokens', 0)
+            total_cost = token_stats.get('cost', 0.0)
+            
+            if input_tokens > 0:
+                footer_stats.append(" | ", style="dim")
+                footer_stats.append(f"I:{input_tokens} O:{output_tokens}", style="green")
+                if total_cost > 0:
+                    footer_stats.append(f" (${total_cost:.4f})", style="bold cyan")
+                
+                # Add context usage indicator
+                model_name = context.get("model", os.environ.get('CAI_MODEL', 'qwen2.5:14b'))
+                context_pct = input_tokens / get_model_input_tokens(model_name) * 100
+                if context_pct < 50:
+                    indicator = "🟩"
+                    color = "green"
+                elif context_pct < 80:
+                    indicator = "🟨"
+                    color = "yellow"
+                else:
+                    indicator = "🟥"
+                    color = "red"
+                footer_stats.append(f" {indicator} {context_pct:.1f}%", style=f"bold {color}")
+            
+            # Update the footer
+            context["footer"] = footer_stats
         
         # Update the live display with the latest content
         updated_panel = Panel(

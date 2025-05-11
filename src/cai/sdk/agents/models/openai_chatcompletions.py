@@ -14,7 +14,7 @@ import asyncio
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
-from cai.util import get_ollama_api_base, fix_message_list, cli_print_agent_messages, create_agent_streaming_context, update_agent_streaming_content, finish_agent_streaming
+from cai.util import get_ollama_api_base, fix_message_list, cli_print_agent_messages, create_agent_streaming_context, update_agent_streaming_content, finish_agent_streaming, calculate_model_cost
 from cai.util import start_idle_timer, stop_idle_timer, start_active_timer, stop_active_timer
 from wasabi import color
 from cai.sdk.agents.run_to_jsonl import get_session_recorder
@@ -778,7 +778,13 @@ class OpenAIChatCompletionsModel(Model):
                             
                             # Update streaming display if enabled - always do this for text content
                             if streaming_context:
-                                update_agent_streaming_content(streaming_context, content)
+                                # Create token stats to pass with each update
+                                token_stats = {
+                                    'input_tokens': estimated_input_tokens,
+                                    'output_tokens': estimated_output_tokens,
+                                    'cost': calculate_model_cost(str(self.model), estimated_input_tokens, estimated_output_tokens)
+                                }
+                                update_agent_streaming_content(streaming_context, content, token_stats)
                             
                             # More accurate token counting for text content
                             output_text += content
