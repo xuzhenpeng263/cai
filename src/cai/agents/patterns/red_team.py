@@ -1,4 +1,3 @@
-
 """
 Implementation of a Cyclic Swarm Pattern for Red Team Operations
 
@@ -11,36 +10,29 @@ for comprehensive security analysis.
 from cai.agents.red_teamer import redteam_agent
 from cai.agents.thought import thought_agent
 from cai.agents.mail import dns_smtp_agent
+from cai.sdk.agents import handoff
 
 
-def transfer_to_dns_agent():
-    """
-    Use THIS always for DNS scans and domain reconnaissance
-    about dmarc and dkim registers
-    """
-    return dns_smtp_agent
+# Create handoffs using the SDK handoff function
+dns_smtp_handoff = handoff(
+    agent=dns_smtp_agent,
+    tool_description_override="Use for DNS scans and domain reconnaissance about DMARC and DKIM records"
+)
 
+redteam_handoff = handoff(
+    agent=redteam_agent,
+    tool_description_override="Transfer to Red Team Agent for security assessment and exploitation tasks"
+)
 
-def redteam_agent_handoff(ctf=None):  # pylint: disable=unused-argument
-    """
-    Red Team Agent, call this function
-    empty to transfer to redteam_agent
-    """
-    return redteam_agent
-
-
-def thought_agent_handoff(ctf=None):  # pylint: disable=unused-argument
-    """
-    Thought Agent, call this function empty
-    to transfer to thought_agent
-    """
-    return thought_agent
-
+thought_handoff = handoff(
+    agent=thought_agent,
+    tool_description_override="Transfer to Thought Agent for analysis and planning"
+)
 
 # Register handoff to enable inter-agent communication pathways
-redteam_agent.handoffs.append(transfer_to_dns_agent)
-dns_smtp_agent.handoffs.append(redteam_agent_handoff)
-thought_agent.handoffs.append(redteam_agent_handoff)
+redteam_agent.handoffs.append(dns_smtp_handoff)
+dns_smtp_agent.handoffs.append(redteam_handoff)
+thought_agent.handoffs.append(redteam_handoff)
 
 # Initialize the swarm pattern with the thought agent as the entry point
 redteam_swarm_pattern = thought_agent
