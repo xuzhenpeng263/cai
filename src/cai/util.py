@@ -27,6 +27,7 @@ from rich.panel import Panel
 from rich.console import Group
 from rich.box import ROUNDED
 from rich.table import Table
+import re
 
 # Global timing variables for tracking active and idle time
 _active_timer_start = None
@@ -1913,62 +1914,105 @@ def _create_tool_panel_content(tool_name, args, output, execution_info=None, tok
     # Determine if we need specialized content formatting
     group_content = [header]
 
-    # Special handling for execute_code tool
     if tool_name == "execute_code" and isinstance(args, dict):
-        command_type = args.get("command")
-        actual_code = args.get("code")
-        language = args.get("language", "python") # Default to python
-        
-        # For execute command, show code and output panels
-        if command_type == "execute" and actual_code:
-            # Ensure language is a string for Syntax
-            language_str = get_language_from_code_block(str(language))
+        command = args.get("command")
+        code_from_code_key = args.get("code")
+        language_from_lang_key = args.get("language", "python")
+        args_str_payload = args.get("args")
+
+        panel1_content_str = None
+        panel1_language_name = "text"
+        panel1_title = "Executed Command Details"
+        panel1_border_style = "cyan" # Default for "executed code"
+
+        if command == "execute" and code_from_code_key:
+            pass
+        elif args_str_payload: # Covers 'cat << EOF', 'python3 script.py'
+            panel1_content_str = args_str_payload
+            inferred_lang_for_args = "text" # Default
+
+            if command and command.lower() == "cat" and \
+               ("<<" in args_str_payload or ">" in args_str_payload):
+                # For cat with heredoc/redirection, infer from target file
+                match = re.search(r'(?:>|>>)\s*([\w\./-]+\.\w+)',
+                                  args_str_payload)
+                if match:
+                    filename = match.group(1)
+                    ext = filename.split('.')[-1] if '.' in filename else ""
+                    inferred_lang_for_args = get_language_from_code_block(ext)
+                else:
+                    inferred_lang_for_args = get_language_from_code_block("bash")
+            elif re.match(r'^[\w\./-]+\.\w+$', args_str_payload.strip()):
+                # If args_str_payload is a filename like "script.py"
+                filename = args_str_payload.strip()
+                ext = filename.split('.')[-1] if '.' in filename else ""
+                inferred_lang_for_args = get_language_from_code_block(ext)
+            else:
+                # General arguments string, could be JSON, XML, or just text/bash
+                try:
+                    json.loads(args_str_payload)
+                    inferred_lang_for_args = "json"
+                except json.JSONDecodeError:
+                    if args_str_payload.strip().startswith("<") and \
+                       args_str_payload.strip().endswith(">"):
+                        inferred_lang_for_args = "xml"
+                    elif command: # Default to bash if it's for a known command
+                        inferred_lang_for_args = get_language_from_code_block("bash")
             
-            code_syntax = Syntax(actual_code, language_str, theme="monokai", 
-                                 line_numbers=True, background_color="#272822", 
-                                 indent_guides=True, word_wrap=True)
-            code_panel = Panel(
-                code_syntax,
-                title=f"Code ({language_str})",
-                border_style="cyan",
+            panel1_language_name = inferred_lang_for_args
+            panel1_title = f"Code ({panel1_language_name})"
+            panel1_border_style = "yellow"
+
+        if panel1_content_str is not None:
+            syntax_obj_panel1 = Syntax(
+                panel1_content_str,
+                panel1_language_name,
+                theme="monokai",
+                line_numbers=True,
+                background_color="#272822",
+                indent_guides=True,
+                word_wrap=True
+            )
+            actual_panel1 = Panel(
+                syntax_obj_panel1,
+                title=panel1_title,
+                border_style=panel1_border_style,
                 title_align="left",
                 box=ROUNDED,
-                padding=(0,1)
+                padding=(0, 1)
             )
-            group_content.extend([Text("\n"), code_panel])
+            group_content.extend([Text("\n"), actual_panel1])
 
-            # Panel for the output of the executed code
-            if output:
-                # Try to highlight output as text, or specific language if known (e.g. json)
-                output_lang = "text"
-                try:
-                    json.loads(output) # Check if output is JSON
-                    output_lang = "json"
-                except json.JSONDecodeError:
-                    pass # Not JSON, keep as text
-                
-                output_syntax = Syntax(output, output_lang, theme="monokai", 
-                                       background_color="#272822", word_wrap=True)
-                output_panel = Panel(
-                    output_syntax,
-                    title="Output",
-                    border_style="green",
-                    title_align="left",
-                    box=ROUNDED,
-                    padding=(0,1)
-                )
-                group_content.extend([Text("\n"), output_panel])
-        # For other commands (like cat) or if no code, just show output if any
-        elif output: 
-            output_syntax = Syntax(output, "text", theme="monokai", 
-                                   background_color="#272822", word_wrap=True)
+        if output:
+            output_lang_name = "text"
+            try:
+                json.loads(output)
+                output_lang_name = "json"
+            except json.JSONDecodeError:
+                if output.strip().startswith("<") and \
+                   output.strip().endswith(">") and \
+                   "<?xml" in output.lower():
+                    output_lang_name = "xml"
+            
+            output_syntax = Syntax(
+                output,
+                get_language_from_code_block(output_lang_name),
+                theme="monokai",
+                background_color="#272822",
+                word_wrap=True
+            )
+            
+            output_panel_title = "Output"
+            if command and panel1_content_str: # If input panel was shown
+                output_panel_title = f"Output of '{command}'"
+
             output_panel = Panel(
                 output_syntax,
-                title="Output",
+                title=output_panel_title,
                 border_style="green",
                 title_align="left",
                 box=ROUNDED,
-                padding=(0,1)
+                padding=(0, 1)
             )
             group_content.extend([Text("\n"), output_panel])
 
@@ -2005,6 +2049,11 @@ def _create_tool_panel_content(tool_name, args, output, execution_info=None, tok
 # Helper function to format tool arguments
 def _format_tool_args(args, tool_name=None):
     """Format tool arguments as a clean string."""
+    # If the tool is execute_code, we don't want to show any args in the main header,
+    # as they are detailed in subsequent panels (either code or args string).
+    if tool_name == "execute_code":
+        return "" 
+
     # If args is already a string, it might be pre-formatted or a simple arg string
     if isinstance(args, str):
         # If it looks like a JSON dict string, try to parse and format nicely
@@ -2026,6 +2075,11 @@ def _format_tool_args(args, tool_name=None):
         # Only include non-empty values and exclude special flags
         arg_parts = []
         for key, value in args.items():
+            # For execute_code, if the 'code' key is present, its content is shown in a dedicated panel.
+            # So, skip adding 'code=...' to the header string to avoid redundancy and verbosity.
+            if tool_name == "execute_code" and key == "code":
+                continue
+
             # Skip empty values
             if value == "" or value == {} or value is None:
                 continue
