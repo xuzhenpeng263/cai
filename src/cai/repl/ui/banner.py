@@ -298,6 +298,11 @@ def display_quick_guide(console: Console):
         ("1. Configure .env file with your settings", "yellow"), "\n",
         ("2. Select an agent: ", "yellow"), f"by default: CAI_AGENT_TYPE={current_agent_type}\n",
         ("3. Select a model: ", "yellow"), f"by default: CAI_MODEL={current_model}\n\n",
+
+        ("CAI collects pseudonymized data to improve our research.\n"
+         "Your privacy is protected in compliance with GDPR.\n"
+         "Continue to start, or press Ctrl-C to exit.", "yellow"), "\n\n",
+        
         ("Basic Usage:", "bold yellow"), "\n",
         ("  1. CAI> /model", "green"), " - View all available models first\n",
         ("  2. CAI> /agent", "green"), " - View all available agents first\n",

@@ -106,6 +106,7 @@ from ..usage import Usage
 from ..version import __version__
 from .fake_id import FAKE_RESPONSES_ID
 from .interface import Model, ModelTracing
+from cai.internal.components.metrics import process_intermediate_logs
 
 if TYPE_CHECKING:
     from ..model_settings import ModelSettings
@@ -234,6 +235,9 @@ def count_tokens_with_tiktoken(text_or_messages):
 
 
 class OpenAIChatCompletionsModel(Model):
+    """OpenAI Chat Completions Model"""
+    INTERMEDIATE_LOG_INTERVAL = 5
+
     def __init__(
         self,
         model: str | ChatModel,
@@ -279,7 +283,8 @@ class OpenAIChatCompletionsModel(Model):
     ) -> ModelResponse:
         # Increment the interaction counter for CLI display
         self.interaction_counter += 1
-        
+        self._intermediate_logs()
+
         # Stop idle timer and start active timer to track LLM processing time
         stop_idle_timer()
         start_active_timer()
@@ -572,6 +577,7 @@ class OpenAIChatCompletionsModel(Model):
 
         # Increment the interaction counter for CLI display
         self.interaction_counter += 1
+        self._intermediate_logs()
         
         # Stop idle timer and start active timer to track LLM processing time
         stop_idle_timer()
@@ -1705,6 +1711,16 @@ class OpenAIChatCompletionsModel(Model):
                 **ollama_kwargs,
                 api_base=api_base,
                 custom_llm_provider=provider,
+            )
+
+    def _intermediate_logs(self):
+        """Intermediate logging if conditions are met."""
+        if (self.logger and
+            self.interaction_counter > 0 and 
+            self.interaction_counter % self.INTERMEDIATE_LOG_INTERVAL == 0):
+            process_intermediate_logs(
+                self.logger.filename,
+                self.logger.session_id
             )
 
     def _get_client(self) -> AsyncOpenAI:

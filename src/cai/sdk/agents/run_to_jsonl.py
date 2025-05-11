@@ -56,13 +56,13 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
         """
         # Generate a session ID that will be used for the entire session
         self.session_id = str(uuid.uuid4())
-        
+
         # Track the last message to ensure it's logged
         self.last_assistant_message = None
         self.last_assistant_tool_calls = None
         self._last_message_logged = False
         self._session_end_logged = False
-        
+
         log_dir = 'logs'
         os.makedirs(log_dir, exist_ok=True)
 
@@ -123,7 +123,7 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
 
         # Inicializar el coste total acumulado
         self.total_cost = 0.0
-        
+
         # Log the session start
         with open(self.filename, 'a', encoding='utf-8') as f:
             session_start = {

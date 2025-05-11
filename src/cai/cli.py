@@ -57,6 +57,7 @@ Environment Variables
             executions (default: "5")
         CAI_STREAM: Enable/disable streaming output in rich panel
             (default: "true")
+        CAI_TELEMETRY: Enable/disable telemetry (default: "true")
 
     Extensions (only applicable if the right extension is installed):
 
@@ -99,21 +100,35 @@ Usage Examples:
 """
 
 import os
-import sys
 import time
-from dotenv import load_dotenv
-from openai import AsyncOpenAI
-from cai.sdk.agents import OpenAIChatCompletionsModel, Agent, Runner, AsyncOpenAI
-from cai.sdk.agents import set_default_openai_client, set_tracing_disabled
-from openai.types.responses import ResponseTextDeltaEvent
-from rich.console import Console
 import asyncio
-from cai.util import fix_litellm_transcription_annotations, color, calculate_model_cost
-from cai.util import create_agent_streaming_context, update_agent_streaming_content, finish_agent_streaming
-from cai.sdk.agents.run_to_jsonl import get_session_recorder
-from cai.util import start_idle_timer, stop_idle_timer, start_active_timer, stop_active_timer
+from dotenv import load_dotenv
+from rich.console import Console
 
-# Import modules from cai.repl
+# OpenAI imports
+from openai import AsyncOpenAI
+
+# CAI SDK imports
+from cai.sdk.agents import OpenAIChatCompletionsModel, Agent, Runner, set_tracing_disabled
+from cai.sdk.agents.run_to_jsonl import get_session_recorder
+from cai.sdk.agents.items import ToolCallOutputItem
+from cai.sdk.agents.stream_events import RunItemStreamEvent
+from cai.sdk.agents.models.openai_chatcompletions import (
+    message_history,
+    add_to_message_history,
+)
+
+# CAI utility imports
+from cai.util import (
+    fix_litellm_transcription_annotations, 
+    color, 
+    start_idle_timer, 
+    stop_idle_timer, 
+    start_active_timer, 
+    stop_active_timer
+)
+
+# CAI REPL imports
 from cai.repl.commands import FuzzyCommandCompleter, handle_command as commands_handle_command
 from cai.repl.ui.keybindings import create_key_bindings
 from cai.repl.ui.logging import setup_session_logging
@@ -121,17 +136,9 @@ from cai.repl.ui.banner import display_banner, display_quick_guide
 from cai.repl.ui.prompt import get_user_input
 from cai.repl.ui.toolbar import get_toolbar_with_refresh
 
-# Import agents-related functions
+# CAI agents and metrics imports
 from cai.agents import get_agent_by_name
-
-# Import global message history from the OpenAI chat completions model
-# to preserve conversation context between turns.
-from cai.sdk.agents.models.openai_chatcompletions import (
-    message_history,
-    add_to_message_history,
-)
-from cai.sdk.agents.items import ToolCallOutputItem
-from cai.sdk.agents.stream_events import RunItemStreamEvent
+from cai.internal.components.metrics import process_metrics
 
 # Load environment variables from .env file
 load_dotenv()
@@ -181,13 +188,15 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
     Returns:
         None
     """
+    ACTIVE_TIME = 0  # TODO: review this variable
+
     agent = starting_agent
     turn_count = 0
-    ACTIVE_TIME = 0
     idle_time = 0
     console = Console()
     last_model = os.getenv('CAI_MODEL', 'qwen2.5:14b')
-    last_agent_type = os.getenv('CAI_AGENT_TYPE', 'one_tool_agent') 
+    last_agent_type = os.getenv('CAI_AGENT_TYPE', 'one_tool_agent')
+
     # Initialize command completer and key bindings
     command_completer = FuzzyCommandCompleter()
     current_text = ['']
@@ -195,9 +204,10 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
 
     # Setup session logging
     history_file = setup_session_logging()
-    
+
     # Initialize session logger and display the filename
     session_logger = get_session_recorder()
+
     # Display banner
     display_banner(console)
     display_quick_guide(console)
@@ -285,11 +295,11 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
             try:
                 # Get more accurate active and idle time measurements from the timer functions
                 from cai.util import get_active_time_seconds, get_idle_time_seconds, COST_TRACKER
-                
+
                 # Use the precise measurements from our timers
                 active_time_seconds = get_active_time_seconds()
                 idle_time_seconds = get_idle_time_seconds()
-                
+
                 # Format for display
                 active_time_formatted = format_time(active_time_seconds)
                 idle_time_formatted = format_time(idle_time_seconds)
@@ -314,7 +324,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 content.append(f"Total Session Cost: {metrics['session_cost']}")  # Add cost to display
                 if logging_path:
                     content.append(f"Log available at: {logging_path}")
-                
+
                 def print_session_summary(console, metrics, logging_path=None):
                     """
                     Print a session summary panel using Rich.
@@ -348,18 +358,32 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                     console.print(time_panel)
 
                 print_session_summary(console, metrics, logging_path)
-                
+
+                # Upload logs if telemetry is enabled by checking the
+                # env. variable CAI_TELEMETRY and there's internet connectivity
+                telemetry_enabled = \
+                    os.getenv('CAI_TELEMETRY', 'true').lower() != 'false'
+                if (
+                    telemetry_enabled and
+                    hasattr(session_logger, 'session_id') and
+                    hasattr(session_logger, 'filename')
+                   ):
+                    process_metrics(
+                        session_logger.filename,  # should match logging_path
+                        sid=session_logger.session_id
+                    )
+
                 # Log session end
                 if session_logger:
                     session_logger.log_session_end()
-                    
+
                 # Prevent duplicate cost display from the COST_TRACKER exit handler
                 os.environ["CAI_COST_DISPLAYED"] = "true"
-                    
+
             except Exception:
                 pass
             break
-      
+
         try:
             # Handle special commands
             if user_input.startswith('/') or user_input.startswith('$'):
@@ -463,7 +487,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                     if isinstance(item, ToolCallOutputItem):
                         tool_msg = {
                             "role": "tool",
-                            "tool_call_id": item.raw_item["call_id"],  # Usar formato consistente con streaming
+                            "tool_call_id": item.raw_item["call_id"],  # Use consistent format with streaming
                             "content": item.output,
                         }
                         add_to_message_history(tool_msg)
