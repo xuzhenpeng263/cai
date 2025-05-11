@@ -1821,6 +1821,9 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         # Get the panel content - with syntax highlighting
         header, content = _create_tool_panel_content(tool_name, args, output, execution_info, token_info)
         
+        # Format args for the title display
+        args_str = _format_tool_args(args, tool_name=tool_name)
+        
         # Determine border style based on status
         border_style = "blue"  # Default for non-streaming
         

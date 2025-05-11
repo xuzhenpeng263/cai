@@ -2407,22 +2407,22 @@ class _Converter:
                 
                 # Update execution timing if we have the start time
                 if hasattr(cls, 'recent_tool_calls') and call_id in cls.recent_tool_calls:
-                    tool_call = cls.recent_tool_calls[call_id]
-                    if 'start_time' in tool_call:
+                    tool_call_details = cls.recent_tool_calls[call_id] # Renamed for clarity
+                    if 'start_time' in tool_call_details:
                         end_time = time.time()
-                        tool_execution_time = end_time - tool_call['start_time']
+                        tool_execution_time = end_time - tool_call_details['start_time']
                         
                         # Update the execution info
-                        if 'execution_info' in tool_call:
-                            tool_call['execution_info']['end_time'] = end_time
-                            tool_call['execution_info']['tool_time'] = tool_execution_time
+                        if 'execution_info' in tool_call_details:
+                            tool_call_details['execution_info']['end_time'] = end_time
+                            tool_call_details['execution_info']['tool_time'] = tool_execution_time
                             
                             # If this is the first tool being executed, record the total time from conversation start
                             if not hasattr(cls, 'conversation_start_time'):
-                                cls.conversation_start_time = tool_call['start_time']
+                                cls.conversation_start_time = tool_call_details['start_time']
                                 
-                            total_time = end_time - getattr(cls, 'conversation_start_time', tool_call['start_time'])
-                            tool_call['execution_info']['total_time'] = total_time
+                            total_time = end_time - getattr(cls, 'conversation_start_time', tool_call_details['start_time'])
+                            tool_call_details['execution_info']['total_time'] = total_time
                 
                 # Store the output so it can be accessed later
                 if not hasattr(cls, 'tool_outputs'):
@@ -2439,10 +2439,10 @@ class _Converter:
                 execution_info = {}
                 
                 if hasattr(cls, 'recent_tool_calls') and call_id in cls.recent_tool_calls:
-                    tool_call = cls.recent_tool_calls[call_id]
-                    tool_name = tool_call.get('name', 'Unknown Tool')
-                    tool_args = tool_call.get('arguments', {})
-                    execution_info = tool_call.get('execution_info', {})
+                    tool_call_details = cls.recent_tool_calls[call_id] # Renamed for clarity
+                    tool_name = tool_call_details.get('name', 'Unknown Tool')
+                    tool_args = tool_call_details.get('arguments', {})
+                    execution_info = tool_call_details.get('execution_info', {})
                 
                 # Get token counts from the OpenAIChatCompletionsModel if available
                 model_instance = None
@@ -2467,14 +2467,14 @@ class _Converter:
                 # Calculate costs using standard cost model
                 if model_instance and hasattr(model_instance, 'model'):
                     from cai.util import calculate_model_cost
-                    model_name = str(model_instance.model)
+                    model_name_str = str(model_instance.model) # Ensure model name is string
                     token_info['interaction_cost'] = calculate_model_cost(
-                        model_name, 
+                        model_name_str, 
                         token_info['interaction_input_tokens'], 
                         token_info['interaction_output_tokens']
                     )
                     token_info['total_cost'] = calculate_model_cost(
-                        model_name,
+                        model_name_str,
                         token_info['total_input_tokens'],
                         token_info['total_output_tokens']
                     )
@@ -2495,39 +2495,10 @@ class _Converter:
                 # Continue with normal processing
                 flush_assistant_message()
                 
-                # CRITICAL: Verify this tool message has a matching assistant message before adding it
-                # Find if there's any assistant message with a tool call matching this ID
-                has_matching_assistant_message = False
-                for msg in result:
-                    if (
-                        msg.get("role") == "assistant" and 
-                        msg.get("tool_calls") and 
-                        any(tc.get("id") == call_id for tc in msg.get("tool_calls", []))
-                    ):
-                        has_matching_assistant_message = True
-                        break
-                
-                # If no matching assistant message, create one
-                if not has_matching_assistant_message:
-                    # Create a synthetic assistant message with this tool call
-                    asst_msg = {
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [
-                            {
-                                "id": call_id,
-                                "type": "function",
-                                "function": {
-                                    "name": tool_name,
-                                    "arguments": "{}"  # Use empty object as default arguments
-                                }
-                            }
-                        ]
-                    }
-                    # Add to result list
-                    result.append(asst_msg)
-                    logger.debug(f"Created synthetic assistant message for tool call {call_id}")
-                
+                # REMOVED THE BLOCK THAT CREATED A SYNTHETIC ASSISTANT MESSAGE HERE
+                # The responsibility for ensuring a preceding assistant message
+                # is now fully deferred to fix_message_list, called later.
+
                 # Now add the tool message
                 msg: ChatCompletionToolMessageParam = {
                     "role": "tool",
