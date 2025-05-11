@@ -5,6 +5,7 @@ import os
 import sys
 import importlib.resources
 import pathlib
+import json
 from rich.console import Console
 from rich.tree import Tree
 from mako.template import Template  # pylint: disable=import-error
@@ -21,6 +22,11 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional
 import time
 import threading
+from rich.syntax import Syntax  # Import Syntax for highlighting
+from rich.panel import Panel
+from rich.console import Group
+from rich.box import ROUNDED
+from rich.table import Table
 
 # Global timing variables for tracking active and idle time
 _active_timer_start = None
@@ -28,6 +34,9 @@ _active_time_total = 0.0
 _idle_timer_start = None
 _idle_time_total = 0.0
 _timing_lock = threading.Lock()
+
+# Set up a global tracker for live streaming panels
+_LIVE_STREAMING_PANELS = {}
 
 def start_active_timer():
     """
@@ -539,6 +548,10 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
             must have content.
         3. If a tool call id appears alone (without a pair), it is removed.
         4. There cannot be empty messages.
+        5. Each tool_use block (assistant with tool_calls) must be followed by
+           a tool_result block (tool message with matching tool_call_id).
+        6. Each 'tool' message must be immediately preceded by an 'assistant' message
+           with matching tool_call_id in its tool_calls.
 
     Args:
         messages (List[dict]): List of message dictionaries containing
@@ -557,7 +570,13 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     
     for i, msg in enumerate(messages):
         # Skip empty messages (considered empty if 'content' is None or only whitespace)
-        if msg.get("role") in ["user", "system"] and (msg.get("content") is None or not msg.get("content").strip()):
+        if msg.get("role") in ["user", "system"] and (msg.get("content") is None or not str(msg.get("content", "")).strip()):
+            # Special case: if it's a system message, set content to empty string instead of skipping
+            if msg.get("role") == "system":
+                # Replace None with empty string
+                msg["content"] = ""
+                sanitized_messages.append(msg)
+            # Skip empty user messages entirely
             continue
             
         # Add valid messages to our sanitized list first
@@ -595,8 +614,103 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                 # Update mapping
                 tool_call_map[tool_id] = {"assistant_idx": len(sanitized_messages) - 2, "tool_idx": len(sanitized_messages) - 1}
     
+    # Second pass - ensure correct sequence (tool messages must directly follow their assistant messages)
+    # This fixes the error "messages with role 'tool' must be a response to a preceeding message with 'tool_calls'"
+    i = 0
+    while i < len(sanitized_messages):
+        msg = sanitized_messages[i]
+        
+        # Check if this is a tool message that might be out of sequence
+        if msg.get("role") == "tool" and msg.get("tool_call_id"):
+            tool_id = msg.get("tool_call_id")
+            
+            # If this isn't the first message, check if the previous message is a matching assistant message
+            if i > 0:
+                prev_msg = sanitized_messages[i-1]
+                
+                # Check if the previous message is an assistant message with matching tool_call_id
+                is_valid_sequence = (
+                    prev_msg.get("role") == "assistant" and 
+                    prev_msg.get("tool_calls") and 
+                    any(tc.get("id") == tool_id for tc in prev_msg.get("tool_calls", []))
+                )
+                
+                if not is_valid_sequence:
+                    # Find the assistant message with this tool_call_id
+                    assistant_idx = None
+                    for j, assistant_msg in enumerate(sanitized_messages):
+                        if (assistant_msg.get("role") == "assistant" and 
+                            assistant_msg.get("tool_calls") and
+                            any(tc.get("id") == tool_id for tc in assistant_msg.get("tool_calls", []))):
+                            assistant_idx = j
+                            break
+                    
+                    # If we found a matching assistant message, move this tool message right after it
+                    if assistant_idx is not None:
+                        # Remember to save the tool message
+                        tool_msg = sanitized_messages.pop(i)
+                        
+                        # Insert right after the assistant message
+                        sanitized_messages.insert(assistant_idx + 1, tool_msg)
+                        
+                        # Adjust i to account for the move
+                        if assistant_idx < i:
+                            # We moved the message backward, so i should point to the next message
+                            # which is now at position i (since we removed a message before it)
+                            continue
+                        else:
+                            # We moved the message forward, so i should now point to the message
+                            # that is now at position i
+                            continue
+                    else:
+                        # No matching assistant message found - create one
+                        assistant_msg = {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [{
+                                "id": tool_id,
+                                "type": "function",
+                                "function": {
+                                    "name": "unknown_function",
+                                    "arguments": "{}"
+                                }
+                            }]
+                        }
+                        
+                        # Insert the assistant message before the tool message
+                        sanitized_messages.insert(i, assistant_msg)
+                        
+                        # Skip past both messages
+                        i += 2
+                        continue
+            else:
+                # This tool message is at index 0, which means there's no preceding assistant message
+                # Create a dummy assistant message
+                assistant_msg = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{
+                        "id": tool_id,
+                        "type": "function",
+                        "function": {
+                            "name": "unknown_function",
+                            "arguments": "{}"
+                        }
+                    }]
+                }
+                
+                # Insert the assistant message before the tool message
+                sanitized_messages.insert(0, assistant_msg)
+                
+                # Skip past both messages
+                i += 2
+                continue
+        
+        # Move to the next message
+        i += 1
+    
     # Final validation - ensure all tool calls have responses
-    for tool_id, indices in tool_call_map.items():
+    for tool_id, indices in list(tool_call_map.items()):
         if indices["tool_idx"] is None:
             # Tool call without a response - create a synthetic tool message
             assistant_idx = indices["assistant_idx"]
@@ -616,8 +730,59 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                 "tool_call_id": tool_id,
                 "content": f"Auto-generated response for {tool_name}"
             }
-            # Insert right after the assistant message
-            sanitized_messages.insert(assistant_idx + 1, tool_msg)
+            
+            # Insert immediately after the assistant message
+            if assistant_idx + 1 < len(sanitized_messages):
+                # Insert at the position after assistant
+                sanitized_messages.insert(assistant_idx + 1, tool_msg)
+            else:
+                # Just append if we're at the end
+                sanitized_messages.append(tool_msg)
+            
+            # Update the map to note that this tool call now has a response
+            tool_call_map[tool_id]["tool_idx"] = assistant_idx + 1
+    
+    # Ensure messages have non-null content (required by some providers)
+    for msg in sanitized_messages:
+        if msg.get("role") != "tool" and msg.get("content") is None and not msg.get("tool_calls"):
+            msg["content"] = ""
+            
+        # For tool messages, ensure content is never null
+        if msg.get("role") == "tool" and msg.get("content") is None:
+            msg["content"] = f"Tool response for {msg.get('tool_call_id', 'unknown')}"
+    
+    # Special case for Claude: ensure strict alternating pattern between assistant tool_calls and tool results
+    # If multiple consecutive assistant messages with tool_calls exist, interleave them with tool responses
+    i = 0
+    while i < len(sanitized_messages) - 1:
+        current_msg = sanitized_messages[i]
+        next_msg = sanitized_messages[i + 1]
+        
+        # When current message is assistant with tool_calls and next message is NOT a tool response
+        if (current_msg.get("role") == "assistant" and 
+            current_msg.get("tool_calls") and 
+            (next_msg.get("role") != "tool" or not next_msg.get("tool_call_id"))):
+            
+            # Get the first tool call ID
+            tool_id = current_msg["tool_calls"][0].get("id", "unknown")
+            tool_name = "unknown_function"
+            if current_msg["tool_calls"][0].get("function"):
+                tool_name = current_msg["tool_calls"][0]["function"].get("name", "unknown_function")
+            
+            # Create a tool result message
+            tool_msg = {
+                "role": "tool",
+                "tool_call_id": tool_id,
+                "content": f"Auto-generated response for {tool_name}"
+            }
+            
+            # Insert the tool message after the current assistant message
+            sanitized_messages.insert(i + 1, tool_msg)
+            
+            # Skip over the newly inserted message
+            i += 2
+        else:
+            i += 1
     
     return sanitized_messages
 
@@ -665,22 +830,23 @@ def get_model_name(model):
         return model
     # If not a string, use environment variable
     return os.environ.get('CAI_MODEL', 'qwen2.5:72b')
- # Helper function to format time in a human-readable way
+
+# Helper function to format time in a human-readable way
 def format_time(seconds):
-            if seconds is None:
-                return "N/A"
-            
-            if seconds < 60:
-                return f"{seconds:.1f}s"
-            elif seconds < 3600:
-                minutes = int(seconds / 60)
-                seconds_remainder = seconds % 60
-                return f"{minutes}m {seconds_remainder:.1f}s"
-            else:
-                hours = int(seconds / 3600)
-                minutes = int((seconds % 3600) / 60)
-                return f"{hours}h {minutes}m"
-        
+    if seconds is None:
+        return "N/A"
+    
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    elif seconds < 3600:
+        minutes = int(seconds / 60)
+        seconds_remainder = seconds % 60
+        return f"{minutes}m {seconds_remainder:.1f}s"
+    else:
+        hours = int(seconds / 3600)
+        minutes = int((seconds % 3600) / 60)
+        return f"{hours}h {minutes}m"
+
 def get_model_pricing(model_name):
     """
     Get pricing information for a model, using the CostTracker's implementation.
@@ -804,28 +970,116 @@ def parse_message_content(message):
     """
     Parse a message object to extract its textual content.
     Only processes messages that don't have tool calls.
+    Detects markdown code blocks and applies syntax highlighting in non-streaming mode.
+    Also formats other markdown elements like headers, lists, and text formatting.
     
     Args:
         message: Can be a string or a Message object with content attribute
         
     Returns:
-        str: The extracted content as a string
+        str or rich.console.Group: The extracted content as a string or as a rich Group with Syntax highlighting
     """
-    # Check if this is a duplicate print from OpenAIChatCompletionsModel    
-    # If message is already a string, return it
+    from rich.console import Group
+    from rich.syntax import Syntax
+    from rich.text import Text
+    from rich.markdown import Markdown
+    import re
+    
+    # Extract the raw content
+    raw_content = ""
+    
+    # If message is already a string, use it
     if isinstance(message, str):
-        return message
-        
+        raw_content = message
     # If message is a Message object with content attribute
-    if hasattr(message, 'content') and message.content is not None:
-        return message.content
-        
+    elif hasattr(message, 'content') and message.content is not None:
+        raw_content = message.content
     # If message is a dict with content key
-    if isinstance(message, dict) and 'content' in message:
-        return message['content']
-        
+    elif isinstance(message, dict) and 'content' in message:
+        raw_content = message['content']
     # If we can't extract content, convert to string
-    return str(message)
+    else:
+        raw_content = str(message)
+
+    # Check if streaming is enabled
+    streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+    
+    # Only apply markdown formatting in non-streaming mode
+    if not streaming_enabled and raw_content:
+        # Check if content contains markdown code blocks with improved regex
+        code_block_pattern = r'```(\w*)\s*([\s\S]*?)\s*```'
+        matches = re.findall(code_block_pattern, raw_content, re.DOTALL)
+        
+        if matches:
+            # Prepare to process markdown with code blocks highlighted
+            elements = []
+            last_end = 0
+            
+            # Find all code blocks with improved regex pattern
+            for match in re.finditer(r'```(\w*)\s*([\s\S]*?)\s*```', raw_content, re.DOTALL):
+                # Get text before the code block
+                start = match.start()
+                if start > last_end:
+                    text_before = raw_content[last_end:start]
+                    
+                    # Process markdown in the text before the code block
+                    if text_before.strip():
+                        md = Markdown(text_before)
+                        elements.append(md)
+                
+                # Process the code block
+                lang = match.group(1) or "text"
+                code = match.group(2)
+                
+                # Use the language mapping helper to get proper syntax highlighting
+                syntax_lang = get_language_from_code_block(lang)
+                
+                # Create syntax highlighted code
+                syntax = Syntax(
+                    code,
+                    syntax_lang,
+                    theme="monokai",
+                    line_numbers=True,
+                    word_wrap=True,
+                    background_color="#272822"
+                )
+                elements.append(syntax)
+                
+                last_end = match.end()
+            
+            # Add any remaining text after the last code block
+            if last_end < len(raw_content):
+                text_after = raw_content[last_end:]
+                
+                # Process markdown in the text after the code block
+                if text_after.strip():
+                    md = Markdown(text_after)
+                    elements.append(md)
+            
+            return Group(*elements)
+        else:
+            # If no code blocks, but still contains markdown, use Rich's markdown renderer
+            # Check for markdown elements (headers, lists, formatting)
+            has_markdown = any([
+                # Headers
+                re.search(r'^#{1,6}\s+\w+', raw_content, re.MULTILINE),
+                # Lists
+                re.search(r'^\s*[-*+]\s+\w+', raw_content, re.MULTILINE),
+                re.search(r'^\s*\d+\.\s+\w+', raw_content, re.MULTILINE),
+                # Bold/Italic
+                '**' in raw_content,
+                '*' in raw_content and not '**' in raw_content,
+                '__' in raw_content,
+                '_' in raw_content and not '__' in raw_content,
+                # Links
+                re.search(r'\[.+?\]\(.+?\)', raw_content)
+            ])
+            
+            if has_markdown:
+                return Group(Markdown(raw_content))
+    
+    # For streaming mode or no markdown, return the raw content
+    return raw_content
 
 def parse_message_tool_call(message, tool_output=None):
     """
@@ -946,7 +1200,8 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
                              total_reasoning_tokens=None,
                              interaction_cost=None,
                              total_cost=None,
-                             tool_output=None):  # New parameter for tool output
+                             tool_output=None,  # New parameter for tool output
+                             suppress_empty=False):  # New parameter to suppress empty panels
     """Print agent messages/thoughts with enhanced visual formatting."""
     # Debug prints to trace the function calls
     if debug:
@@ -978,19 +1233,40 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
     else:
         parsed_message = parse_message_content(message)
         tool_panels = []
+        
+    # Skip empty panels - THIS IS THE KEY CHANGE
+    # If suppress_empty is True and there's no parsed message and no tool panels, 
+    # don't create an empty panel to avoid cluttering during streaming
+    if suppress_empty and not parsed_message and not tool_panels:
+        return
+        
+    # Check if parsed_message is empty or "null"
+    is_empty_message = (parsed_message == "null" or parsed_message == "" or 
+                       (isinstance(parsed_message, str) and not parsed_message.strip()))
+        
+    # Also skip if the only message is "null" or empty
+    if is_empty_message:
+        if suppress_empty and not tool_panels:
+            return
+
+    # Check if we have Group content from markdown parsing
+    is_rich_content = False
+    from rich.console import Group
+    if isinstance(parsed_message, Group):
+        is_rich_content = True
 
     # Special handling for Reasoner Agent
     if agent_name == "Reasoner Agent":
         text.append(f"[{counter}] ", style="bold red")
         text.append(f"Agent: {agent_name} ", style="bold yellow")
-        if parsed_message:
+        if parsed_message and not is_rich_content:
             text.append(f">> {parsed_message} ", style="green")
         text.append(f"[{timestamp}", style="dim")
         if model:
             text.append(f" ({os.getenv('CAI_SUPPORT_MODEL')})",
                         style="bold blue")
         text.append("]", style="dim")
-    elif not parsed_message: 
+    elif is_empty_message: 
         # When parsed_message is empty, only include timestamp and model info
         text.append(f"Agent: {agent_name} ", style="bold green")
         text.append(f"[{timestamp}", style="dim")
@@ -1000,7 +1276,7 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
     else:
         text.append(f"[{counter}] ", style="bold cyan")
         text.append(f"Agent: {agent_name} ", style="bold green")
-        if parsed_message:
+        if parsed_message and not is_rich_content:
             text.append(f">> {parsed_message} ", style="yellow")
         text.append(f"[{timestamp}", style="dim")
         if model:
@@ -1028,26 +1304,53 @@ def cli_print_agent_messages(agent_name, message, counter, model, debug,  # pyli
             total_cost
         )
         # Only append token information if there is a parsed message
-        if parsed_message:
+        if parsed_message and not is_rich_content:
             text.append(tokens_text)
 
-    panel = Panel(
-        text,
-        border_style="red" if agent_name == "Reasoner Agent" else "blue",
-        box=ROUNDED,
-        padding=(0, 1),
-        title=("[bold]Reasoning Analysis[/bold]"
-               if agent_name == "Reasoner Agent"
-               else "[bold]Agent Interaction[/bold]"),
-        title_align="left"
-    )
+    # Create the panel content based on whether we have rich content or not
+    from rich.panel import Panel
+    from rich.console import Group
+    
+    if is_rich_content:
+        # For rich content, create a Group with the header, content, and tokens
+        panel_content = []
+        panel_content.append(text)
+        
+        # Add spacing between header and content for better readability
+        panel_content.append(Text("\n"))
+        
+        # Add the Group with highlighted content
+        panel_content.append(parsed_message)
+        
+        # Add token information at the bottom with proper spacing
+        if tokens_text:
+            panel_content.append(Text("\n"))
+            panel_content.append(tokens_text)
+        
+        panel = Panel(
+            Group(*panel_content),
+            border_style="red" if agent_name == "Reasoner Agent" else "blue",
+            box=ROUNDED,
+            padding=(1, 1),  # Increased padding for better appearance
+            title="",
+            title_align="left"
+        )
+    else:
+        # For regular text content, use the original panel format
+        panel = Panel(
+            text,
+            border_style="red" if agent_name == "Reasoner Agent" else "blue",
+            box=ROUNDED,
+            padding=(0, 1),
+            title="",
+            title_align="left"
+        )
     #console.print("\n")
     console.print(panel)
     
     # If there are tool panels, print them after the main message panel
     # But only in non-streaming mode to avoid duplicates
-    is_streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
-    if tool_panels and not is_streaming_enabled:
+    if tool_panels:
         for tool_panel in tool_panels:
             console.print(tool_panel)
 
@@ -1063,6 +1366,15 @@ def create_agent_streaming_context(agent_name, counter, model):
     Returns:
         A dictionary with the streaming context
     """
+    # Add a static variable to track active streaming contexts and prevent duplicates
+    if not hasattr(create_agent_streaming_context, "_active_streaming"):
+        create_agent_streaming_context._active_streaming = {}
+    
+    # If there's already an active streaming context with the same counter, return it
+    context_key = f"{agent_name}_{counter}"
+    if context_key in create_agent_streaming_context._active_streaming:
+        return create_agent_streaming_context._active_streaming[context_key]
+    
     try:
         from rich.live import Live
         import shutil
@@ -1099,17 +1411,17 @@ def create_agent_streaming_context(agent_name, counter, model):
             Text.assemble(header, content, footer),
             border_style="blue",
             box=ROUNDED,
-            padding=(1, 2),  
-            title="[bold]Agent Streaming Response[/bold]",
+            padding=(0, 1),  
+            title="Stream",
             title_align="left",
             width=panel_width,
             expand=True 
         )
         
         # Create Live display object but don't start it until we have content
-        live = Live(panel, refresh_per_second=20, console=console, auto_refresh=False)
+        live = Live(panel, refresh_per_second=10, console=console, auto_refresh=True, vertical_overflow="visible")
         
-        return {
+        context = {
             "live": live,
             "panel": panel,
             "header": header,
@@ -1122,6 +1434,11 @@ def create_agent_streaming_context(agent_name, counter, model):
             "is_started": False,  # Track if we've started the display
             "error": None,  # Track any errors
         }
+        
+        # Store the context for potential reuse
+        create_agent_streaming_context._active_streaming[context_key] = context
+        
+        return context
     except Exception as e:
         # If rich display fails, return None and log the error
         import sys
@@ -1155,8 +1472,8 @@ def update_agent_streaming_content(context, text_delta):
             Text.assemble(context["header"], context["content"], context["footer"]),
             border_style="blue",
             box=ROUNDED,
-            padding=(1, 2), 
-            title="[bold]Agent Streaming Response[/bold]",
+            padding=(0, 1), 
+            title="Stream",
             title_align="left",
             width=context.get("panel_width", 100),
             expand=True
@@ -1191,6 +1508,13 @@ def finish_agent_streaming(context, final_stats=None):
     """
     if not context:
         return False
+    
+    # Clean up tracking of this context
+    if hasattr(create_agent_streaming_context, "_active_streaming"):
+        for key, value in list(create_agent_streaming_context._active_streaming.items()):
+            if value is context:
+                del create_agent_streaming_context._active_streaming[key]
+                break
         
     try:
         # Check if there's actual content to display - don't show empty panels
@@ -1253,14 +1577,13 @@ def finish_agent_streaming(context, final_stats=None):
             Text.assemble(
                 context["header"], 
                 context["content"], 
-                Text("\n\n"), 
-                tokens_text if tokens_text else Text(""),
+                tokens_text if tokens_text else Text(""), 
                 context["footer"]
             ),
             border_style="blue",
             box=ROUNDED,
-            padding=(1, 2), 
-            title="[bold]Agent Streaming Response[/bold]",
+            padding=(0, 1), 
+            title="Stream",
             title_align="left",
             width=context.get("panel_width", 100),
             expand=True
@@ -1293,7 +1616,8 @@ def finish_agent_streaming(context, final_stats=None):
             
         return False
 
-def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execution_info=None, token_info=None):
+
+def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execution_info=None, token_info=None, streaming=False):
     """
     Print a tool call output to the command line.
     Similar to cli_print_tool_call but for the output of the tool.
@@ -1309,44 +1633,181 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
             - total_input_tokens, total_output_tokens, total_reasoning_tokens
             - model: model name string
             - interaction_cost, total_cost: optional cost values
+        streaming: Flag indicating if this is part of a streaming output
     """
-    # If it's an empty output, don't print anything
-    if not output and not call_id:
+    # If it's an empty output, don't print anything except for streaming sessions
+    if not output and not call_id and not streaming:
         return
     
-    
-    # CRITICAL CHECK: When in streaming mode (CAI_STREAM=true), ONLY show output panels
-    # for streaming updates (those with call_id). This prevents duplicate output panels.
-    is_streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
-    if is_streaming_enabled and not call_id:
-        # Skip all non-streaming tool output in streaming mode
+    # Skip early for execute_code tool in non-streaming mode
+    if tool_name == "execute_code" and not streaming:
         return
     
-    # Track seen call IDs to prevent duplicate panels
+    # Set up global tracker for streaming sessions
+    if not hasattr(cli_print_tool_output, '_streaming_sessions'):
+        cli_print_tool_output._streaming_sessions = {}
+    
+    # Track seen call IDs to prevent duplicate panels for non-streaming outputs
     if not hasattr(cli_print_tool_output, '_seen_calls'):
         cli_print_tool_output._seen_calls = {}
-    
-    # For streaming updates, only show updates for the same call_id
-    # but allow the first appearance of each call_id
-    if call_id:
-        call_key = f"{call_id}:{output[:20]}"  # Use first 20 chars as fingerprint with call_id
         
-        # Skip if we've seen this exact output for this call_id before
-        if call_key in cli_print_tool_output._seen_calls:
+    # Track all displayed commands to prevent duplicates
+    if not hasattr(cli_print_tool_output, '_displayed_commands'):
+        cli_print_tool_output._displayed_commands = set()
+    
+    # --- Consistent Command Key Generation ---
+    effective_command_args_str = ""
+    if isinstance(args, dict):
+        # If args is a dictionary, extract the 'args' field.
+        effective_command_args_str = args.get("args", "")
+    elif isinstance(args, str):
+        # If args is a string, it might be a JSON representation or a plain string.
+        try:
+            parsed_json_args = json.loads(args)
+            if isinstance(parsed_json_args, dict):
+                # Parsed as JSON dict, get the 'args' field.
+                effective_command_args_str = parsed_json_args.get("args", "")
+            else:
+                # Parsed as JSON, but not a dict (e.g., a JSON string literal).
+                effective_command_args_str = parsed_json_args if isinstance(parsed_json_args, str) else args
+        except json.JSONDecodeError:
+            # Not a JSON string, treat 'args' as a plain string.
+            effective_command_args_str = args
+    
+    command_key = f"{tool_name}:{effective_command_args_str}"
+    # --- End of Command Key Generation ---
+        
+    # Check for duplicate display conditions
+    if streaming:
+        # For streaming updates, track and update the single streaming session
+        if call_id:
+            # If this is a new streaming session, record it
+            if call_id not in cli_print_tool_output._streaming_sessions:
+                cli_print_tool_output._streaming_sessions[call_id] = {
+                    'tool_name': tool_name,
+                    'args': args, # Store original args for display formatting
+                    'buffer': output if output else "",
+                    'start_time': time.time(),
+                    'last_update': time.time(),
+                    'command_key': command_key, # Store the generated key
+                    'is_complete': False
+                }
+                # Add the command key to displayed commands
+                if command_key not in cli_print_tool_output._displayed_commands:
+                    cli_print_tool_output._displayed_commands.add(command_key)
+            else:
+                # Update the existing session
+                session = cli_print_tool_output._streaming_sessions[call_id]
+                # Always replace buffer with latest output for consistency
+                session['buffer'] = output
+                session['last_update'] = time.time()
+                if execution_info and execution_info.get('is_final', False):
+                    session['is_complete'] = True
+                    
+            # For streaming outputs, we'll use Rich Live panel if available
+            try:
+                from rich.console import Console
+                from rich.live import Live
+                from rich.panel import Panel
+                from rich.text import Text
+                from rich.box import ROUNDED
+                
+                # Access the global live panel dictionary
+                global _LIVE_STREAMING_PANELS
+                
+                # Create the header, content, and panel
+                # Pass the original 'args' (dict or string) to _create_tool_panel_content for formatting
+                current_args_for_display = cli_print_tool_output._streaming_sessions[call_id]['args']
+                header, content = _create_tool_panel_content(
+                    tool_name, 
+                    current_args_for_display, 
+                    cli_print_tool_output._streaming_sessions[call_id]['buffer'],
+                    execution_info,
+                    token_info
+                )
+                
+                # Determine panel style based on status
+                status = "running"
+                if execution_info:
+                    status = execution_info.get('status', 'running')
+                
+                border_style = "yellow"  # Default for running
+                if status == "completed":
+                    border_style = "green"
+                elif status in ["error", "timeout"]:
+                    border_style = "red"
+                    
+                # Create panel title based on status
+                if status == "running":
+                    title = "[bold yellow]Running[/bold yellow]"
+                elif status == "completed":
+                    title = "[bold green]Completed[/bold green]"
+                elif status == "error":
+                    title = "[bold red]Error[/bold red]"
+                elif status == "timeout":
+                    title = "[bold red]Timeout[/bold red]"
+                else:
+                    title = "[bold blue]Tool Execution[/bold blue]"
+                
+                # Create the panel
+                panel = Panel(
+                    content,
+                    title=title,
+                    border_style=border_style,
+                    padding=(0, 1),
+                    box=ROUNDED,
+                    title_align="left"
+                )
+                
+                # If we already have a live panel for this call_id, update it
+                if call_id in _LIVE_STREAMING_PANELS:
+                    live = _LIVE_STREAMING_PANELS[call_id]
+                    live.update(panel)
+                    
+                    # If this is the final update, stop the live panel after a short delay
+                    if execution_info and execution_info.get('is_final', False):
+                        # Give a moment for the final panel to be seen
+                        time.sleep(0.2)
+                        live.stop()
+                        # Remove from the active panel dictionary
+                        del _LIVE_STREAMING_PANELS[call_id]
+                else:
+                    # Create a new live panel
+                    console = Console(theme=theme)
+                    live = Live(panel, console=console, refresh_per_second=4, auto_refresh=True)
+                    # Start and store the live panel
+                    live.start()
+                    _LIVE_STREAMING_PANELS[call_id] = live
+                
+                # Return early for streaming updates
+                return
+                
+            except ImportError:
+                # Fall back to simple updates without Rich
+                pass
+    else:
+        # For non-streaming outputs, check if we've already seen this command
+        if command_key in cli_print_tool_output._displayed_commands:
+            # Command has already been displayed (likely through streaming), skip duplicate display
             return
             
-        # Mark as seen
-        cli_print_tool_output._seen_calls[call_key] = True
+        # Add to displayed commands since we're going to show it
+        # This handles the case where a command is non-streaming from the start
+        cli_print_tool_output._displayed_commands.add(command_key)
+            
+    # For non-streaming updates with call_id, check if already seen
+    # This _seen_calls logic is an additional layer for non-streaming calls that might have call_ids
+    # but might be distinct from the primary _displayed_commands check based on command_key.
+    if call_id and not streaming:
+        # Create a more specific key for _seen_calls if needed, possibly including output fingerprint
+        seen_call_key = f"{call_id}:{command_key}:{output[:20]}" 
         
-        # Limit cache size to prevent memory growth
-        if len(cli_print_tool_output._seen_calls) > 1000:
-            # Keep only the most recent 500 entries
-            cli_print_tool_output._seen_calls = {
-                k: cli_print_tool_output._seen_calls[k] 
-                for k in list(cli_print_tool_output._seen_calls.keys())[-500:]
-            }
-    
-    # Try to use Rich for better formatting if available
+        if seen_call_key in cli_print_tool_output._seen_calls:
+            return
+            
+        cli_print_tool_output._seen_calls[seen_call_key] = True
+        
+    # Standard tool output display for non-streaming or when rich is not available
     try:
         from rich.console import Console
         from rich.panel import Panel
@@ -1357,304 +1818,655 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         # Create a console for output
         console = Console(theme=theme)
         
-        # Format arguments for display
-        # Parse JSON string if args is a string
-        if isinstance(args, str) and args.strip().startswith('{'):
-            try:
-                import json
-                args = json.loads(args)
-            except:
-                # Keep as is if not valid JSON
-                pass
+        # Get the panel content - with syntax highlighting
+        header, content = _create_tool_panel_content(tool_name, args, output, execution_info, token_info)
         
-        # Format arguments as a clean string
-        if isinstance(args, dict):
-            # Only include non-empty values and exclude async_mode=false
-            arg_parts = []
-            for key, value in args.items():
-                # Skip empty values
-                if value == "" or value == {} or value is None:
-                    continue
-                # Skip async_mode=false (default)
-                if key == "async_mode" and value is False:
-                    continue
-                # Format the value
-                if isinstance(value, str):
-                    arg_parts.append(f"{key}={value}")
-                else:
-                    arg_parts.append(f"{key}={value}")
-            args_str = ", ".join(arg_parts)
-        else:
-            args_str = str(args)
+        # Format args for the title display
+        args_str = _format_tool_args(args, tool_name=tool_name)
         
-        # Get session timing information
-        try:
-            from cai.cli import START_TIME
-            total_time = time.time() - START_TIME if START_TIME else None
-        except ImportError:
-            total_time = None
-            
+        # Determine border style based on status
+        border_style = "blue"  # Default for non-streaming
         
-        # Extract execution timing info
-        
-        tool_time = None
-        status = None
         if execution_info:
-            # Prefer 'tool_time' if present, else fallback to 'time_taken'
-
-            tool_time = execution_info.get('tool_time') 
             status = execution_info.get('status', 'completed')
+            if status == "completed":
+                border_style = "green"
+                title = f"[bold green]{tool_name}({args_str}) [Completed][/bold green]"
+            elif status == "error":
+                border_style = "red"
+                title = f"[bold red]{tool_name}({args_str}) [Error][/bold red]"
+            elif status == "timeout":
+                border_style = "red"
+                title = f"[bold red]{tool_name}({args_str}) [Timeout][/bold red]"
+            else:
+                title = f"[bold blue]{tool_name}({args_str})[/bold blue]"
+        else:
+            title = f"[bold blue]{tool_name}({args_str})[/bold blue]"
         
-        # Create header for all panel displays (both streaming and non-streaming)
-        header = Text()
-        header.append(tool_name, style="#00BCD4")
-        header.append("(", style="yellow")
-        header.append(args_str, style="yellow")
-        header.append(")", style="yellow")
-        
-        # Add timing information directly in the header
-        timing_info = []
-        if total_time:
-            timing_info.append(f"Total: {format_time(total_time)}")
-        if tool_time:
-            timing_info.append(f"Tool: {format_time(tool_time)}")
-        if timing_info:
-            header.append(f" [{' | '.join(timing_info)}]", style="cyan")
-           
-        # Add completion status if available - REMOVED, just showing timing now
-        # if status:
-        #     if status == 'completed':
-        #         header.append(f" [Completed]", style="green")
-        #     elif status == 'running':
-        #         header.append(f" [Running]", style="yellow")
-        #     elif status == 'error':
-        #         header.append(f" [Error]", style="red")
-        #     elif status == 'timeout':
-        #         header.append(f" [Timeout]", style="red")
-        #     else:
-        #         header.append(f" [{status.title()}]", style="dim")
-        
-        # For streaming mode with call_id, use Rich Live display
-        if call_id:
-            # Create token information if available
-            token_content = None
-            if token_info:
-                model = token_info.get('model', '')
-                interaction_input_tokens = token_info.get('interaction_input_tokens', 0)
-                interaction_output_tokens = token_info.get('interaction_output_tokens', 0)
-                interaction_reasoning_tokens = token_info.get('interaction_reasoning_tokens', 0)
-                total_input_tokens = token_info.get('total_input_tokens', 0)
-                total_output_tokens = token_info.get('total_output_tokens', 0)
-                total_reasoning_tokens = token_info.get('total_reasoning_tokens', 0)
-                
-                if (interaction_input_tokens > 0 or total_input_tokens > 0):
-                    token_text = _create_token_display(
-                        interaction_input_tokens,
-                        interaction_output_tokens,
-                        interaction_reasoning_tokens,
-                        total_input_tokens,
-                        total_output_tokens,
-                        total_reasoning_tokens,
-                        model,
-                        token_info.get('interaction_cost'),
-                        token_info.get('total_cost')
-                    )
-                    token_content = Text("\n\n")
-                    token_content.append(token_text)
-            
-            # Create content text with the output
-            content = Text(output)
-            
-            # Create the panel for display, including token info if available
-            panel_content = [header, Text("\n\n"), content]
-            if token_content:
-                panel_content.append(token_content)
-                
-            # Create title - simple title with no timing info
-            title = "[bold blue]Tool Output[/bold blue]"
-            
-            panel = Panel(
-                Text.assemble(*panel_content),
-                title=title,
-                border_style="blue",
-                padding=(1, 2),
-                box=ROUNDED,
-                title_align="left"
-            )
-            
-            # Display using Rich
-            console.print(panel)
-            return
-            
-        # For non-streaming output, also use a blue panel with the same format
-        # Create token information if available
-        token_text = None
-        if token_info:
-            model = token_info.get('model', '')
-            interaction_input_tokens = token_info.get('interaction_input_tokens', 0)
-            interaction_output_tokens = token_info.get('interaction_output_tokens', 0)
-            interaction_reasoning_tokens = token_info.get('interaction_reasoning_tokens', 0)
-            total_input_tokens = token_info.get('total_input_tokens', 0)
-            total_output_tokens = token_info.get('total_output_tokens', 0)
-            total_reasoning_tokens = token_info.get('total_reasoning_tokens', 0)
-            interaction_cost = token_info.get('interaction_cost')
-            total_cost = token_info.get('total_cost')
-            
-            # Generate token display with CostTracker
-            if (interaction_input_tokens > 0 or total_input_tokens > 0):
-                token_text = _create_token_display(
-                    interaction_input_tokens,
-                    interaction_output_tokens,
-                    interaction_reasoning_tokens,
-                    total_input_tokens,
-                    total_output_tokens,
-                    total_reasoning_tokens,
-                    model,
-                    interaction_cost,
-                    total_cost
-                )
-        
-        # Now create the panel content, starting with the header
-        panel_content = [header, Text("\n")]
-        
-        # Add token display if available
-        if token_text:
-            panel_content.append(token_text)
-            panel_content.append(Text("\n"))  # Add spacing after token display
-            
-        # Add the output
-        if output:
-            output_text = Text(output)
-            panel_content.append(output_text)
-        
-        # If no content was added but we have output, add it directly
-        if len(panel_content) == 2 and output:  # Only header and newline
-            panel_content.append(Text(output))
-        
-        # Create title - simple title with no timing info
-        title = "[bold blue]Tool Output[/bold blue]"
-        
-        # Create the final panel - always blue now
+        # Create the panel
         panel = Panel(
-            Group(*panel_content),
+            content,
             title=title,
-            border_style="blue",
-            padding=(1, 2),
-            box=ROUNDED
+            border_style=border_style,
+            padding=(0, 1),
+            box=ROUNDED,
+            title_align="left"
         )
         
         # Display the panel
         console.print(panel)
         
     except ImportError:
-        # Fall back to simple formatting if Rich is not available
-        # Format arguments in the cleaner format
-        # Parse JSON string if args is a string
-        if isinstance(args, str) and args.strip().startswith('{'):
-            try:
-                import json
-                args = json.loads(args)
-            except:
-                # Keep as is if not valid JSON
-                pass
-        
-        # Format arguments as a clean string
-        if isinstance(args, dict):
-            # Only include non-empty values and exclude async_mode=false
-            arg_parts = []
-            for key, value in args.items():
-                # Skip empty values
-                if value == "" or value == {} or value is None:
-                    continue
-                # Skip async_mode=false (default)
-                if key == "async_mode" and value is False:
-                    continue
-                # Format the value
-                if isinstance(value, str):
-                    arg_parts.append(f"{key}={value}")
-                else:
-                    arg_parts.append(f"{key}={value}")
-            args_str = ", ".join(arg_parts)
+        pass
+
+
+# Helper function to create tool panel content
+def _create_tool_panel_content(tool_name, args, output, execution_info=None, token_info=None):
+    """Create the header and content for a tool output panel."""
+    from rich.text import Text
+    from rich.syntax import Syntax # Import Syntax for highlighting
+    from rich.panel import Panel
+    from rich.console import Group
+    from rich.box import ROUNDED
+    
+    # Format arguments for display, passing tool_name for specific formatting
+    args_str = _format_tool_args(args, tool_name=tool_name)
+    
+    # Get timing information
+    timing_info, tool_time = _get_timing_info(execution_info)
+    
+    # Create header
+    header = Text()
+    header.append(tool_name, style="#00BCD4")
+    header.append("(", style="yellow")
+    header.append(args_str, style="yellow")
+    header.append(")", style="yellow")
+    
+    # Add timing information
+    if timing_info:
+        header.append(f" [{' | '.join(timing_info)}]", style="cyan")
+    
+    # Add environment info if available
+    if execution_info and execution_info.get('environment'):
+        env = execution_info.get('environment')
+        host = execution_info.get('host', '')
+        if host:
+            header.append(f" [{env}:{host}]", style="magenta")
         else:
-            args_str = str(args)
-        # Get session timing information
+            header.append(f" [{env}]", style="magenta")
+    
+    # Add status information if available
+    if execution_info:
+        status = execution_info.get('status', None)
+        if status == "completed":
+            header.append(" [Completed]", style="green")
+        elif status == "running":
+            header.append(" [Running]", style="yellow")
+        elif status == "error":
+            header.append(" [Error]", style="red")
+        elif status == "timeout":
+            header.append(" [Timeout]", style="red")
+    
+    # Create token information if available
+    token_content = _create_token_info_display(token_info)
+    
+    # Determine if we need specialized content formatting
+    group_content = [header]
+
+    # Special handling for execute_code tool
+    if tool_name == "execute_code" and isinstance(args, dict):
+        command_type = args.get("command")
+        actual_code = args.get("code")
+        language = args.get("language", "python") # Default to python
+        
+        # For execute command, show code and output panels
+        if command_type == "execute" and actual_code:
+            # Ensure language is a string for Syntax
+            language_str = get_language_from_code_block(str(language))
+            
+            code_syntax = Syntax(actual_code, language_str, theme="monokai", 
+                                 line_numbers=True, background_color="#272822", 
+                                 indent_guides=True, word_wrap=True)
+            code_panel = Panel(
+                code_syntax,
+                title=f"Code ({language_str})",
+                border_style="cyan",
+                title_align="left",
+                box=ROUNDED,
+                padding=(0,1)
+            )
+            group_content.extend([Text("\n"), code_panel])
+
+            # Panel for the output of the executed code
+            if output:
+                # Try to highlight output as text, or specific language if known (e.g. json)
+                output_lang = "text"
+                try:
+                    json.loads(output) # Check if output is JSON
+                    output_lang = "json"
+                except json.JSONDecodeError:
+                    pass # Not JSON, keep as text
+                
+                output_syntax = Syntax(output, output_lang, theme="monokai", 
+                                       background_color="#272822", word_wrap=True)
+                output_panel = Panel(
+                    output_syntax,
+                    title="Output",
+                    border_style="green",
+                    title_align="left",
+                    box=ROUNDED,
+                    padding=(0,1)
+                )
+                group_content.extend([Text("\n"), output_panel])
+        # For other commands (like cat) or if no code, just show output if any
+        elif output: 
+            output_syntax = Syntax(output, "text", theme="monokai", 
+                                   background_color="#272822", word_wrap=True)
+            output_panel = Panel(
+                output_syntax,
+                title="Output",
+                border_style="green",
+                title_align="left",
+                box=ROUNDED,
+                padding=(0,1)
+            )
+            group_content.extend([Text("\n"), output_panel])
+
+    # Special handling for generic_linux_command or any command containing 'command'
+    elif "command" in tool_name.lower() or "shell" in tool_name.lower():
         try:
-            from cai.cli import START_TIME
-            total_time = time.time() - START_TIME if START_TIME else None
-        except ImportError:
-            total_time = None
+            # Highlight the output as bash
+            output_syntax = Syntax(output, "bash", theme="monokai", 
+                                  background_color="#272822", word_wrap=True)
             
-        
-        # For non-streaming output, use the original formatting
-        tool_call = f"{tool_name}({args_str})"
-        
-        # Get tool execution time if available
-        tool_time_str = ""
-        execution_status = ""
-        if execution_info:
-            time_taken = execution_info.get('time_taken', 0)
-            status = execution_info.get('status', 'completed')
+            # Create a panel for the formatted output
+            output_panel = Panel(
+                output_syntax,
+                title="Command Output",
+                border_style="green",
+                title_align="left",
+                box=ROUNDED,
+                padding=(0, 1)
+            )
             
-            # Add execution info to the tool call display
-            if time_taken:
-                tool_time_str = f"Tool: {format_time(time_taken)}"
-                execution_status = f" [{status} in {time_taken:.2f}s]"
+            # Assemble content with highlighted output
+            group_content.extend([Text("\n"), output_panel])
+            
+        except Exception:
+            # Fallback if syntax highlighting fails, just add raw output
+            group_content.extend([Text("\n"), Text(output)])
+    
+    # Add token info if available
+    if token_content:
+        group_content.extend([Text("\n"), token_content])
+    
+    return header, Group(*group_content)
+
+# Helper function to format tool arguments
+def _format_tool_args(args, tool_name=None):
+    """Format tool arguments as a clean string."""
+    # If args is already a string, it might be pre-formatted or a simple arg string
+    if isinstance(args, str):
+        # If it looks like a JSON dict string, try to parse and format nicely
+        if args.strip().startswith('{') and args.strip().endswith('}'):
+            try:
+
+                parsed_dict = json.loads(args)
+                # Recursively call with the parsed dict for consistent formatting
+                return _format_tool_args(parsed_dict, tool_name=tool_name) 
+            except json.JSONDecodeError:
+                # Not valid JSON, or not a dict; return as is
+                return args
+        else:
+            # Simple string arg, return as is
+            return args
+    
+    # Format arguments from a dictionary
+    if isinstance(args, dict):
+        # Only include non-empty values and exclude special flags
+        arg_parts = []
+        for key, value in args.items():
+            # Skip empty values
+            if value == "" or value == {} or value is None:
+                continue
+            # Skip special flags
+            if key in ["async_mode", "streaming"] and not value:
+                continue
+
+            value_str = str(value)
+
+            # Format the value
+            if isinstance(value, str):
+                # Truncate long string values that are not specifically handled above
+                if len(value_str) > 70 and key not in ["code", "args"]:
+                     value_str = value_str[:67] + "..."
+                arg_parts.append(f"{key}={value_str}")
             else:
-                execution_status = f" [{status}]"
+                arg_parts.append(f"{key}={value_str}")
+        return ", ".join(arg_parts)
+    else:
+        return str(args)
+
+# Helper function to get timing information
+def _get_timing_info(execution_info=None):
+    """Get timing information for display."""
+    import time
+    
+    # Get session timing information
+    try:
+        from cai.cli import START_TIME
+        total_time = time.time() - START_TIME if START_TIME else None
+    except ImportError:
+        total_time = None
+    
+    # Extract execution timing info
+    tool_time = None
+    if execution_info:
+        tool_time = execution_info.get('tool_time')
+    
+    # Format timing info for display
+    timing_info = []
+    if total_time:
+        timing_info.append(f"Total: {format_time(total_time)}")
+    if tool_time:
+        timing_info.append(f"Tool: {format_time(tool_time)}")
+    
+    return timing_info, tool_time
+# Helper function to create token info display
+def _create_token_info_display(token_info=None):
+    """Create token information display text."""
+    if not token_info:
+        return None
+    
+    from rich.text import Text
+    
+    model = token_info.get('model', '')
+    interaction_input_tokens = token_info.get('interaction_input_tokens', 0)
+    interaction_output_tokens = token_info.get('interaction_output_tokens', 0)
+    interaction_reasoning_tokens = token_info.get('interaction_reasoning_tokens', 0)
+    total_input_tokens = token_info.get('total_input_tokens', 0)
+    total_output_tokens = token_info.get('total_output_tokens', 0)
+    total_reasoning_tokens = token_info.get('total_reasoning_tokens', 0)
+    
+    # Only continue if we have actual token information
+    if not (interaction_input_tokens > 0 or total_input_tokens > 0):
+        return None
+    
+    # Create token display
+    return _create_token_display(
+        interaction_input_tokens,
+        interaction_output_tokens,
+        interaction_reasoning_tokens,
+        total_input_tokens,
+        total_output_tokens,
+        total_reasoning_tokens,
+        model,
+        token_info.get('interaction_cost'),
+        token_info.get('total_cost')
+    )
+
+# Helper function for simple tool output without Rich
+def _print_simple_tool_output(tool_name, args, output, execution_info=None, token_info=None):
+    """Print tool output without Rich formatting."""
+    # Format arguments
+    args_str = _format_tool_args(args)
+    
+    # Get tool execution time if available
+    tool_time_str = ""
+    execution_status = ""
+    if execution_info:
+        time_taken = execution_info.get('time_taken', 0) or execution_info.get('tool_time', 0)
+        status = execution_info.get('status', 'completed')
         
-        # Create timing display string
-        timing_info = []
-        if total_time:
-            timing_info.append(f"Total: {format_time(total_time)}")
-        if tool_time:
-            timing_info.append(f"Tool: {format_time(tool_time)}")
-        if timing_info:
-            header.append(f" [{' | '.join(timing_info)}]", style="cyan")
+        # Add execution info to the tool call display
+        if time_taken:
+            tool_time_str = f"Tool: {format_time(time_taken)}"
+            execution_status = f" [{status} in {time_taken:.2f}s]"
+        else:
+            execution_status = f" [{status}]"
+    
+    # Create timing display string
+    timing_info, _ = _get_timing_info(execution_info)
+    timing_display = f" [{' | '.join(timing_info)}]" if timing_info else ""
+    
+    # Show tool name, args, execution status and timing display
+    tool_call = f"{tool_name}({args_str})"
+    print(color(f"Tool Output: {tool_call}{timing_display}{execution_status}", fg="blue"))
+    
+    # If we have token info, display it
+    if token_info:
+        model = token_info.get('model', '')
+        interaction_input_tokens = token_info.get('interaction_input_tokens', 0)
+        interaction_output_tokens = token_info.get('interaction_output_tokens', 0)
+        interaction_reasoning_tokens = token_info.get('interaction_reasoning_tokens', 0)
+        total_input_tokens = token_info.get('total_input_tokens', 0)
+        total_output_tokens = token_info.get('total_output_tokens', 0)
+        total_reasoning_tokens = token_info.get('total_reasoning_tokens', 0)
+        
+        # If we have complete token information, display it
+        if (interaction_input_tokens > 0 or total_input_tokens > 0):
+            # Manually create formatted output similar to _create_token_display
+            print(color(f"  Current: I:{interaction_input_tokens} O:{interaction_output_tokens} R:{interaction_reasoning_tokens}", fg="cyan"))
             
-        timing_display = f" [{' | '.join(timing_info)}]" if timing_info else ""
-        
-        # Show tool name, args, execution status and timing display
-        print(color(f"Tool Output: {tool_call}{timing_display}{execution_status}", fg="blue"))
-        
-        # If we have token info, display it using the consistent format from _create_token_display
-        if token_info:
-            model = token_info.get('model', '')
-            interaction_input_tokens = token_info.get('interaction_input_tokens', 0)
-            interaction_output_tokens = token_info.get('interaction_output_tokens', 0)
-            interaction_reasoning_tokens = token_info.get('interaction_reasoning_tokens', 0)
-            total_input_tokens = token_info.get('total_input_tokens', 0)
-            total_output_tokens = token_info.get('total_output_tokens', 0)
-            total_reasoning_tokens = token_info.get('total_reasoning_tokens', 0)
-            interaction_cost = token_info.get('interaction_cost')
-            total_cost = token_info.get('total_cost')
+            # Calculate or use provided costs
+            current_cost = COST_TRACKER.process_interaction_cost(
+                model, 
+                interaction_input_tokens, 
+                interaction_output_tokens,
+                interaction_reasoning_tokens,
+                token_info.get('interaction_cost')
+            )
+            total_cost_value = COST_TRACKER.process_total_cost(
+                model,
+                total_input_tokens,
+                total_output_tokens,
+                total_reasoning_tokens,
+                token_info.get('total_cost')
+            )
+            print(color(f"  Cost: Current ${current_cost:.4f} | Total ${total_cost_value:.4f} | Session ${COST_TRACKER.session_total_cost:.4f}", fg="cyan"))
             
-            # If we have complete token information, display it
-            if (interaction_input_tokens > 0 or total_input_tokens > 0):
-                # Manually create formatted output similar to _create_token_display
-                print(color(f"  Current: I:{interaction_input_tokens} O:{interaction_output_tokens} R:{interaction_reasoning_tokens}", fg="cyan"))
-                
-                # Calculate or use provided costs
-                current_cost = COST_TRACKER.process_interaction_cost(
-                    model, 
-                    interaction_input_tokens, 
-                    interaction_output_tokens,
-                    interaction_reasoning_tokens,
-                    interaction_cost
-                )
-                total_cost_value = COST_TRACKER.process_total_cost(
-                    model,
-                    total_input_tokens,
-                    total_output_tokens,
-                    total_reasoning_tokens,
-                    total_cost
-                )
-                print(color(f"  Cost: Current ${current_cost:.4f} | Total ${total_cost_value:.4f} | Session ${COST_TRACKER.session_total_cost:.4f}", fg="cyan"))
-                
-                # Show context usage
-                context_pct = interaction_input_tokens / get_model_input_tokens(model) * 100
-                indicator = "🟩" if context_pct < 50 else "🟨" if context_pct < 80 else "🟥"
-                print(color(f"  Context: {context_pct:.1f}% {indicator}", fg="cyan"))
+            # Show context usage
+            context_pct = interaction_input_tokens / get_model_input_tokens(model) * 100
+            indicator = "🟩" if context_pct < 50 else "🟨" if context_pct < 80 else "🟥"
+            print(color(f"  Context: {context_pct:.1f}% {indicator}", fg="cyan"))
+    
+    # Print the actual output
+    print(output)
+    print()
+
+# Add a new function to start a streaming tool execution
+def start_tool_streaming(tool_name, args, call_id=None):
+    """
+    Start a streaming tool execution session.
+    This allows for progressive updates during tool execution.
+    
+    Args:
+        tool_name: Name of the tool being executed
+        args: Arguments to the tool (dictionary or string)
+        call_id: Optional call ID for this execution. If not provided, one will be generated.
         
-        # Print the actual output
-        print(output)
-        print()
+    Returns:
+        call_id: The call ID for this streaming session (can be used for updates)
+    """
+    import time
+    import uuid
+    
+    # Generate a command key to check for duplicates - match format used in cli_print_tool_output
+    if isinstance(args, dict):
+        cmd = args.get("command", "")
+        cmd_args = args.get("args", "")
+        command_key = f"{tool_name}:{cmd_args}"
+    else:
+        command_key = f"{tool_name}:{args}"
+    
+    # Check if we've already seen this exact command recently
+    if not hasattr(start_tool_streaming, '_recent_commands'):
+        start_tool_streaming._recent_commands = {}
+        
+    # If we have an existing active streaming session for this command, reuse its call_id
+    # This prevents duplicate panels when the same command runs multiple times
+    for existing_call_id, info in list(start_tool_streaming._recent_commands.items()):
+        # Only consider recent commands (last 10 seconds)
+        timestamp = info.get('timestamp', 0)
+        if time.time() - timestamp < 10.0:
+            existing_command_key = info.get('command_key', '')
+            # Get the existing session info if available
+            if (hasattr(cli_print_tool_output, '_streaming_sessions') and 
+                existing_call_id in cli_print_tool_output._streaming_sessions):
+                session = cli_print_tool_output._streaming_sessions[existing_call_id]
+                # If this is the same command and not complete, reuse the call_id
+                if existing_command_key == command_key and not session.get('is_complete', False):
+                    return existing_call_id
+    
+    # Generate a call_id if not provided
+    if not call_id:
+        cmd_part = ""
+        if isinstance(args, dict) and "command" in args:
+            cmd_part = f"{args['command']}_"
+        call_id = f"cmd_{cmd_part}{str(uuid.uuid4())[:8]}"
+    
+    # Track this call_id with command key for better duplicate detection
+    start_tool_streaming._recent_commands[call_id] = {
+        'timestamp': time.time(),
+        'command_key': command_key
+    }
+    
+    # Cleanup old entries to prevent memory growth
+    current_time = time.time()
+    start_tool_streaming._recent_commands = {
+        k: v for k, v in start_tool_streaming._recent_commands.items() 
+        if current_time - v.get('timestamp', 0) < 30  # Keep entries from last 30 seconds
+    }
+    
+    # Show initial message with "Starting..." output
+    cli_print_tool_output(
+        tool_name=tool_name,
+        args=args,
+        output="Starting tool execution...",
+        call_id=call_id,
+        execution_info={"status": "running", "start_time": time.time()},
+        streaming=True
+    )
+    
+    return call_id
+
+# Add a function to update a streaming tool execution
+def update_tool_streaming(tool_name, args, output, call_id):
+    """
+    Update a streaming tool execution with new output.
+    
+    Args:
+        tool_name: Name of the tool being executed
+        args: Arguments to the tool (dictionary or string)
+        output: New output to display
+        call_id: The call ID for this streaming session
+        
+    Returns:
+        None
+    """
+    # Update the streaming output
+    cli_print_tool_output(
+        tool_name=tool_name,
+        args=args,
+        output=output,
+        call_id=call_id,
+        execution_info={"status": "running", "replace_buffer": True},
+        streaming=True
+    )
+
+# Add a function to complete a streaming tool execution
+def finish_tool_streaming(tool_name, args, output, call_id, execution_info=None, token_info=None):
+    """
+    Complete a streaming tool execution.
+    
+    Args:
+        tool_name: Name of the tool being executed
+        args: Arguments to the tool (dictionary or string)
+        output: Final output to display
+        call_id: The call ID for this streaming session
+        execution_info: Optional execution information
+        token_info: Optional token information
+        
+    Returns:
+        None
+    """
+    import time
+    
+    # Prepare execution info with completion status
+    if execution_info is None:
+        execution_info = {}
+    
+    # Add completion markers
+    execution_info["status"] = execution_info.get("status", "completed")
+    execution_info["is_final"] = True
+    execution_info["replace_buffer"] = True
+    
+    # Calculate execution time if start_time is in the streaming session
+    if hasattr(cli_print_tool_output, '_streaming_sessions') and call_id in cli_print_tool_output._streaming_sessions:
+        session = cli_print_tool_output._streaming_sessions[call_id]
+        if 'start_time' in session and 'tool_time' not in execution_info:
+            execution_info["tool_time"] = time.time() - session['start_time']
+    
+    # Show the final output
+    cli_print_tool_output(
+        tool_name=tool_name,
+        args=args,
+        output=output,
+        call_id=call_id,
+        execution_info=execution_info,
+        token_info=token_info,
+        streaming=True
+    )
+    
+    # Mark the streaming session as complete
+    if hasattr(cli_print_tool_output, '_streaming_sessions') and call_id in cli_print_tool_output._streaming_sessions:
+        cli_print_tool_output._streaming_sessions[call_id]['is_complete'] = True
+
+def print_message_history(messages, title="Message History"):
+    """
+    Pretty-print a sequence of messages with enhanced debug information.
+    
+    Args:
+        messages (List[dict]): List of message dictionaries to display
+        title (str, optional): Title to display above the message history
+    """
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich.table import Table
+    
+    console = Console()
+    
+    # Create a table for displaying messages
+    table = Table(show_header=True, header_style="bold magenta", expand=True)
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Role", style="cyan", width=10)
+    table.add_column("Content", width=40)
+    table.add_column("Metadata", width=30)
+    
+    # Process each message
+    for i, msg in enumerate(messages):
+        # Get role with color based on type
+        role = msg.get("role", "unknown")
+        role_style = {
+            "user": "green",
+            "assistant": "blue",
+            "system": "yellow",
+            "tool": "magenta"
+        }.get(role, "white")
+        
+        # Get content preview
+        content = msg.get("content")
+        content_preview = ""
+        if content is None:
+            content_preview = "[dim]None[/dim]"
+        elif isinstance(content, str):
+            # Truncate and escape long content
+            content_preview = (content[:37] + "...") if len(content) > 40 else content
+            content_preview = content_preview.replace("\n", "\\n")
+        elif isinstance(content, list):
+            content_preview = f"[list with {len(content)} items]"
+        else:
+            content_preview = f"[{type(content).__name__}]"
+        
+        # Gather metadata
+        metadata = []
+        if msg.get("tool_calls"):
+            tc_count = len(msg["tool_calls"])
+            tc_info = []
+            for tc in msg["tool_calls"]:
+                tc_id = tc.get("id", "unknown")
+                tc_name = tc.get("function", {}).get("name", "unknown") if "function" in tc else "unknown"
+                tc_info.append(f"{tc_name}({tc_id})")
+            metadata.append(f"tool_calls[{tc_count}]: {', '.join(tc_info)}")
+            
+        if msg.get("tool_call_id"):
+            metadata.append(f"tool_call_id: {msg['tool_call_id']}")
+            
+        metadata_str = ", ".join(metadata)
+        
+        # Add row to table
+        table.add_row(
+            str(i),
+            f"[{role_style}]{role}[/{role_style}]",
+            content_preview,
+            metadata_str
+        )
+    
+    # Create the panel with the table
+    panel = Panel(
+        table,
+        title=f"[bold]{title}[/bold]",
+        expand=False
+    )
+    
+    # Display the panel
+    console.print(panel)
+    
+    return len(messages)  # Return message count for convenience
+
+def get_language_from_code_block(lang_identifier):
+    """
+    Maps a language identifier from a markdown code block to a proper syntax 
+    highlighting language name. Handles common aliases and defaults.
+    
+    Args:
+        lang_identifier (str): Language identifier from markdown code block
+        
+    Returns:
+        str: Proper language name for syntax highlighting
+    """
+    # Convert to lowercase and strip whitespace
+    lang = lang_identifier.lower().strip() if lang_identifier else ""
+    
+    # Map common language aliases to their proper names
+    lang_map = {
+        # Empty strings or unknown
+        "": "text",
+        # Python variants
+        "py": "python",
+        "python3": "python",
+        # JavaScript variants
+        "js": "javascript",
+        "jsx": "jsx",
+        "ts": "typescript",
+        "tsx": "tsx",
+        "typescript": "typescript",
+        # Shell variants
+        "sh": "bash",
+        "shell": "bash",
+        "console": "bash",
+        "terminal": "bash",
+        # Web languages
+        "html": "html",
+        "css": "css",
+        "json": "json",
+        "xml": "xml",
+        "yml": "yaml",
+        "yaml": "yaml",
+        # C family
+        "c": "c",
+        "cpp": "cpp",
+        "c++": "cpp",
+        "csharp": "csharp",
+        "cs": "csharp",
+        "java": "java",
+        # Other common languages
+        "go": "go",
+        "golang": "go",
+        "ruby": "ruby",
+        "rb": "ruby",
+        "rust": "rust",
+        "php": "php",
+        "sql": "sql",
+        "diff": "diff",
+        "markdown": "markdown",
+        "md": "markdown",
+        # Default fallback
+        "text": "text",
+        "plaintext": "text",
+        "txt": "text",
+    }
+    
+    # Return mapped language or default to the original if not in map
+    return lang_map.get(lang, lang or "text")

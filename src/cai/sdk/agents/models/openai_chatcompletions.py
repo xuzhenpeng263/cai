@@ -336,6 +336,15 @@ class OpenAIChatCompletionsModel(Model):
                             # Log the user message
                             if item.get("content"):
                                 self.logger.log_user_message(item.get("content"))
+            
+            # IMPORTANT: Ensure the message list has valid tool call/result pairs
+            # This needs to happen before the API call to prevent errors
+            try:
+                from cai.util import fix_message_list
+                converted_messages = fix_message_list(converted_messages)
+            except Exception as e:
+                logger.warning(f"Failed to fix message list: {e}")
+                
             # Get token count estimate before API call for consistent counting
             estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
             
@@ -411,6 +420,10 @@ class OpenAIChatCompletionsModel(Model):
 
             # Only display the agent message if we haven't already shown the tool output
             if should_display_message:
+                # Ensure we're in non-streaming mode for proper markdown parsing
+                previous_stream_setting = os.environ.get('CAI_STREAM', 'false')
+                os.environ['CAI_STREAM'] = 'false'  # Force non-streaming mode for markdown parsing
+                
                 # Print the agent message for CLI display
                 cli_print_agent_messages(
                     agent_name=getattr(self, 'agent_name', 'Agent'),
@@ -433,7 +446,11 @@ class OpenAIChatCompletionsModel(Model):
                     interaction_cost=None,
                     total_cost=None,
                     tool_output=None,  # Don't pass tool output here, we're using direct display
+                    suppress_empty=True  # Suppress empty panels
                 )
+                
+                # Restore previous streaming setting
+                os.environ['CAI_STREAM'] = previous_stream_setting
 
             # --- Add assistant tool call to message_history if present ---
             # If the response contains tool_calls, add them to message_history as assistant messages
@@ -457,6 +474,22 @@ class OpenAIChatCompletionsModel(Model):
                     }
                     
                     add_to_message_history(tool_call_msg)
+                    
+                    # Save the tool call details for later matching with output
+                    # This is important for non-streaming mode to track tool calls properly
+                    if not hasattr(_Converter, 'recent_tool_calls'):
+                        _Converter.recent_tool_calls = {}
+                    
+                    # Store the tool call by ID for later reference
+                    import time
+                    _Converter.recent_tool_calls[tool_call.id] = {
+                        'name': tool_call.function.name,
+                        'arguments': tool_call.function.arguments,
+                        'start_time': time.time(),
+                        'execution_info': {
+                            'start_time': time.time()
+                        }
+                    }
                 
                 # Log the assistant tool call message
                 tool_calls_list = []
@@ -583,7 +616,7 @@ class OpenAIChatCompletionsModel(Model):
         stop_idle_timer()
         start_active_timer()
         
-        # Check if streaming should be shown in rich panel
+        # --- Check if streaming should be shown in rich panel ---
         should_show_rich_stream = os.getenv('CAI_STREAM', 'false').lower() == 'true' and not self.disable_rich_streaming
         
         # Create streaming context if needed
@@ -922,6 +955,55 @@ class OpenAIChatCompletionsModel(Model):
                                 if tool_call_msg not in streamed_tool_calls:
                                     streamed_tool_calls.append(tool_call_msg)
                                     add_to_message_history(tool_call_msg)
+                                    
+                                    # NEW: Display tool call immediately when detected in streaming mode
+                                    # But only if it has complete arguments and name
+                                    if (state.function_calls[tc_index].name and 
+                                        state.function_calls[tc_index].arguments and 
+                                        state.function_calls[tc_index].call_id):
+                                        # First, finish any existing streaming context if it exists
+                                        if streaming_context:
+                                            try:
+                                                finish_agent_streaming(streaming_context, None)
+                                                streaming_context = None
+                                            except Exception:
+                                                pass
+                                        
+                                        # Create a message-like object for displaying the function call
+                                        tool_msg = type('ToolCallStreamDisplay', (), {
+                                            'content': None,
+                                            'tool_calls': [
+                                                type('ToolCallDetail', (), {
+                                                    'function': type('FunctionDetail', (), {
+                                                        'name': state.function_calls[tc_index].name,
+                                                        'arguments': state.function_calls[tc_index].arguments
+                                                    }),
+                                                    'id': state.function_calls[tc_index].call_id,
+                                                    'type': 'function'
+                                                })
+                                            ]
+                                        })
+                                        
+                                        # Display the tool call during streaming
+                                        cli_print_agent_messages(
+                                            agent_name=getattr(self, 'agent_name', 'Agent'),
+                                            message=tool_msg,
+                                            counter=getattr(self, 'interaction_counter', 0),
+                                            model=str(self.model),
+                                            debug=False,
+                                            interaction_input_tokens=estimated_input_tokens,
+                                            interaction_output_tokens=estimated_output_tokens,
+                                            interaction_reasoning_tokens=0,  # Not available during streaming yet
+                                            total_input_tokens=getattr(self, 'total_input_tokens', 0) + estimated_input_tokens,
+                                            total_output_tokens=getattr(self, 'total_output_tokens', 0) + estimated_output_tokens,
+                                            total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
+                                            interaction_cost=None,
+                                            total_cost=None,
+                                            tool_output=None,  # Will be shown once tool is executed
+                                            suppress_empty=True  # Prevent empty panels
+                                        )
+                                        # Set flag to suppress final output to avoid duplication
+                                        self.suppress_final_output = True
 
                 except Exception as e:
                     # Ensure streaming context is cleaned up in case of errors
@@ -983,8 +1065,15 @@ class OpenAIChatCompletionsModel(Model):
                                 )
                                 
                                 # Display the tool call in CLI
-                                from cai.util import cli_print_agent_messages
                                 try:
+                                    # First, finish any existing streaming context if it exists
+                                    if streaming_context:
+                                        try:
+                                            finish_agent_streaming(streaming_context, None)
+                                            streaming_context = None
+                                        except Exception:
+                                            pass
+                                            
                                     # Create a message-like object to display the function call
                                     tool_msg = type('ToolCallWrapper', (), {
                                         'content': None,
@@ -1015,8 +1104,12 @@ class OpenAIChatCompletionsModel(Model):
                                         total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
                                         interaction_cost=None,
                                         total_cost=None,
-                                        tool_output=None  # Will be shown once the tool is executed
+                                        tool_output=None,  # Will be shown once the tool is executed
+                                        suppress_empty=True  # Suppress empty panels during streaming
                                     )
+                                    
+                                    # Set flag to suppress final output to avoid duplication
+                                    self.suppress_final_output = True
                                 except Exception as e:
                                     logger.error(f"Error displaying tool call in CLI: {e}")
                                 
@@ -1220,6 +1313,7 @@ class OpenAIChatCompletionsModel(Model):
                     direct_stats["total_cost"] = float(total_cost)
                     # Use the direct copy with guaranteed float costs
                     finish_agent_streaming(streaming_context, direct_stats)
+                    streaming_context = None
                     
                     # Removed extra newline after streaming completes to avoid blank lines
                     pass
@@ -1243,8 +1337,10 @@ class OpenAIChatCompletionsModel(Model):
                         for tool_call in tool_call_msg.get("tool_calls", []):
                             tool_calls_list.append(tool_call)
                     self.logger.log_assistant_message(None, tool_calls_list)
-               # If there was only text output, add that as an assistant message
-                if (not streamed_tool_calls) and state.text_content_index_and_output and state.text_content_index_and_output[1].text:
+                    
+                # If we've already shown the tool calls directly during streaming,
+                # don't log the text message to avoid duplication
+                elif (not self.suppress_final_output) and state.text_content_index_and_output and state.text_content_index_and_output[1].text:
                     asst_msg = {
                         "role": "assistant",
                         "content": state.text_content_index_and_output[1].text
@@ -1252,6 +1348,9 @@ class OpenAIChatCompletionsModel(Model):
                     add_to_message_history(asst_msg)
                     # Log the assistant message
                     self.logger.log_assistant_message(state.text_content_index_and_output[1].text)
+                
+                # Reset the suppress flag for future requests
+                self.suppress_final_output = False
                 
                 # Log the complete response
                 self.logger.rec_training_data(
@@ -1341,10 +1440,17 @@ class OpenAIChatCompletionsModel(Model):
         if tracing.include_data():
             span.span_data.input = converted_messages
 
-        # Ensure message list has correct structure regardless of error condition
+        # IMPORTANT: Always sanitize the message list to prevent tool call errors
+        # This is critical to fix common errors with tool/assistant sequences
         try:
             from cai.util import fix_message_list
+            prev_length = len(converted_messages)
             converted_messages = fix_message_list(converted_messages)
+            new_length = len(converted_messages)
+            
+            # Log if the message list was changed significantly
+            if new_length != prev_length:
+                logger.debug(f"Message list was fixed: {prev_length} -> {new_length} messages")
         except Exception as e:
             logger.warning(f"Failed to fix message list: {e}")
 
@@ -1531,15 +1637,49 @@ class OpenAIChatCompletionsModel(Model):
                         
             elif ("An assistant message with 'tool_calls'" in str(e) or
                 "`tool_use` blocks must be followed by a user message with `tool_result`" in str(e) or  # noqa: E501 # pylint: disable=C0301
-                "An assistant message with 'tool_calls' must be followed by tool messages" in str(e)):  # Añadir esta condición
+                "An assistant message with 'tool_calls' must be followed by tool messages" in str(e) or
+                "messages with role 'tool' must be a response to a preceeding message with 'tool_calls'" in str(e)):
                 print(f"Error: {str(e)}")
+                
+                # Use the pretty message history printer instead of the simple loop
+                try:
+                    from cai.util import print_message_history
+                    print("\nCurrent message sequence causing the error:")
+                    print_message_history(kwargs["messages"], title="Message Sequence Error")
+                except ImportError:
+                    # Fall back to simple printing if the function isn't available
+                    print("\nCurrent message sequence causing the error:")
+                    for i, msg in enumerate(kwargs["messages"]):
+                        role = msg.get("role", "unknown")
+                        content_type = (
+                            "text" if isinstance(msg.get("content"), str) else 
+                            "list" if isinstance(msg.get("content"), list) else 
+                            "None" if msg.get("content") is None else 
+                            type(msg.get("content")).__name__
+                        )
+                        tool_calls = "with tool_calls" if msg.get("tool_calls") else ""
+                        tool_call_id = f", tool_call_id: {msg.get('tool_call_id')}" if msg.get("tool_call_id") else ""
+                        
+                        print(f"  [{i}] {role}{tool_call_id} (content: {content_type}) {tool_calls}")
+                
                 # NOTE: EDGE CASE: Report Agent CTRL C error
                 #
                 # This fix CTRL-C error when message list is incomplete
                 # When a tool is not finished but the LLM generates a tool call
                 try:
                     from cai.util import fix_message_list
-                    kwargs["messages"] = fix_message_list(kwargs["messages"])
+                    print("Attempting to fix message sequence...")
+                    fixed_messages = fix_message_list(kwargs["messages"])
+                    
+                    # Show the fixed messages if they're different
+                    if fixed_messages != kwargs["messages"]:
+                        try:
+                            from cai.util import print_message_history
+                            print_message_history(fixed_messages, title="Fixed Message Sequence")
+                        except ImportError:
+                            print("Messages fixed successfully.")
+                            
+                    kwargs["messages"] = fixed_messages
                 except Exception as fix_error:
                     print(f"Failed to fix message sequence: {fix_error}")
                 
@@ -2042,7 +2182,11 @@ class _Converter:
             if current_assistant_msg is not None:
                 # The API doesn't support empty arrays for tool_calls
                 if not current_assistant_msg.get("tool_calls"):
-                    del current_assistant_msg["tool_calls"]
+                    # Ensure content is not None if tool_calls are absent and content is also None
+                    # Some models like Anthropic require some content, even if it's just a placeholder.
+                    if current_assistant_msg.get("content") is None:
+                        current_assistant_msg["content"] = "(No text content in this assistant message)" # Or just an empty string if preferred
+                    current_assistant_msg.pop("tool_calls", None) # Use pop with default to avoid KeyError
                 result.append(current_assistant_msg)
                 current_assistant_msg = None
 
@@ -2079,16 +2223,28 @@ class _Converter:
                 flush_assistant_message()
                 tool_calls_param: list[ChatCompletionMessageToolCallParam] = []
                 for tc in item["tool_calls"]:
+                    function_details = tc.get("function", {})
+                    arguments = function_details.get("arguments")
+                    # Ensure arguments is a valid JSON string, defaulting to "{}" if empty or None
+                    if arguments is None or (isinstance(arguments, str) and arguments.strip() == ""):
+                        arguments = "{}"
+                    elif isinstance(arguments, dict):
+                         # Ensure it's a string if it's a dict (should already be string per schema)
+                        arguments = json.dumps(arguments)
+
                     tool_calls_param.append(
                         ChatCompletionMessageToolCallParam(
                             id=tc.get("id", ""),
                             type=tc.get("type", "function"),
-                            function=tc.get("function", {}),
+                            function={
+                                "name": function_details.get("name", "unknown_function"),
+                                "arguments": arguments, # Use sanitized arguments
+                            },
                         )
                     )
                 msg_asst: ChatCompletionAssistantMessageParam = {
                     "role": "assistant",
-                    "content": item.get("content"),
+                    "content": item.get("content"), # Content can be None here
                     "tool_calls": tool_calls_param,
                 }
                 result.append(msg_asst)
@@ -2225,12 +2381,19 @@ class _Converter:
                     }
                 }
                 
+                arguments = func_call.get("arguments") # func_call is a dict here
+                # Ensure arguments is a valid JSON string, defaulting to "{}" if empty or None
+                if arguments is None or (isinstance(arguments, str) and arguments.strip() == ""):
+                    arguments = "{}"
+                elif isinstance(arguments, dict):
+                    arguments = json.dumps(arguments)
+
                 new_tool_call = ChatCompletionMessageToolCallParam(
                     id=func_call["call_id"],
                     type="function",
                     function={
                         "name": func_call["name"],
-                        "arguments": func_call["arguments"],
+                        "arguments": arguments, # Use sanitized arguments
                     },
                 )
                 tool_calls.append(new_tool_call)
@@ -2244,22 +2407,22 @@ class _Converter:
                 
                 # Update execution timing if we have the start time
                 if hasattr(cls, 'recent_tool_calls') and call_id in cls.recent_tool_calls:
-                    tool_call = cls.recent_tool_calls[call_id]
-                    if 'start_time' in tool_call:
+                    tool_call_details = cls.recent_tool_calls[call_id] # Renamed for clarity
+                    if 'start_time' in tool_call_details:
                         end_time = time.time()
-                        tool_execution_time = end_time - tool_call['start_time']
+                        tool_execution_time = end_time - tool_call_details['start_time']
                         
                         # Update the execution info
-                        if 'execution_info' in tool_call:
-                            tool_call['execution_info']['end_time'] = end_time
-                            tool_call['execution_info']['tool_time'] = tool_execution_time
+                        if 'execution_info' in tool_call_details:
+                            tool_call_details['execution_info']['end_time'] = end_time
+                            tool_call_details['execution_info']['tool_time'] = tool_execution_time
                             
                             # If this is the first tool being executed, record the total time from conversation start
                             if not hasattr(cls, 'conversation_start_time'):
-                                cls.conversation_start_time = tool_call['start_time']
+                                cls.conversation_start_time = tool_call_details['start_time']
                                 
-                            total_time = end_time - getattr(cls, 'conversation_start_time', tool_call['start_time'])
-                            tool_call['execution_info']['total_time'] = total_time
+                            total_time = end_time - getattr(cls, 'conversation_start_time', tool_call_details['start_time'])
+                            tool_call_details['execution_info']['total_time'] = total_time
                 
                 # Store the output so it can be accessed later
                 if not hasattr(cls, 'tool_outputs'):
@@ -2270,67 +2433,73 @@ class _Converter:
                 # Display the tool output immediately with the matched tool call
                 from cai.util import cli_print_tool_output
                 
-                # Check if we're in streaming mode - don't show tool output panel in streaming mode
+                # Look up the original tool call to get the name and arguments
+                tool_name = "Unknown Tool"
+                tool_args = {}
+                execution_info = {}
+                
+                if hasattr(cls, 'recent_tool_calls') and call_id in cls.recent_tool_calls:
+                    tool_call_details = cls.recent_tool_calls[call_id] # Renamed for clarity
+                    tool_name = tool_call_details.get('name', 'Unknown Tool')
+                    tool_args = tool_call_details.get('arguments', {})
+                    execution_info = tool_call_details.get('execution_info', {})
+                
+                # Get token counts from the OpenAIChatCompletionsModel if available
+                model_instance = None
+                for frame in inspect.stack():
+                    if 'self' in frame.frame.f_locals:
+                        self_obj = frame.frame.f_locals['self']
+                        if isinstance(self_obj, OpenAIChatCompletionsModel):
+                            model_instance = self_obj
+                            break
+                
+                # Always create a token_info dictionary, even if some values are zero
+                token_info = {
+                    'interaction_input_tokens': getattr(model_instance, 'interaction_input_tokens', 0),
+                    'interaction_output_tokens': getattr(model_instance, 'interaction_output_tokens', 0),
+                    'interaction_reasoning_tokens': getattr(model_instance, 'interaction_reasoning_tokens', 0),
+                    'total_input_tokens': getattr(model_instance, 'total_input_tokens', 0),
+                    'total_output_tokens': getattr(model_instance, 'total_output_tokens', 0),
+                    'total_reasoning_tokens': getattr(model_instance, 'total_reasoning_tokens', 0),
+                    'model': str(getattr(model_instance, 'model', '')),
+                }
+                
+                # Calculate costs using standard cost model
+                if model_instance and hasattr(model_instance, 'model'):
+                    from cai.util import calculate_model_cost
+                    model_name_str = str(model_instance.model) # Ensure model name is string
+                    token_info['interaction_cost'] = calculate_model_cost(
+                        model_name_str, 
+                        token_info['interaction_input_tokens'], 
+                        token_info['interaction_output_tokens']
+                    )
+                    token_info['total_cost'] = calculate_model_cost(
+                        model_name_str,
+                        token_info['total_input_tokens'],
+                        token_info['total_output_tokens']
+                    )
+                
+                # Check if we're in streaming mode
                 is_streaming_enabled = os.environ.get('CAI_STREAM', 'false').lower() == 'true'
-                if is_streaming_enabled:
-                    # Don't display tool output in streaming mode - it will be handled elsewhere
-                    pass  # Just skip the display, but preserve the tool output
-                else:
-                    # For non-streaming mode, maintain the original behavior
-                    # Look up the original tool call to get the name and arguments
-                    if hasattr(cls, 'recent_tool_calls') and call_id in cls.recent_tool_calls:
-                        tool_call = cls.recent_tool_calls[call_id]
-                        tool_name = tool_call.get('name', 'Unknown Tool')
-                        tool_args = tool_call.get('arguments', {})
-                        execution_info = tool_call.get('execution_info', {})
-                        
-                        # Get token counts from the OpenAIChatCompletionsModel if available
-                        model_instance = None
-                        for frame in inspect.stack():
-                            if 'self' in frame.frame.f_locals:
-                                self_obj = frame.frame.f_locals['self']
-                                if isinstance(self_obj, OpenAIChatCompletionsModel):
-                                    model_instance = self_obj
-                                    break
-                        
-                        # Always create a token_info dictionary, even if some values are zero
-                        token_info = {
-                            'interaction_input_tokens': getattr(model_instance, 'interaction_input_tokens', 0),
-                            'interaction_output_tokens': getattr(model_instance, 'interaction_output_tokens', 0),
-                            'interaction_reasoning_tokens': getattr(model_instance, 'interaction_reasoning_tokens', 0),
-                            'total_input_tokens': getattr(model_instance, 'total_input_tokens', 0),
-                            'total_output_tokens': getattr(model_instance, 'total_output_tokens', 0),
-                            'total_reasoning_tokens': getattr(model_instance, 'total_reasoning_tokens', 0),
-                            'model': str(getattr(model_instance, 'model', '')),
-                        }
-                        
-                        # Calculate costs using standard cost model
-                        if model_instance and hasattr(model_instance, 'model'):
-                            from cai.util import calculate_model_cost
-                            model_name = str(model_instance.model)
-                            token_info['interaction_cost'] = calculate_model_cost(
-                                model_name, 
-                                token_info['interaction_input_tokens'], 
-                                token_info['interaction_output_tokens']
-                            )
-                            token_info['total_cost'] = calculate_model_cost(
-                                model_name,
-                                token_info['total_input_tokens'],
-                                token_info['total_output_tokens']
-                            )
-                        
-                        # Use the cli_print_tool_output function with actual token values
-                        cli_print_tool_output(
-                            tool_name=tool_name, 
-                            args=tool_args, 
-                            output=output_content, 
-                            call_id=call_id,  # Keep call_id for non-streaming mode
-                            execution_info=execution_info,
-                            token_info=token_info
-                        )
+                
+                # Always display tool output regardless of streaming mode
+                cli_print_tool_output(
+                    tool_name=tool_name, 
+                    args=tool_args, 
+                    output=output_content, 
+                    call_id=call_id,
+                    execution_info=execution_info,
+                    token_info=token_info
+                )
                 
                 # Continue with normal processing
                 flush_assistant_message()
+                
+                # REMOVED THE BLOCK THAT CREATED A SYNTHETIC ASSISTANT MESSAGE HERE
+                # The responsibility for ensuring a preceding assistant message
+                # is now fully deferred to fix_message_list, called later.
+
+                # Now add the tool message
                 msg: ChatCompletionToolMessageParam = {
                     "role": "tool",
                     "tool_call_id": func_output["call_id"],

@@ -177,7 +177,7 @@ def display_banner(console: Console):
 [white]                                  Bug bounty-ready AI[/white]
     """
 
-    console.print(banner)
+    console.print(banner, end="")
 
     # # Create a table showcasing CAI framework capabilities
     # #
@@ -361,4 +361,4 @@ def display_quick_guide(console: Console):
         border_style="blue",
         padding=(1, 2),
         title_align="center"
-    ))
+    ), end="")
