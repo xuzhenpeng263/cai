@@ -492,7 +492,15 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             # Begin collecting output
             output_buffer = []
             buffer_size = 0
-            update_interval = 10  # lines
+            update_interval = 10  # lines - default for most tools
+            
+            # Use a smaller interval for generic_linux_command for better responsiveness
+            if tool_name == "generic_linux_command":
+                update_interval = 3  # Update more frequently for terminal commands
+                
+                # Add refresh rate info to tool_args for cli_print_tool_output
+                if "refresh_rate" not in tool_args:
+                    tool_args["refresh_rate"] = 2
             
             # Stream stdout in real-time
             for line in iter(process.stdout.readline, ''):
@@ -750,6 +758,10 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     "workspace": container_workspace
                 }
                 
+                # Add refresh rate info for generic_linux_command
+                if tool_name == "generic_linux_command":
+                    tool_args["refresh_rate"] = 2
+                
                 # Initialize the streaming session with a consistent call_id format
                 call_id = start_tool_streaming(tool_name, tool_args, call_id)
                 
@@ -976,6 +988,10 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     "workspace": os.path.basename(_get_workspace_dir())
                 }
                 
+                # Add refresh rate info for generic_linux_command
+                if tool_name == "generic_linux_command":
+                    tool_args["refresh_rate"] = 2
+                
                 # Initialize the streaming session with a consistent call_id format
                 call_id = start_tool_streaming(tool_name, tool_args, call_id)
                 
@@ -1056,6 +1072,10 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     "ssh_host": ssh_connection,
                     "environment": "SSH"
                 }
+                
+                # Add refresh rate info for generic_linux_command
+                if tool_name == "generic_linux_command":
+                    tool_args["refresh_rate"] = 2
                 
                 # Initialize streaming session with a consistent call_id format
                 call_id = start_tool_streaming(tool_name, tool_args, call_id)
