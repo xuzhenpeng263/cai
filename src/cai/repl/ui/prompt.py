@@ -110,6 +110,6 @@ def get_user_input(
         enable_suspend=True,  # Allow suspending with Ctrl+Z
         enable_open_in_editor=True,  # Allow editing with Ctrl+X Ctrl+E
         multiline=False,  # Enable multiline input
-        rprompt=get_rprompt,  # Missing comma here
+        rprompt=get_rprompt,
         color_depth=None,  # Auto-detect color support
     )

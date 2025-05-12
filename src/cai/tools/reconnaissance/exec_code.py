@@ -37,62 +37,101 @@ def execute_code(code: str = "", language: str = "python",
         "python": "py",
         "php": "php",
         "bash": "sh",
+        "shell": "sh",  # Add shell as alias for bash
         "ruby": "rb",
         "perl": "pl",
         "golang": "go",
+        "go": "go",     # Add go as alias for golang
         "javascript": "js",
+        "js": "js",     # Add js as alias for javascript
         "typescript": "ts",
+        "ts": "ts",     # Add ts as alias for typescript
         "rust": "rs",
         "csharp": "cs",
+        "cs": "cs",     # Add cs as alias for csharp
         "java": "java",
-        "kotlin": "kt"
+        "kotlin": "kt",
+        "c": "c",       # Add C language
+        "cpp": "cpp",   # Add C++ language
+        "c++": "cpp"    # Add C++ language alias
     }
-    ext = extensions.get(language.lower(), "txt")
+    # Normalize language to lowercase
+    language = language.lower()
+    ext = extensions.get(language, "txt")
     full_filename = f"{filename}.{ext}"
 
+    # Create code file with content
     create_cmd = f"cat << 'EOF' > {full_filename}\n{code}\nEOF"
-    result = run_command(create_cmd, ctf=ctf)
+    result = run_command(create_cmd, ctf=ctf, stream=True, tool_name="execute_code")
     if "error" in result.lower():
         return f"Failed to create code file: {result}"
-    if language.lower() == "python":
+    
+    # Prepare execution command based on language
+    if language in ["python", "py"]:
         exec_cmd = f"python3 {full_filename}"
-    elif language.lower() == "php":
+    elif language in ["php"]:
         exec_cmd = f"php {full_filename}"
-    elif language.lower() in ["bash", "sh"]:
+    elif language in ["bash", "sh", "shell"]:
         exec_cmd = f"bash {full_filename}"
-    elif language.lower() == "ruby":
+    elif language in ["ruby", "rb"]:
         exec_cmd = f"ruby {full_filename}"
-    elif language.lower() == "perl":
+    elif language in ["perl", "pl"]:
         exec_cmd = f"perl {full_filename}"
-    elif language.lower() == "golang" or language.lower() == "go":
+    elif language in ["golang", "go"]:
         temp_dir = f"/tmp/go_exec_{filename}"
         run_command(f"mkdir -p {temp_dir}", ctf=ctf)
         run_command(f"cp {full_filename} {temp_dir}/main.go", ctf=ctf)
         run_command(f"cd {temp_dir} && go mod init temp", ctf=ctf)
         exec_cmd = f"cd {temp_dir} && go run main.go"
-    elif language.lower() == "javascript":
+    elif language in ["javascript", "js"]:
         exec_cmd = f"node {full_filename}"
-    elif language.lower() == "typescript":
+    elif language in ["typescript", "ts"]:
         exec_cmd = f"ts-node {full_filename}"
-    elif language.lower() == "rust":
+    elif language in ["rust", "rs"]:
         # For Rust, we need to compile first
         run_command(f"rustc {full_filename} -o {filename}", ctf=ctf)
         exec_cmd = f"./{filename}"
-    elif language.lower() == "csharp":
+    elif language in ["csharp", "cs"]:
         # For C#, compile with dotnet
         run_command(f"dotnet build {full_filename}", ctf=ctf)
         exec_cmd = f"dotnet run {full_filename}"
-    elif language.lower() == "java":
+    elif language in ["java"]:
         # For Java, compile first
         run_command(f"javac {full_filename}", ctf=ctf)
         exec_cmd = f"java {filename}"
-    elif language.lower() == "kotlin":
+    elif language in ["kotlin", "kt"]:
         # For Kotlin, compile first
         run_command(f"kotlinc {full_filename} -include-runtime -d {filename}.jar", ctf=ctf)
         exec_cmd = f"java -jar {filename}.jar"
+    elif language in ["c"]:
+        # For C, compile with gcc
+        run_command(f"gcc {full_filename} -o {filename}", ctf=ctf)
+        exec_cmd = f"./{filename}"
+    elif language in ["cpp", "c++"]:
+        # For C++, compile with g++
+        run_command(f"g++ {full_filename} -o {filename}", ctf=ctf)
+        exec_cmd = f"./{filename}"
     else:
         return f"Unsupported language: {language}"
 
-    output = run_command(exec_cmd, ctf=ctf, timeout=timeout)
+    # Execute the code with syntax-highlighted output
+    # Create a custom tool args dictionary to send language and code info to the tool output function
+    tool_args = {
+        "command": "execute",
+        "language": language,
+        "filename": filename,
+        "code": code,  # Include the code for syntax highlighting
+        "timeout": timeout
+    }
+    
+    # Run the command with streaming to get syntax highlighting
+    output = run_command(
+        exec_cmd, 
+        ctf=ctf, 
+        timeout=timeout, 
+        stream=True, 
+        tool_name="execute_code", 
+        args=tool_args
+    )
 
     return output

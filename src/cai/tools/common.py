@@ -11,8 +11,9 @@ import signal
 import time
 import uuid
 import sys
+import shlex
 from wasabi import color  # pylint: disable=import-error
-from cai.util  import format_time
+from cai.util import format_time, start_active_timer, stop_active_timer, start_idle_timer, stop_idle_timer, cli_print_tool_output
 
 
 # Instead of direct import
@@ -184,12 +185,12 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                     else:
                         self.is_running = False
                         break
-                except Exception as e: 
+                except Exception as read_err: 
                      self.output_buffer.append(f"Error reading output buffer: {str(read_err)}")
                      self.is_running = False
                      break
                 # Add a small sleep to prevent busy-waiting if no output
-                if is_process_running(self):
+                if self.is_process_running():
                      time.sleep(0.05)
         except Exception as e:
             self.output_buffer.append(f"Error in read_output loop: {str(e)}")
@@ -245,6 +246,8 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
     def terminate(self):
         """Terminate the session"""
         session_id_short = self.session_id[:8]
+        termination_message = f"Session {session_id_short} terminated"
+        
         if not self.is_running:
              if self.process and self.process.poll() is None:
                  pass # Process is running, proceed with termination
@@ -257,7 +260,8 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
             if self.process:
                 # Try to terminate the process group
                 try:
-                    os.killpg(os.getpgid(self.process.pid), signal.SIGTERM) 
+                    pgid = os.getpgid(self.process.pid)
+                    os.killpg(pgid, signal.SIGTERM) 
                 except ProcessLookupError:
                      pass # Process already gone
                 except subprocess.TimeoutExpired:
@@ -294,7 +298,7 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                 except OSError: pass
                 self.slave = None
                 
-            return termination_message or f"Session {self.session_id} terminated"
+            return termination_message
         except Exception as e:  # pylint: disable=broad-except
             return f"Error terminating session {session_id_short}: {str(e)}"
 
@@ -430,219 +434,80 @@ def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None):
         return error_msg
 
 
-def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None, workspace_dir=None):
+def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None, workspace_dir=None, custom_args=None):
     """Runs command locally in the specified workspace_dir."""
-    # If streaming is enabled and we have a call_id
-    if stream and call_id:
-        return _run_local_streamed(command, call_id, timeout, tool_name, workspace_dir)
+    # Make sure we're in active time mode for tool execution
+    stop_idle_timer()
+    start_active_timer()
     
-    target_dir = workspace_dir or _get_workspace_dir()
-    original_cmd_for_msg = command # For logging
-    context_msg = f"(local:{target_dir})"
+    process_start_time = time.time()  # Initialize with current time
     try:
-        result = subprocess.run(
-            command,
-            shell=True,  # nosec B602
-            capture_output=True,
-            text=True,
-            check=False, 
-            timeout=timeout,
-            cwd=target_dir 
-        )
-        output = result.stdout if result.stdout else result.stderr
-        if stdout:
-            print(f"\033[32m{context_msg} $ {original_cmd_for_msg}\n{output}\033[0m") # noqa E501
-            
-        # Skip passing output to cli_print_tool_output when CAI_STREAM=true
-        # This prevents duplicate output in streaming mode
-        is_streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
-        if not is_streaming_enabled:
-            # Optional: Add cli_print_tool_output call here if needed for non-streaming
-            pass
-            
-        return output.strip()
-    except subprocess.TimeoutExpired as e:
-        error_output = e.stdout if e.stdout else str(e)
-        if stdout:
-            print("\033[32m" + error_output + "\033[0m")
-            return error_output
-    except Exception as e:  # pylint: disable=broad-except
-            error_msg = f"Error executing local command: {e}"
-            print(color(error_msg, fg="red"))
-            return error_msg
-
-
-def _run_local_streamed(command, call_id, timeout=100, tool_name=None, workspace_dir=None):
-    """Run a local command with streaming output to the Tool output panel."""
-    target_dir = workspace_dir or _get_workspace_dir()
-    try:
-        # Try to import Rich for nice display
-        try:
-            from rich.console import Console
-            from rich.live import Live
-            from rich.panel import Panel
-            from rich.text import Text
-            from rich.box import ROUNDED
-            console = Console()
-            rich_available = True
-        except ImportError:
-            rich_available = False
-            from cai.util import cli_print_tool_output
-            
-        output_buffer = []
+        target_dir = workspace_dir or _get_workspace_dir()
+        original_cmd_for_msg = command # For logging
+        context_msg = f"(local:{target_dir})"
         
-        # Start the process
-        process = subprocess.Popen(
-            command,
-            shell=True,  # nosec B602
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            cwd=target_dir  # Set CWD for local process
-        )
-        
-        # If tool_name is not provided, derive it from the command
-        if tool_name is None:
-            # Just use the first command as the tool name
-            tool_name = command.strip().split()[0] + "_command"
-        
-        # Create panel content for Rich display
-        if rich_available:
-            # Parse command into command and args
+        # If streaming is enabled and we have a call_id
+        if stream:
+            # Import the streaming utilities from util
+            from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
+            
+            # Parse command into parts for display
             parts = command.strip().split(' ', 1)
-            cmd = parts[0] if parts else ""
-            args = parts[1] if len(parts) > 1 else ""
+            cmd_var = parts[0] if parts else ""
+            args_param_val = parts[1] if len(parts) > 1 else "" # Renamed to avoid conflict with tool_args dict key
             
-            # Format clean arguments, following the same rules as cli_print_tool_output
-            arg_parts = []
-            if cmd:
-                arg_parts.append(f"command={cmd}")
-            if args and args.strip():  # Only add args if non-empty
-                arg_parts.append(f"args={args}")
-            args_str = ", ".join(arg_parts)
+            # For generic Linux commands, standardize the tool_name format
+            if not tool_name:
+                tool_name = f"{cmd_var}_command" if cmd_var else "command"
             
-            header = Text()
-            header.append(tool_name, style="#00BCD4")
-            header.append("(", style="yellow")
-            header.append(args_str, style="yellow")
-            header.append(")", style="yellow")
-            tool_time = 0 
-            start_time = time.time()
-            total_time = time.time() - START_TIME 
-            timing_info = []
-            if total_time:
-                timing_info.append(f"Total: {format_time(total_time)}")
-            if tool_time:
-                timing_info.append(f"Tool: {format_time(tool_time)}")
-            if timing_info:
-                header.append(f" [{' | '.join(timing_info)}]", style="cyan")
-
-            content = Text()
+            # Create args dictionary with non-empty values only
+            tool_args = {}
+            if cmd_var:
+                tool_args["command"] = cmd_var
+            if args_param_val and args_param_val.strip():
+                tool_args["args"] = args_param_val
             
-            panel = Panel(
-                Text.assemble(header, "\n\n", content),
-                title="[bold green]Tool Execution[/bold green]",
-                subtitle="[bold green]Live Output[/bold green]",
-                border_style="green",
-                padding=(1, 2),
-                box=ROUNDED
+            # Add more context for the command
+            tool_args["workspace"] = os.path.basename(target_dir)
+            tool_args["full_command"] = command
+            
+            # If custom args were provided, merge them with the default args
+            if custom_args is not None:
+                if isinstance(custom_args, dict):
+                    # Merge the dictionaries, with custom args taking precedence
+                    for key, value in custom_args.items():
+                        tool_args[key] = value
+            
+            # For generic commands, ensure we have a unique call_id
+            if not call_id:
+                call_id = f"cmd_{cmd_var}_{str(uuid.uuid4())[:8]}"
+            
+            # Initialize/use the call_id for this streaming session
+            call_id = start_tool_streaming(tool_name, tool_args, call_id)
+            
+            # Start the process
+            process = subprocess.Popen(
+                command,
+                shell=True,  # nosec B602
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                cwd=target_dir
             )
             
-            # Start Live display
-            with Live(panel, console=console, refresh_per_second=4) as live:
-                # Stream stdout in real-time
-                start_time = time.time()
-                for line in iter(process.stdout.readline, ''):
-                    if not line:
-                        break
-
-                    # Add to output collection
-                    output_buffer.append(line)
-
-                    # Update content with new line
-                    content.append(line, style="bright_white")
-
-                    # Update tool_time and header with new timing info
-                    tool_time = time.time() - start_time
-                    total_time = time.time() - START_TIME 
-                    # Remove any previous timing info from header (rebuild header)
-                    timing_info = []
-                    if total_time:
-                        timing_info.append(f"Total: {format_time(total_time)}")
-                    if tool_time:
-                        timing_info.append(f"Tool: {format_time(tool_time)}")
-                    # Rebuild header to update timing
-                    header = Text()
-                    header.append(tool_name, style="#00BCD4")
-                    header.append("(", style="yellow")
-                    header.append(args_str, style="yellow")
-                    header.append(")", style="yellow")
-                    if timing_info:
-                        header.append(f" [{' | '.join(timing_info)}]", style="cyan")
-
-                    panel = Panel(
-                        Text.assemble(header, "\n\n", content),
-                        title="[bold green]Tool Execution[/bold green]",
-                        subtitle="[bold green]Live Output[/bold green]",
-                        border_style="green",
-                        padding=(1, 2),
-                        box=ROUNDED
-                    )
-                    live.update(panel)
-                # Check if process is done
-                process.stdout.close()
-                return_code = process.wait(timeout=timeout)
-                
-                # Get any stderr output
-                stderr_data = process.stderr.read()
-                if stderr_data:
-                    content.append("\nERROR OUTPUT:\n", style="red")
-                    content.append(stderr_data, style="red")
-                    output_buffer.append("\nERROR OUTPUT:\n" + stderr_data)
-                    panel = Panel(
-                        Text.assemble(header, "\n\n", content),
-                        title="[bold green]Tool Execution[/bold green]",
-                        subtitle="[bold green]Live Output[/bold green]",
-                        border_style="green",
-                        padding=(1, 2),
-                        box=ROUNDED
-                    )
-                    live.update(panel)
-                
-                # Add completion message
-                panel = Panel(
-                    Text.assemble(header, "\n\n", content),
-                    title="[bold green]Tool Execution[/bold green]",
-                    border_style="green",
-                    padding=(1, 2),
-                    box=ROUNDED
-                )
-                live.update(panel)
-                
-                # Wait a moment for the panel to be displayed properly
-                time.sleep(0.5)
-        else:
-            # Fallback to simpler streaming with cli_print_tool_output
-            # Parse command into command and args (same as rich mode)
-            parts = command.strip().split(' ', 1)
-            cmd = parts[0] if parts else ""
-            args = parts[1] if len(parts) > 1 else ""
-            
-            # Create a dictionary with only non-empty values (following the same rules)
-            tool_args = {}
-            if cmd:
-                tool_args["command"] = cmd
-            if args and args.strip():
-                tool_args["args"] = args
-            # Note: Omitted empty values and async_mode=False as it's default
-            
-            # Initial notification - just once
-            cli_print_tool_output(tool_name, tool_args, "Command started...", call_id=call_id)
-            
-            # Buffer for collecting output 
+            # Begin collecting output
+            output_buffer = []
             buffer_size = 0
-            update_interval = 10  # lines
+            update_interval = 10  # lines - default for most tools
+            
+            # Use a smaller interval for generic_linux_command for better responsiveness
+            if tool_name == "generic_linux_command":
+                update_interval = 3  # Update more frequently for terminal commands
+                
+                # Add refresh rate info to tool_args for cli_print_tool_output
+                if "refresh_rate" not in tool_args:
+                    tool_args["refresh_rate"] = 2
             
             # Stream stdout in real-time
             for line in iter(process.stdout.readline, ''):
@@ -653,58 +518,173 @@ def _run_local_streamed(command, call_id, timeout=100, tool_name=None, workspace
                 output_buffer.append(line)
                 buffer_size += 1
                 
-                # Only update the output periodically to reduce panel refresh rate
+                # Only update periodically to reduce UI refreshes
                 if buffer_size >= update_interval:
                     current_output = ''.join(output_buffer)
-                    cli_print_tool_output(tool_name, tool_args, current_output, call_id=call_id)
+                    update_tool_streaming(tool_name, tool_args, current_output, call_id)
                     buffer_size = 0
             
-            # Check if process is done
+            # Finish process
             process.stdout.close()
             return_code = process.wait(timeout=timeout)
+            process_execution_time = time.time() - process_start_time
             
             # Get any stderr output
             stderr_data = process.stderr.read()
             if stderr_data:
                 output_buffer.append("\nERROR OUTPUT:\n" + stderr_data)
             
-            # Final output update - always show the final result
+            # Final output update
             final_output = ''.join(output_buffer)
             if return_code != 0:
                 final_output += f"\nCommand exited with code {return_code}"
                 
-            cli_print_tool_output(tool_name, tool_args, final_output, call_id=call_id)
+            # Calculate execution info with environment details
+            execution_info = {
+                "status": "completed" if return_code == 0 else "error",
+                "return_code": return_code,
+                "environment": "Local",
+                "host": os.path.basename(target_dir),
+                "tool_time": process_execution_time
+            }
+            
+            # Complete the streaming session with final output
+            finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info)
+            
+            return final_output
+        else:
+            # Standard non-streaming execution
+            result = subprocess.run(
+                command,
+                shell=True,  # nosec B602
+                capture_output=True,
+                text=True,
+                check=False, 
+                timeout=timeout,
+                cwd=target_dir 
+            )
+            output = result.stdout if result.stdout else result.stderr
+            
+            # If this is the same command that was recently streamed, don't display it again
+            # We'll create a similar tool_args structure to what streaming would use
+            parts = command.strip().split(' ', 1)
+            cmd_var = parts[0] if parts else ""
+            args_param_val = parts[1] if len(parts) > 1 else ""
+            
+            # Generate a standard tool name for consistency with streaming
+            standard_tool_name = tool_name or (f"{cmd_var}_command" if cmd_var else "command")
+            
+            # Calculate a consistent command key - must match the format used in cli_print_tool_output
+            command_key = f"{standard_tool_name}:{args_param_val}"
+            
+            if hasattr(cli_print_tool_output, '_displayed_commands') and command_key in cli_print_tool_output._displayed_commands:
+                # Skip stdout display if already shown through streaming
+                return output.strip()
+                
+            if stdout:
+                # Create a tool_args dictionary for non-streaming display 
+                # that matches the format used in streaming
+                tool_display_args = {
+                    "command": cmd_var,
+                    "args": args_param_val,
+                    "full_command": command,
+                    "workspace": os.path.basename(target_dir)
+                }
+                
+                # If custom args were provided, merge them with the default args
+                if custom_args is not None and isinstance(custom_args, dict):
+                    for key, value in custom_args.items():
+                        tool_display_args[key] = value
+                
+                # Calculate execution info
+                tool_execution_time = time.time() - process_start_time
+                exec_info = {
+                    "status": "completed" if result.returncode == 0 else "error",
+                    "return_code": result.returncode,
+                    "environment": "Local",
+                    "host": os.path.basename(target_dir),
+                    "tool_time": tool_execution_time
+                }
+                
+                # Display the command output with rich formatting
+                cli_print_tool_output(
+                    tool_name=standard_tool_name,
+                    args=tool_display_args,
+                    output=output,
+                    execution_info=exec_info
+                )
+                
+            return output.strip()
+    except subprocess.TimeoutExpired as e:
+        error_output = e.stdout if hasattr(e, 'stdout') and e.stdout else str(e)
+        error_msg = f"Command timed out after {timeout} seconds\n{error_output}"
         
-        # Return the full output
-        return ''.join(output_buffer)
-        
-    except subprocess.TimeoutExpired:
-        error_msg = f"Command timed out after {timeout} seconds"
-        output_buffer.append("\n" + error_msg)
-        final_output = ''.join(output_buffer)
-        
-        # Update tool output panel with timeout message
-        if not rich_available:
-            tool_args = {"command": command}
-            cli_print_tool_output(tool_name, tool_args, final_output, call_id=call_id)
-        
-        return final_output
-        
-    except Exception as e:  # pylint: disable=broad-except
-        error_msg = f"Error executing command: {str(e)}"
-        print(color(error_msg, fg="red"))
-        
-        # Update tool output panel with error message if simple streaming
-        if not rich_available:
-            tool_args = {"command": command}
-            cli_print_tool_output(tool_name, tool_args, error_msg, call_id=call_id)
-        
+        # If we're streaming, show the timeout in the tool output panel
+        if stream and call_id:
+            from cai.util import finish_tool_streaming
+            # Parse the command the same way we did for streaming
+            parts = command.strip().split(' ', 1)
+            cmd_var = parts[0] if parts else ""
+            args_var = parts[1] if len(parts) > 1 else ""
+            
+            # Ensure tool_args has complete information
+            tool_args = {
+                "command": cmd_var,
+                "args": args_var if args_var.strip() else "",
+                "full_command": command,
+                "environment": "Local",
+                "workspace": os.path.basename(target_dir)
+            }
+            execution_info = {
+                "status": "timeout", 
+                "error": str(e),
+                "environment": "Local",
+                "host": os.path.basename(target_dir)
+            }
+            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info)
+            
+        if stdout:
+            print("\033[32m" + error_msg + "\033[0m")
+            
         return error_msg
+    except Exception as e:  # pylint: disable=broad-except
+        error_msg = f"Error executing local command: {e}"
+        
+        # If we're streaming, show the error in the tool output panel
+        if stream and call_id:
+            from cai.util import finish_tool_streaming
+            # Parse the command the same way we did for streaming
+            parts = command.strip().split(' ', 1)
+            cmd_var = parts[0] if parts else ""
+            args_var = parts[1] if len(parts) > 1 else ""
+            
+            # Ensure tool_args has complete information
+            tool_args = {
+                "command": cmd_var,
+                "args": args_var if args_var.strip() else "",
+                "full_command": command,
+                "environment": "Local",
+                "workspace": os.path.basename(target_dir)
+            }
+            execution_info = {
+                "status": "error", 
+                "error": str(e),
+                "environment": "Local",
+                "host": os.path.basename(target_dir)
+            }
+            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info)
+            
+        print(color(error_msg, fg="red"))
+        return error_msg
+    finally:
+        # Always switch back to idle mode when function completes
+        stop_active_timer()
+        start_idle_timer()
 
 
 def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arguments # noqa: E501
                 async_mode=False, session_id=None,
-                timeout=100, stream=False, call_id=None, tool_name=None):
+                timeout=100, stream=False, call_id=None, tool_name=None, args=None):
     """
     Run command in the appropriate environment (Docker, CTF, SSH, Local)
     and workspace.
@@ -720,170 +700,569 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
         call_id: Unique ID for the command execution (for streaming)
         tool_name: Name of the tool being executed (for display in streaming output).
                   If None, the tool name will be derived from the command.
+        args: Additional arguments for the tool (for display and context).
 
     Returns:
         str: Command output, status message, or session ID.
     """
-    # If session_id is provided, send command to that session
-    if session_id:
-        if session_id not in ACTIVE_SESSIONS:
-            return f"Session {session_id} not found"
-        session = ACTIVE_SESSIONS[session_id]
-        result = session.send_input(command) # Send the raw command string
-        if stdout:
-            output = get_session_output(session_id, clear=False)
-            env_type = "Local"
-            if session.container_id:
-                 env_type = f"Container({session.container_id[:12]})"
-            elif session.ctf:
-                 env_type = "CTF"
-            print(f"\033[32m(Session {session_id} in {env_type}:{session.workspace_dir}) >> {command}\n{output}\033[0m") # noqa E501
-        return result # Return the result of sending input ("Input sent..." or error)
-
+    # Use the active timer during tool execution
+    stop_idle_timer()
+    start_active_timer()
+    
+    # Parse command into standard parts to ensure consistent naming
+    parts = command.strip().split(' ', 1)
+    cmd_name = parts[0] if parts else ""
+    cmd_args = parts[1] if len(parts) > 1 else ""
+    
     # Generate a call_id if we're streaming and one wasn't provided
-    if stream and not call_id:
-        call_id = str(uuid.uuid4())[:8]
-
-    # 2. Determine Execution Environment (Container > CTF > SSH > Local)
-    active_container = os.getenv("CAI_ACTIVE_CONTAINER", "")
-    is_ssh_env = all(os.getenv(var) for var in ['SSH_USER', 'SSH_HOST'])
-
-    # --- Docker Container Execution ---
-    if active_container and not ctf and not is_ssh_env:
-        container_id = active_container
-        container_workspace = _get_container_workspace_path()
-        context_msg = f"(docker:{container_id[:12]}:{container_workspace})"
-
-        # Handle Async Session Creation in Container
-        if async_mode:
-            # Create a session specifically for the container environment
-            new_session_id = create_shell_session(command, container_id=container_id) # noqa E501
-            if "Failed" in new_session_id: # Check if session creation failed
-                 return new_session_id
+    # Use a more specific format that includes the command name for easier tracking
+    if not call_id and stream:
+        call_id = f"cmd_{cmd_name}_{str(uuid.uuid4())[:8]}"
+        
+    # If no tool_name is provided, derive it from the command in a consistent way
+    if not tool_name:
+        tool_name = f"{cmd_name}_command" if cmd_name else "command"
+    
+    try:
+        # If session_id is provided, send command to that session
+        if session_id:
+            if session_id not in ACTIVE_SESSIONS:
+                # Switch back to idle mode before returning error
+                stop_active_timer()
+                start_idle_timer()
+                return f"Session {session_id} not found"
+            session = ACTIVE_SESSIONS[session_id]
+            result = session.send_input(command) # Send the raw command string
             if stdout:
-                # Wait a moment for initial output
-                time.sleep(0.2)
-                output = get_session_output(new_session_id, clear=False)
-                print(f"\033[32m(Started Session {new_session_id} in {context_msg})\n{output}\033[0m") # noqa E501
-            return f"Started async session {new_session_id} in container {container_id[:12]}. Use this ID to interact." # noqa E501
+                output = get_session_output(session_id, clear=False)
+                env_type = "Local"
+                if session.container_id:
+                     env_type = f"Container({session.container_id[:12]})"
+                elif session.ctf:
+                     env_type = "CTF"
+                print(f"\033[32m(Session {session_id} in {env_type}:{session.workspace_dir}) >> {command}\n{output}\033[0m") # noqa E501
+            
+            # For async sessions, we don't switch back to idle mode here
+            # since the session continues to run in the background
+            if not async_mode:
+                # Switch back to idle mode after synchronous command completes
+                stop_active_timer()
+                start_idle_timer()
+                
+            return result # Return the result of sending input ("Input sent..." or error)
 
-        # Handle Streaming Container Execution - not yet implemented for containers
-        if stream:
-            # For now, display that streaming isn't supported for containers
-            from cai.util import cli_print_tool_output
-            if call_id and tool_name:
-                tool_args = {"command": command, "container": container_id[:12]}
-                cli_print_tool_output(
-                    tool_name, 
-                    tool_args, 
-                    "Streaming not yet supported for container execution. Running normally...",
-                    call_id=call_id
+        # 2. Determine Execution Environment (Container > CTF > SSH > Local)
+        active_container = os.getenv("CAI_ACTIVE_CONTAINER", "")
+        is_ssh_env = all(os.getenv(var) for var in ['SSH_USER', 'SSH_HOST'])
+
+        # --- Docker Container Execution ---
+        if active_container and not ctf and not is_ssh_env:
+            container_id = active_container
+            container_workspace = _get_container_workspace_path()
+            context_msg = f"(docker:{container_id[:12]}:{container_workspace})"
+
+            # Handle Async Session Creation in Container
+            if async_mode:
+                # Create a session specifically for the container environment
+                new_session_id = create_shell_session(command, container_id=container_id) # noqa E501
+                if "Failed" in new_session_id: # Check if session creation failed
+                    # Switch back to idle mode before returning error
+                    stop_active_timer()
+                    start_idle_timer()
+                    return new_session_id
+                if stdout:
+                    # Wait a moment for initial output
+                    time.sleep(0.2)
+                    output = get_session_output(new_session_id, clear=False)
+                    print(f"\033[32m(Started Session {new_session_id} in {context_msg})\n{output}\033[0m") # noqa E501
+                
+                # For async sessions, switch back to idle mode after session creation
+                stop_active_timer()
+                start_idle_timer()
+                return f"Started async session {new_session_id} in container {container_id[:12]}. Use this ID to interact." # noqa E501
+
+            # Handle Streaming Container Execution
+            if stream:
+                # Import the streaming utilities from util
+                from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
+                
+                # Create args dictionary with standardized format
+                tool_args = {
+                    "command": cmd_name,
+                    "args": cmd_args if cmd_args.strip() else "",
+                    "full_command": command,
+                    "container": container_id[:12],
+                    "environment": "Container",
+                    "workspace": container_workspace
+                }
+                
+                # Add refresh rate info for generic_linux_command
+                if tool_name == "generic_linux_command":
+                    tool_args["refresh_rate"] = 2
+                
+                # Initialize the streaming session with a consistent call_id format
+                call_id = start_tool_streaming(tool_name, tool_args, call_id)
+                
+                # Update with "executing" status
+                update_tool_streaming(
+                    tool_name,
+                    tool_args,
+                    f"Executing in container {container_id[:12]} at {container_workspace}:\n{command}\n\nPreparing environment...",
+                    call_id
+                )
+                
+                # Ensure workspace directory exists inside the container first
+                mkdir_cmd = [
+                    "docker", "exec", container_id,
+                    "mkdir", "-p", container_workspace
+                ]
+                subprocess.run(
+                    mkdir_cmd,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=10
+                )
+                
+                # Update status once environment is prepared
+                update_tool_streaming(
+                    tool_name,
+                    tool_args,
+                    f"Executing in container {container_id[:12]} at {container_workspace}:\n{command}\n\nRunning command...",
+                    call_id
                 )
 
-        # Handle Synchronous Execution in Container
-        try:
-            # Ensure container workspace exists (best effort)
-            # Consider moving this to workspace set/container activation
-            mkdir_cmd = ["docker", "exec", container_id, "mkdir", "-p", container_workspace] # noqa E501
-            subprocess.run(mkdir_cmd, capture_output=True, text=True, check=False, timeout=10) # noqa E501
+                # Build docker exec command as a single shell string for streaming
+                docker_exec_cmd = (
+                    "docker exec -w "
+                    f"{shlex.quote(container_workspace)} "
+                    f"{shlex.quote(container_id)} sh -c "
+                    f"{shlex.quote(command)}"
+                )
+                
+                try:
+                    start_time = time.time()
+                    # Start the process
+                    process = subprocess.Popen(
+                        docker_exec_cmd,
+                        shell=True,  # nosec B602
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        bufsize=1,
+                        cwd=_get_workspace_dir()
+                    )
+                    
+                    # Begin collecting output
+                    output_buffer = []
+                    buffer_size = 0
+                    update_interval = 10  # lines
+                    
+                    # Stream stdout in real-time
+                    for line in iter(process.stdout.readline, ''):
+                        if not line:
+                            break
+                        
+                        # Add to output collection
+                        output_buffer.append(line)
+                        buffer_size += 1
+                        
+                        # Only update periodically to reduce UI refreshes
+                        if buffer_size >= update_interval:
+                            current_output = ''.join(output_buffer)
+                            update_tool_streaming(tool_name, tool_args, current_output, call_id)
+                            buffer_size = 0
+                    
+                    # Finish process
+                    process.stdout.close()
+                    return_code = process.wait(timeout=timeout)
+                    execution_time = time.time() - start_time
+                    
+                    # Get any stderr output
+                    stderr_data = process.stderr.read()
+                    if stderr_data:
+                        output_buffer.append("\nERROR OUTPUT:\n" + stderr_data)
+                    
+                    # Final output update
+                    final_output = ''.join(output_buffer)
+                    if return_code != 0:
+                        final_output += f"\nCommand exited with code {return_code}"
+                    
+                    # Calculate execution info
+                    execution_info = {
+                        "status": "completed" if return_code == 0 else "error",
+                        "return_code": return_code,
+                        "environment": "Container",
+                        "host": container_id[:12],
+                        "tool_time": execution_time
+                    }
+                    
+                    # Complete the streaming session with final output
+                    finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info)
+                    
+                    # Switch back to idle mode after streaming command completes
+                    stop_active_timer()
+                    start_idle_timer()
+                    return final_output
+                
+                except subprocess.TimeoutExpired as e:
+                    # Handle timeout
+                    error_output = e.stdout if hasattr(e, 'stdout') and e.stdout else str(e)
+                    error_msg = f"Command timed out after {timeout} seconds\n{error_output}"
+                    
+                    execution_info = {
+                        "status": "timeout",
+                        "environment": "Container",
+                        "host": container_id[:12],
+                        "error": str(e)
+                    }
+                    
+                    # Complete with timeout error
+                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info)
+                    
+                    # Switch back to idle mode after timeout
+                    stop_active_timer()
+                    start_idle_timer()
+                    # Fallback to local execution on timeout
+                    print(color("Container execution timed out. Attempting execution on host instead.", fg="yellow"))
+                    return _run_local(command, stdout, timeout, False, None, tool_name, _get_workspace_dir(), args)
+                
+                except Exception as e:
+                    # Handle other errors
+                    error_msg = f"Error executing command in container: {str(e)}"
+                    
+                    execution_info = {
+                        "status": "error",
+                        "environment": "Container",
+                        "host": container_id[:12],
+                        "error": str(e)
+                    }
+                    
+                    # Complete with error
+                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info)
+                    
+                    # Switch back to idle mode after error
+                    stop_active_timer()
+                    start_idle_timer()
+                    # Fallback to local execution on error
+                    print(color("Container execution failed. Attempting execution on host instead.", fg="yellow"))
+                    return _run_local(command, stdout, timeout, False, None, tool_name, _get_workspace_dir(), args)
 
-            # Construct the docker exec command with workspace context
-            cmd_list = [
-                "docker", "exec",
-                "-w", container_workspace, # Set working directory
-                container_id,
-                "sh", "-c", command # Execute command via shell
-            ]
-            result = subprocess.run(
-                cmd_list,
-                capture_output=True,
-                text=True,
-                check=False, # Don't raise exception on non-zero exit
-                timeout=timeout
-            )
+            # Handle Synchronous Execution in Container
+            try:
+                # Ensure container workspace exists (best effort)
+                # Consider moving this to workspace set/container activation
+                mkdir_cmd = ["docker", "exec", container_id, "mkdir", "-p", container_workspace] # noqa E501
+                subprocess.run(mkdir_cmd, capture_output=True, text=True, check=False, timeout=10) # noqa E501
 
-            output = result.stdout if result.stdout else result.stderr
-            output = output.strip() # Clean trailing newline
+                # Construct the docker exec command with workspace context
+                cmd_list = [
+                    "docker", "exec",
+                    "-w", container_workspace, # Set working directory
+                    container_id,
+                    "sh", "-c", command # Execute command via shell
+                ]
+                result = subprocess.run(
+                    cmd_list,
+                    capture_output=True,
+                    text=True,
+                    check=False, # Don't raise exception on non-zero exit
+                    timeout=timeout
+                )
 
-            if stdout:
-                print(f"\033[32m{context_msg} $ {command}\n{output}\033[0m") # noqa E501
+                output = result.stdout if result.stdout else result.stderr
+                output = output.strip() # Clean trailing newline
 
-            # Check if command failed specifically because container isn't running
-            if result.returncode != 0 and "is not running" in result.stderr:
-                print(color(f"{context_msg} Container is not running. Attempting execution on host instead.", fg="yellow")) # noqa E501
-                 # Fallback to local execution, preserving workspace context
-                return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir()) # noqa E501
+                if stdout:
+                    print(f"\033[32m{context_msg} $ {command}\n{output}\033[0m") # noqa E501
 
-            return output # Return combined stdout/stderr
+                # Check if command failed specifically because container isn't running
+                if result.returncode != 0 and "is not running" in result.stderr:
+                    print(color(f"{context_msg} Container is not running. Attempting execution on host instead.", fg="yellow")) # noqa E501
+                    # Switch back to idle mode before fallback execution
+                    stop_active_timer()
+                    start_idle_timer()
+                    # Fallback to local execution, preserving workspace context
+                    return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir(), args) # noqa E501
 
-        except subprocess.TimeoutExpired:
-            timeout_msg = "Timeout executing command in container."
-            if stdout:
-                print(f"\033[33m{context_msg} $ {command}\nTIMEOUT\033[0m") # noqa E501
+                # Switch back to idle mode after command completes
+                stop_active_timer()
+                start_idle_timer()
+                return output # Return combined stdout/stderr
+
+            except subprocess.TimeoutExpired:
+                timeout_msg = "Timeout executing command in container."
+                if stdout:
+                    print(f"\033[33m{context_msg} $ {command}\nTIMEOUT\033[0m") # noqa E501
+                    print(color("Attempting execution on host instead.", fg="yellow"))
+                # Switch back to idle mode before fallback execution
+                stop_active_timer()
+                start_idle_timer()
+                # Fallback to local execution on timeout
+                return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir(), args) # noqa E501
+            except Exception as e:  # pylint: disable=broad-except
+                error_msg = f"Error executing command in container: {str(e)}"
+                print(color(f"{context_msg} {error_msg}", fg="red"))
                 print(color("Attempting execution on host instead.", fg="yellow"))
-             # Fallback to local execution on timeout
-            return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir()) # noqa E501
-        except Exception as e:  # pylint: disable=broad-except
-            error_msg = f"Error executing command in container: {str(e)}"
-            print(color(f"{context_msg} {error_msg}", fg="red"))
-            print(color("Attempting execution on host instead.", fg="yellow"))
-             # Fallback to local execution on other errors
-            return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir()) # noqa E501
+                # Switch back to idle mode before fallback execution
+                stop_active_timer()
+                start_idle_timer()
+                # Fallback to local execution on other errors
+                return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir(), args) # noqa E501
 
-    # --- CTF Execution ---
-    if ctf:
-        # Handling streaming for CTF - not fully implemented yet
-        if stream:
-            from cai.util import cli_print_tool_output
-            if call_id and tool_name:
-                tool_args = {"command": command, "ctf": True}
-                cli_print_tool_output(
+        # --- CTF Execution ---
+        if ctf:
+            # If streaming is enabled and we have a call_id, show streaming UI for CTF too
+            if stream:
+                # Import the streaming utilities from util
+                from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
+                
+                # Create args dictionary with standardized format
+                tool_args = {
+                    "command": cmd_name,
+                    "args": cmd_args if cmd_args.strip() else "",
+                    "full_command": command,
+                    "environment": "CTF",
+                    "workspace": os.path.basename(_get_workspace_dir())
+                }
+                
+                # Add refresh rate info for generic_linux_command
+                if tool_name == "generic_linux_command":
+                    tool_args["refresh_rate"] = 2
+                
+                # Initialize the streaming session with a consistent call_id format
+                call_id = start_tool_streaming(tool_name, tool_args, call_id)
+                
+                target_dir = _get_workspace_dir()
+                full_command = f"cd '{target_dir}' && {command}"
+                
+                # Update with "executing" status
+                update_tool_streaming(
                     tool_name, 
                     tool_args, 
-                    "Streaming not yet supported for CTF execution. Running normally...",
-                    call_id=call_id
+                    f"Executing in CTF environment: {full_command}\n\nWaiting for response...", 
+                    call_id
                 )
-        
-        # _run_ctf handles workspace internally using _get_workspace_dir() default
-        return _run_ctf(ctf, command, stdout, timeout)  # Pass None for workspace_dir
+                
+                try:
+                    # Execute the command and get the output
+                    start_time = time.time()
+                    output = ctf.get_shell(full_command, timeout=timeout)
+                    execution_time = time.time() - start_time
+                    
+                    # Calculate execution info
+                    execution_info = {
+                        "status": "completed",
+                        "environment": "CTF",
+                        "tool_time": execution_time
+                    }
+                    
+                    # Complete the streaming with final output
+                    finish_tool_streaming(tool_name, tool_args, output, call_id, execution_info)
+                    
+                    # Switch back to idle mode after CTF command completes
+                    stop_active_timer()
+                    start_idle_timer()
+                    return output
+                    
+                except Exception as e:
+                    # Handle errors in CTF execution
+                    error_msg = f"Error executing CTF command: {str(e)}"
+                    execution_info = {
+                        "status": "error",
+                        "environment": "CTF",
+                        "error": str(e)
+                    }
+                    
+                    # Complete the streaming with error output
+                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info)
+                    
+                    # Switch back to idle mode after error
+                    stop_active_timer()
+                    start_idle_timer()
+                    return error_msg
+            else:
+                # Standard non-streaming CTF execution
+                result = _run_ctf(ctf, command, stdout, timeout)  # Pass None for workspace_dir
+            
+                # Switch back to idle mode after CTF command completes
+                stop_active_timer()
+                start_idle_timer()
+                return result
 
-    # --- SSH Execution ---
-    if is_ssh_env:
-        # Async for SSH would require session management via SSH client features
+        # --- SSH Execution ---
+        if is_ssh_env:
+            # If streaming is enabled, show streaming UI for SSH too
+            if stream:
+                # Import the streaming utilities from util
+                from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
+                
+                # Add SSH connection info for display
+                ssh_user = os.environ.get('SSH_USER', 'user')
+                ssh_host = os.environ.get('SSH_HOST', 'host')
+                ssh_connection = f"{ssh_user}@{ssh_host}"
+                
+                # Create args dictionary with standardized format
+                tool_args = {
+                    "command": cmd_name,
+                    "args": cmd_args if cmd_args.strip() else "",
+                    "full_command": command,
+                    "ssh_host": ssh_connection,
+                    "environment": "SSH"
+                }
+                
+                # Add refresh rate info for generic_linux_command
+                if tool_name == "generic_linux_command":
+                    tool_args["refresh_rate"] = 2
+                
+                # Initialize streaming session with a consistent call_id format
+                call_id = start_tool_streaming(tool_name, tool_args, call_id)
+                
+                # Update with "executing" status  
+                update_tool_streaming(
+                    tool_name, 
+                    tool_args, 
+                    f"Executing on {ssh_connection}: {command}\n\nWaiting for response...", 
+                    call_id
+                )
+                
+                try:
+                    # Construct SSH command for execution
+                    ssh_pass = os.environ.get('SSH_PASS')
+                    if ssh_pass:
+                        ssh_cmd_list = ["sshpass", "-p", ssh_pass, "ssh", ssh_connection]
+                    else:
+                        ssh_cmd_list = ["ssh", ssh_connection]
+                    ssh_cmd_list.append(command)
+                    
+                    # Execute the command and get the output
+                    start_time = time.time()
+                    result = subprocess.run(
+                        ssh_cmd_list,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=timeout
+                    )
+                    execution_time = time.time() - start_time
+                    
+                    # Get command output
+                    output = result.stdout if result.stdout else result.stderr
+                    
+                    # Add SSH connection info to the output for clarity
+                    result_with_info = f"Command executed on {ssh_connection}:\n\n{output}"
+                    
+                    # Determine status based on return code
+                    status = "completed" if result.returncode == 0 else "error"
+                    
+                    # Calculate execution info
+                    execution_info = {
+                        "status": status,
+                        "environment": "SSH",
+                        "host": ssh_connection,
+                        "return_code": result.returncode,
+                        "tool_time": execution_time
+                    }
+                    
+                    # Complete the streaming with final output
+                    finish_tool_streaming(tool_name, tool_args, result_with_info, call_id, execution_info)
+                    
+                    # Switch back to idle mode after SSH command completes
+                    stop_active_timer()
+                    start_idle_timer()
+                    return output.strip()
+                    
+                except subprocess.TimeoutExpired as e:
+                    # Handle timeout errors
+                    error_output = e.stdout if e.stdout else str(e)
+                    error_msg = f"Command timed out after {timeout} seconds\n{error_output}"
+                    
+                    execution_info = {
+                        "status": "timeout",
+                        "environment": "SSH",
+                        "host": ssh_connection,
+                        "error": str(e)
+                    }
+                    
+                    # Complete the streaming with timeout error
+                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info)
+                    
+                    # Switch back to idle mode after timeout
+                    stop_active_timer()
+                    start_idle_timer()
+                    return error_msg
+                    
+                except Exception as e:
+                    # Handle other errors
+                    error_msg = f"Error executing SSH command: {str(e)}"
+                    
+                    execution_info = {
+                        "status": "error",
+                        "environment": "SSH",
+                        "host": ssh_connection,
+                        "error": str(e)
+                    }
+                    
+                    # Complete the streaming with error
+                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info)
+                    
+                    # Switch back to idle mode after error
+                    stop_active_timer()
+                    start_idle_timer()
+                    return error_msg
+            else:
+                # Standard non-streaming SSH execution
+                result = _run_ssh(command, stdout, timeout)  # Workspace dir less relevant here
+            
+                # Switch back to idle mode after SSH command completes
+                stop_active_timer()
+                start_idle_timer()
+                return result
+
+        # --- Local Execution (Default Fallback) ---
+        # Let _run_local handle determining the host workspace
+        # Handle Async Session Creation Locally
         if async_mode:
-            return "Async mode not fully supported for SSH environment via this function yet."
-        
-        # Handling streaming for SSH - not fully implemented yet
-        if stream:
-            from cai.util import cli_print_tool_output
-            if call_id and tool_name:
-                tool_args = {"command": command, "ssh": True}
-                cli_print_tool_output(
-                    tool_name, 
-                    tool_args, 
-                    "Streaming not yet supported for SSH execution. Running normally...",
-                    call_id=call_id
-                )
-        
-        # _run_ssh handles command execution, workspace is relative to remote home
-        return _run_ssh(command, stdout, timeout)  # Workspace dir less relevant here
+            # create_shell_session uses _get_workspace_dir() when container_id is None
+            new_session_id = create_shell_session(command)
+            if isinstance(new_session_id, str) and "Failed" in new_session_id:  # Check failure
+                # Switch back to idle mode before returning error
+                stop_active_timer()
+                start_idle_timer()
+                return new_session_id
+            # Retrieve the actual workspace dir the session is using
+            session = ACTIVE_SESSIONS.get(new_session_id)
+            actual_workspace = session.workspace_dir if session else "unknown"
+            if stdout:
+                time.sleep(0.2)  # Allow session buffer to populate
+                output = get_session_output(new_session_id, clear=False)
+                print(f"\033[32m(Started Session {new_session_id} in local:{actual_workspace})\n{output}\033[0m")
+            
+            # For async, switch back to idle mode after session creation
+            stop_active_timer()
+            start_idle_timer()
+            return f"Started async session {new_session_id} locally. Use this ID to interact."
 
-    # --- Local Execution (Default Fallback) ---
-    # Let _run_local handle determining the host workspace
-    # Handle Async Session Creation Locally
-    if async_mode:
-        # create_shell_session uses _get_workspace_dir() when container_id is None
-        new_session_id = create_shell_session(command)
-        if isinstance(new_session_id, str) and "Failed" in new_session_id:  # Check failure
-            return new_session_id
-        # Retrieve the actual workspace dir the session is using
-        session = ACTIVE_SESSIONS.get(new_session_id)
-        actual_workspace = session.workspace_dir if session else "unknown"
-        if stdout:
-            time.sleep(0.2)  # Allow session buffer to populate
-            output = get_session_output(new_session_id, clear=False)
-            print(f"\033[32m(Started Session {new_session_id} in local:{actual_workspace})\n{output}\033[0m")
-        return f"Started async session {new_session_id} locally. Use this ID to interact."
-
-    # Handle Synchronous Execution Locally using _run_local default with streaming support
-    return _run_local(command, stdout, timeout, stream, call_id, tool_name, None)
+        # Handle Synchronous Execution Locally
+        # Pass stream=True if we're streaming to use streaming functionality
+        result = _run_local(
+            command, 
+            stdout, 
+            timeout, 
+            stream=stream, 
+            call_id=call_id,
+            tool_name=tool_name,
+            workspace_dir=_get_workspace_dir(),
+            custom_args=args
+        )
+        
+        # Switch back to idle mode after local command completes
+        stop_active_timer()
+        start_idle_timer()
+        return result
+        
+    except Exception as e:
+        # Ensure we switch back to idle mode if any unexpected error occurs
+        stop_active_timer()
+        start_idle_timer()
+        raise e

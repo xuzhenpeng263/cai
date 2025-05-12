@@ -7,6 +7,12 @@ requires-python = ">=3.9"
 license = {text = "Dual-licensed MIT and Proprietary"}
 authors = [{ name = "Alias Robotics", email = "research@aliasrobotics.com" }]
 dependencies = [
+    # logging and visualization
+    "folium>=0.15.0, <1",
+    "matplotlib>=3.0, <4",
+    "numpy>=1.21, <3",
+    "pandas>=1.3, <3",
+    # core cai
     "openai>=1.68.2",
     "pydantic>=2.10, <3",
     "griffe>=1.5.6, <2",
@@ -19,10 +25,11 @@ dependencies = [
     "prompt_toolkit>=3.0.39",
     "dotenv>=0.9.9",
     "litellm>=1.63.7",
-    "mako>=1.3.9",
+    "mako>=1.3.8",
     "mcp; python_version >= '3.10'",
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.6.0",
+    "paramiko>=3.5.1",
 ]
 classifiers = [
     "Typing :: Typed",
@@ -81,10 +88,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/cai"]
+packages = ["src/cai", "tools"]
 
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""
+"tools" = "tools"
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/cai/prompts" = "cai/prompts"
@@ -151,3 +159,5 @@ format-command = "ruff format --stdin-filename {filename}"
 
 [project.scripts]
 cai = "cai.cli:main"
+cai-replay = "tools.replay:main"
+cai-logs = "tools.logs:main"

@@ -57,6 +57,7 @@ Environment Variables
             executions (default: "5")
         CAI_STREAM: Enable/disable streaming output in rich panel
             (default: "true")
+        CAI_TELEMETRY: Enable/disable telemetry (default: "true")
 
     Extensions (only applicable if the right extension is installed):
 
@@ -99,19 +100,35 @@ Usage Examples:
 """
 
 import os
-import sys
 import time
-from dotenv import load_dotenv
-from openai import AsyncOpenAI
-from cai.sdk.agents import OpenAIChatCompletionsModel, Agent, Runner, AsyncOpenAI
-from cai.sdk.agents import set_default_openai_client, set_tracing_disabled
-from openai.types.responses import ResponseTextDeltaEvent
-from rich.console import Console
 import asyncio
-from cai.util import fix_litellm_transcription_annotations, color, calculate_model_cost
-from cai.util import create_agent_streaming_context, update_agent_streaming_content, finish_agent_streaming
+from dotenv import load_dotenv
+from rich.console import Console
 
-# Import modules from cai.repl
+# OpenAI imports
+from openai import AsyncOpenAI
+
+# CAI SDK imports
+from cai.sdk.agents import OpenAIChatCompletionsModel, Agent, Runner, set_tracing_disabled
+from cai.sdk.agents.run_to_jsonl import get_session_recorder
+from cai.sdk.agents.items import ToolCallOutputItem
+from cai.sdk.agents.stream_events import RunItemStreamEvent
+from cai.sdk.agents.models.openai_chatcompletions import (
+    message_history,
+    add_to_message_history,
+)
+
+# CAI utility imports
+from cai.util import (
+    fix_litellm_transcription_annotations, 
+    color, 
+    start_idle_timer, 
+    stop_idle_timer, 
+    start_active_timer, 
+    stop_active_timer
+)
+
+# CAI REPL imports
 from cai.repl.commands import FuzzyCommandCompleter, handle_command as commands_handle_command
 from cai.repl.ui.keybindings import create_key_bindings
 from cai.repl.ui.logging import setup_session_logging
@@ -119,8 +136,9 @@ from cai.repl.ui.banner import display_banner, display_quick_guide
 from cai.repl.ui.prompt import get_user_input
 from cai.repl.ui.toolbar import get_toolbar_with_refresh
 
-# Import agents-related functions
+# CAI agents and metrics imports
 from cai.agents import get_agent_by_name
+from cai.internal.components.metrics import process_metrics
 
 # Load environment variables from .env file
 load_dotenv()
@@ -170,13 +188,15 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
     Returns:
         None
     """
+    ACTIVE_TIME = 0  # TODO: review this variable
+
     agent = starting_agent
     turn_count = 0
-    ACTIVE_TIME = 0
     idle_time = 0
     console = Console()
     last_model = os.getenv('CAI_MODEL', 'qwen2.5:14b')
-    last_agent_type = os.getenv('CAI_AGENT_TYPE', 'one_tool_agent') 
+    last_agent_type = os.getenv('CAI_AGENT_TYPE', 'one_tool_agent')
+
     # Initialize command completer and key bindings
     command_completer = FuzzyCommandCompleter()
     current_text = ['']
@@ -184,6 +204,9 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
 
     # Setup session logging
     history_file = setup_session_logging()
+
+    # Initialize session logger and display the filename
+    session_logger = get_session_recorder()
 
     # Display banner
     display_banner(console)
@@ -199,17 +222,21 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
     # and suppress final output message to avoid duplicates
     if hasattr(agent, 'model'):
         if hasattr(agent.model, 'disable_rich_streaming'):
-            agent.model.disable_rich_streaming = True
+            agent.model.disable_rich_streaming = False  # Now True as the model handles streaming
         if hasattr(agent.model, 'suppress_final_output'):
             agent.model.suppress_final_output = True
 
-    # Track streaming context to ensure proper cleanup
-    current_streaming_context = None
+        # Set the agent name in the model for proper display in streaming panel
+        if hasattr(agent.model, 'set_agent_name'):
+            agent.model.set_agent_name(get_agent_short_name(agent))
 
     while turn_count < max_turns:
         try:
+            # Start measuring user idle time
+            start_idle_timer()
+
             idle_start_time = time.time()
-            
+
             # Check if model has changed and update if needed
             current_model = os.getenv('CAI_MODEL', 'qwen2.5:14b')
             if current_model != last_model and hasattr(agent, 'model'):
@@ -217,7 +244,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 if hasattr(agent.model, 'model'):
                     agent.model.model = current_model
                     last_model = current_model
-            
+
             # Check if agent type has changed and recreate agent if needed
             current_agent_type = os.getenv('CAI_AGENT_TYPE', 'one_tool_agent')
             if current_agent_type != last_agent_type:
@@ -225,17 +252,21 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                     # Import is already at the top level
                     agent = get_agent_by_name(current_agent_type)
                     last_agent_type = current_agent_type
-                    
+
                     # Configure the new agent's model flags
                     if hasattr(agent, 'model'):
                         if hasattr(agent.model, 'disable_rich_streaming'):
-                            agent.model.disable_rich_streaming = True
+                            agent.model.disable_rich_streaming = False  # Now False to let model handle streaming
                         if hasattr(agent.model, 'suppress_final_output'):
                             agent.model.suppress_final_output = True
-                            
+
                         # Apply current model to the new agent
                         if hasattr(agent.model, 'model'):
                             agent.model.model = current_model
+
+                        # Set agent name in the model for streaming display
+                        if hasattr(agent.model, 'set_agent_name'):
+                            agent.model.set_agent_name(get_agent_short_name(agent))
                 except Exception as e:
                     console.print(f"[red]Error switching agent: {str(e)}[/red]")
 
@@ -248,7 +279,11 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 current_text
             )
             idle_time += time.time() - idle_start_time
-           
+
+            # Stop measuring user idle time and start measuring active time
+            stop_idle_timer()
+            start_active_timer()
+
         except KeyboardInterrupt:
             def format_time(seconds):
                 mins, secs = divmod(int(seconds), 60)
@@ -258,24 +293,38 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
             Total = time.time() - START_TIME
             idle_time += time.time() - idle_start_time
             try:
-                active_time = Total - idle_time
+                # Get more accurate active and idle time measurements from the timer functions
+                from cai.util import get_active_time_seconds, get_idle_time_seconds, COST_TRACKER
+
+                # Use the precise measurements from our timers
+                active_time_seconds = get_active_time_seconds()
+                idle_time_seconds = get_idle_time_seconds()
+
+                # Format for display
+                active_time_formatted = format_time(active_time_seconds)
+                idle_time_formatted = format_time(idle_time_seconds)
+
+                # Get session cost from the global cost tracker
+                session_cost = COST_TRACKER.session_total_cost
 
                 metrics = {
                     "session_time": format_time(Total),
-                    "active_time": format_time(active_time),
-                    "idle_time": format_time(idle_time),
-                    "llm_time": "0.0s",  # Placeholder, update if available
-                    "llm_percentage": 0.0,  # Placeholder, update if available
+                    "active_time": active_time_formatted,
+                    "idle_time": idle_time_formatted,
+                    "llm_time": format_time(active_time_seconds),  # Using active time as LLM time
+                    "llm_percentage": round((active_time_seconds / Total) * 100, 1) if Total > 0 else 0.0,
+                    "session_cost": f"${session_cost:.6f}"  # Add formatted session cost
                 }
-                logging_path = None  # Set this if you have a log file path
+                logging_path = session_logger.filename if hasattr(session_logger, 'filename') else None
 
                 content = []
                 content.append(f"Session Time: {metrics['session_time']}")
-                content.append(f"Active Time: {metrics['active_time']}")
+                content.append(f"Active Time: {metrics['active_time']} ({metrics['llm_percentage']}%)")
                 content.append(f"Idle Time: {metrics['idle_time']}")
+                content.append(f"Total Session Cost: {metrics['session_cost']}")  # Add cost to display
                 if logging_path:
                     content.append(f"Log available at: {logging_path}")
-                
+
                 def print_session_summary(console, metrics, logging_path=None):
                     """
                     Print a session summary panel using Rich.
@@ -285,21 +334,56 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                     from rich.box import ROUNDED
                     from rich.console import Group
 
+                    # Create Rich Text objects for each line
+                    text_content = []
+                    for i, line in enumerate(content):
+                        if "Total Session Cost" in line:
+                            # Format cost line with special styling
+                            cost_text = Text()
+                            parts = line.split(":")
+                            cost_text.append(parts[0] + ":", style="bold")
+                            cost_text.append(parts[1], style="bold green")
+                            text_content.append(cost_text)
+                        else:
+                            text_content.append(Text(line))
+
                     time_panel = Panel(
-                        Group(*[Text(line) for line in content]),
+                        Group(*text_content),
                         border_style="blue",
                         box=ROUNDED,
                         padding=(0, 1),
                         title="[bold]Session Summary[/bold]",
                         title_align="left"
                     )
-                    console.print(time_panel)
+                    console.print(time_panel, end="")
 
                 print_session_summary(console, metrics, logging_path)
+
+                # Upload logs if telemetry is enabled by checking the
+                # env. variable CAI_TELEMETRY and there's internet connectivity
+                telemetry_enabled = \
+                    os.getenv('CAI_TELEMETRY', 'true').lower() != 'false'
+                if (
+                    telemetry_enabled and
+                    hasattr(session_logger, 'session_id') and
+                    hasattr(session_logger, 'filename')
+                   ):
+                    process_metrics(
+                        session_logger.filename,  # should match logging_path
+                        sid=session_logger.session_id
+                    )
+
+                # Log session end
+                if session_logger:
+                    session_logger.log_session_end()
+
+                # Prevent duplicate cost display from the COST_TRACKER exit handler
+                os.environ["CAI_COST_DISPLAYED"] = "true"
+
             except Exception:
                 pass
             break
-      
+
         try:
             # Handle special commands
             if user_input.startswith('/') or user_input.startswith('$'):
@@ -315,158 +399,186 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                 if command not in ("/shell", "/s"):
                     console.print(f"[red]Unknown command: {command}[/red]")
                 continue
+            from rich.text import Text
+            log_text = Text(
+                f"Log file: {session_logger.filename}",
+                style="yellow on black",
+            )
+            console.print(log_text)
 
-            # Process the conversation with the agent
+            # Build conversation context from previous turns to give the
+            # model short-term memory. We only keep messages that have plain
+            # text content and ignore tool call entries to prevent schema
+            # mismatches when converting to OpenAI chat format.
+            history_context = []
+            for msg in message_history:
+                role = msg.get("role")
+                content = msg.get("content")
+                tool_calls = msg.get("tool_calls")
+
+                if role == "user":
+                    history_context.append({"role": "user", "content": content or ""})
+                elif role == "system":
+                    history_context.append({"role": "system", "content": content or ""})
+                elif role == "assistant":
+                    if tool_calls:
+                        history_context.append(
+                            {
+                                "role": "assistant",
+                                "content": content,  # Can be None
+                                "tool_calls": tool_calls,
+                            }
+                        )
+                    elif content is not None:
+                        history_context.append({"role": "assistant", "content": content})
+                    elif content is None and not tool_calls: # Explicitly handle empty assistant message
+                         history_context.append({"role": "assistant", "content": None})
+                elif role == "tool":
+                    history_context.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": msg.get("tool_call_id"),
+                            "content": msg.get("content"), # Tool output
+                        }
+                    )
+
+            # Fix message list structure BEFORE sending to the model to prevent errors
+            try:
+                from cai.util import fix_message_list
+                history_context = fix_message_list(history_context)
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not preprocess message history: {e}[/yellow]")
+
+            # Append the current user input as the last message in the list.
+            conversation_input: list | str
+            if history_context:
+                history_context.append({"role": "user", "content": user_input})
+                conversation_input = history_context
+            else:
+                conversation_input = user_input
+
+            # Process the conversation with the agent.
             if stream:
-                # For classic fallback when streaming fails
-                print_fallback = False
-                
                 async def process_streamed_response():
-                    nonlocal current_streaming_context, print_fallback
-                    
                     try:
-                        # Get the model from the agent for display purposes
-                        model_name = None
-                        if hasattr(agent, 'model') and hasattr(agent.model, 'model'):
-                            model_name = str(agent.model.model)
-                        
-                        # Set the agent name in the model if available (for proper display in streaming panel)
-                        if hasattr(agent, 'model'):
-                            agent.model.agent_name = get_agent_short_name(agent)
-                        
-                        # Make sure any previous streaming context is cleaned up
-                        if current_streaming_context is not None:
-                            try:
-                                current_streaming_context["live"].stop()
-                            except Exception:
-                                pass  # Ignore errors on cleanup
-                            current_streaming_context = None
-                        
-                        try:
-                            # Create a new streaming context
-                            current_streaming_context = create_agent_streaming_context(
-                                agent_name=get_agent_short_name(agent),
-                                counter=turn_count + 1,  # 1-indexed for display
-                                model=model_name
-                            )
-                        except Exception as e:
-                            # If rich display fails, fall back to classic print mode
-                            print(f"Agent: ", end="", flush=True)
-                            print_fallback = True
-                            import traceback
-                            print(f"[Warning: Falling back to simple streaming: {str(e)}]", file=sys.stderr)
-                        
-                        # Run the agent with streaming
-                        result = Runner.run_streamed(agent, user_input)
-                        
-                        # List to collect all deltas for computing final token counts
-                        collected_text = []
-                        
-                        # Process stream events
+                        result = Runner.run_streamed(agent, conversation_input)
+
+                        # Consume events so the async generator is executed.
                         async for event in result.stream_events():
-                            if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
-                                collected_text.append(event.data.delta)
-                                # If using streaming context, update the panel
-                                if current_streaming_context is not None:
-                                    update_agent_streaming_content(current_streaming_context, event.data.delta)
-                                # Otherwise, print to console directly
-                                elif print_fallback:
-                                    print(event.data.delta, end="", flush=True)
-                        
-                        # Finish the streaming context if it exists
-                        if current_streaming_context is not None:
-                            # Get token stats for the final display
-                            token_stats = None
-                            
-                            # Try to get token stats from the model
-                            if hasattr(agent, 'model'):
-                                # Get the actual input/output token counts from the model when available
-                                model = agent.model
-                                
-                                # Calculate a more accurate output token estimate using tiktoken if available
-                                output_text = "".join(collected_text)
-                                output_tokens = len(output_text) // 4  # Fallback rough estimate
-                                
-                                try:
-                                    import tiktoken
-                                    encoding = tiktoken.get_encoding("cl100k_base")
-                                    output_tokens = len(encoding.encode(output_text))
-                                except Exception:
-                                    # Fallback to rough estimate if tiktoken fails
-                                    pass
-                                
-                                # Store current input tokens to calculate difference next time
-                                if not hasattr(model, 'previous_input_tokens'):
-                                    model.previous_input_tokens = 0
-                                
-                                # Get the available token counts from the model, or use reasonable defaults
-                                interaction_input = getattr(model, 'total_input_tokens', 0) - model.previous_input_tokens
-                                if interaction_input <= 0:
-                                    interaction_input = output_tokens * 2  # Rough estimate based on output
-                                
-                                # Update previous tokens for next calculation
-                                model.previous_input_tokens = getattr(model, 'total_input_tokens', 0)
-                                
-                                token_stats = {
-                                    "interaction_input_tokens": interaction_input,
-                                    "interaction_output_tokens": output_tokens,
-                                    "interaction_reasoning_tokens": 0,
-                                    "total_input_tokens": getattr(model, 'total_input_tokens', interaction_input),
-                                    "total_output_tokens": getattr(model, 'total_output_tokens', output_tokens),
-                                    "total_reasoning_tokens": getattr(model, 'total_reasoning_tokens', 0),
-                                    "interaction_cost": calculate_model_cost(str(model), interaction_input, output_tokens),
-                                    "total_cost": calculate_model_cost(str(model), getattr(model, 'total_input_tokens', interaction_input), getattr(model, 'total_output_tokens', output_tokens))
-                                }
-                            
-                            finish_agent_streaming(current_streaming_context, token_stats)
-                            current_streaming_context = None
-                        elif print_fallback:
-                            # Add a newline at the end of classic streaming
-                            print("\n")
-                            
+                            if isinstance(event, RunItemStreamEvent) and event.name == "tool_output":
+                                # Ensure item is a ToolCallOutputItem before accessing attributes
+                                if isinstance(event.item, ToolCallOutputItem):
+                                    tool_msg = {
+                                        "role": "tool",
+                                        "tool_call_id": event.item.raw_item["call_id"], # Changed to dictionary access
+                                        "content": event.item.output,
+                                    }
+                                    add_to_message_history(tool_msg)
+                            # pass # Original logic was just pass
+
                         return result
                     except Exception as e:
-                        # In case of errors, ensure streaming context is cleaned up
-                        if current_streaming_context is not None:
-                            try:
-                                current_streaming_context["live"].stop()
-                            except Exception:
-                                pass
-                            current_streaming_context = None
-                        
-                        if print_fallback:
-                            print()  # Add a newline after any partial output
-                            
                         import traceback
                         tb = traceback.format_exc()
-                        print(f"\n[Error occurred during streaming: {str(e)}]\nLocation: {tb}")
+                        print(
+                            f"\n[Error occurred during streaming: {str(e)}]"
+                            f"\nLocation: {tb}"
+                        )
                         return None
 
                 asyncio.run(process_streamed_response())
             else:
                 # Use non-streamed response
-                response = asyncio.run(Runner.run(agent, user_input))
-                #console.print(f"Agent: {response.final_output}") # NOTE: this line is commented to avoid duplicate output
+                response = asyncio.run(Runner.run(agent, conversation_input))
+                
+                # Process the response items
+                for item in response.new_items:
+                    # Handle tool call output items (tool results)
+                    if isinstance(item, ToolCallOutputItem):
+                        # First, ensure there's a corresponding assistant message with tool_calls
+                        # before adding the tool response to prevent the OpenAI error
+                        assistant_with_tool_call_exists = False
+                        tool_call_id = item.raw_item["call_id"]
+                        
+                        for msg in message_history:
+                            if (msg.get("role") == "assistant" and 
+                                msg.get("tool_calls") and 
+                                any(tc.get("id") == tool_call_id for tc in msg.get("tool_calls", []))):
+                                assistant_with_tool_call_exists = True
+                                break
+                        
+                        # If no matching assistant message exists, create one first
+                        if not assistant_with_tool_call_exists:
+                            tool_call_msg = {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [{
+                                    "id": tool_call_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": "unknown_function",
+                                        "arguments": "{}"
+                                    }
+                                }]
+                            }
+                            add_to_message_history(tool_call_msg)
+                        
+                        # Now add the tool response
+                        tool_msg = {
+                            "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            "content": item.output,
+                        }
+                        add_to_message_history(tool_msg)
+                
+                # Make sure that assistant messages with tool calls are also added to message_history
+                # This is especially important for non-streaming mode
+                if hasattr(agent, 'model'):
+                    # Access the _Converter directly from the OpenAIChatCompletionsModel implementation
+                    from cai.sdk.agents.models.openai_chatcompletions import _Converter
+                    
+                    # Check if recent_tool_calls exists and process them
+                    if hasattr(_Converter, 'recent_tool_calls'):
+                        for call_id, call_info in _Converter.recent_tool_calls.items():
+                            # Only process new tool calls that haven't been added to message history yet
+                            tool_call_found = False
+                            for msg in message_history:
+                                if (msg.get("role") == "assistant" and 
+                                    msg.get("tool_calls") and 
+                                    any(tc.get("id") == call_id for tc in msg.get("tool_calls", []))):
+                                    tool_call_found = True
+                                    break
+                                    
+                            if not tool_call_found:
+                                # Add the assistant message with the tool call
+                                tool_call_msg = {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [{
+                                        "id": call_id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": call_info.get('name', ''),
+                                            "arguments": call_info.get('arguments', '{}')
+                                        }
+                                    }]
+                                }
+                                add_to_message_history(tool_call_msg)
+                                
+                # Final validation to ensure message history follows OpenAI's requirements
+                # Ensure every tool message has a preceding assistant message with matching tool_call_id
+                from cai.util import fix_message_list
+                message_history[:] = fix_message_list(message_history)
             turn_count += 1
 
+            # Stop measuring active time and start measuring idle time again
+            stop_active_timer()
+            start_idle_timer()
+
         except KeyboardInterrupt:
-            if stream:
-                # Ensure streaming context is cleaned up on keyboard interrupt
-                if current_streaming_context is not None:
-                    try:
-                        current_streaming_context["live"].stop()
-                    except Exception:
-                        pass
-                    current_streaming_context = None
+            # No need to clean up streaming context as model handles it
+            pass
         except Exception as e:
-            # Ensure streaming context is cleaned up on any exception
-            if current_streaming_context is not None:
-                try:
-                    current_streaming_context["live"].stop()
-                except Exception:
-                    pass
-                current_streaming_context = None
-            
             import traceback
             import sys
             exc_type, exc_value, exc_traceback = sys.exc_info()
@@ -474,6 +586,10 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
             filename, line, func, text = tb_info[-1]
             console.print(f"[bold red]Error: {str(e)}[/bold red]")
             console.print(f"[bold red]Traceback: {tb_info}[/bold red]")
+            
+            # Make sure we switch back to idle mode even if there's an error
+            stop_active_timer()
+            start_idle_timer()
 
 def main():
     # Apply litellm patch to fix the __annotations__ error
@@ -486,7 +602,7 @@ def main():
 
     # Get the agent instance by name
     agent = get_agent_by_name(agent_type)
-    
+
     # Configure model flags to work well with CLI
     if hasattr(agent, 'model'):
         # Disable rich streaming in the model to avoid conflicts
