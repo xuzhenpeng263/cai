@@ -14,13 +14,13 @@ Arguments:
 
 Example:
 
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend ollama
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --eval seceval --backend ollama
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-mcq1.tsv --eval cti_bench --backend ollama
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-ate2.tsv --eval cti_bench --backend ollama
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-rcm2.tsv --eval cti_bench --backend ollama
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-vsp2.tsv --eval cti_bench --backend ollama
-     python benchmarks/eval.py --model qwen/qwen3-32b:free --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend openrouter
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/utils/cybermetric_dataset/CyberMetric-2-v1.json --eval cybermetric --backend ollama
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/utils/seceval_dataset/questions-2.json --eval seceval --backend ollama
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/utils/cti_bench_dataset/cti-mcq1.tsv --eval cti_bench --backend ollama
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/utils/cti_bench_dataset/cti-ate2.tsv --eval cti_bench --backend ollama
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/utils/cti_bench_dataset/cti-rcm2.tsv --eval cti_bench --backend ollama
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/utils/cti_bench_dataset/cti-vsp2.tsv --eval cti_bench --backend ollama
+     python benchmarks/eval.py --model qwen/qwen3-32b:free --dataset_file benchmarks/utils/cybermetric_dataset/CyberMetric-2-v1.json --eval cybermetric --backend openrouter
 
 Environment Variables:
     OPENROUTER_API_KEY:  API key for OpenRouter (if using OpenRouter models)
@@ -484,16 +484,18 @@ def main():
         Always return in this format: 'ANSWER: XYZ' or 'ANSWER: X'.
         """
         if args.dataset_file == "":
-            args.dataset_file = "benchmarks/seceval/eval/datasets/questions-2.json"
+            args.dataset_file = "benchmarks/utils/seceval_dataset/questions-2.json"
         dataset = load_dataset(args.dataset_file, "seceval")
     elif args.eval == "cybermetric":
         instruction = """Choose the correct answer (A, B, C, or D) only. 
         Always return in this format: 'ANSWER: X'.
         """
         if args.dataset_file == "":
-            args.dataset_file = "benchmarks/cybermetric/CyberMetric-2-v1.json"
+            args.dataset_file = "benchmarks/utils/cybermetric_dataset/CyberMetric-2-v1.json"
         dataset = load_dataset(args.dataset_file, "cybermetric")
     elif args.eval == "cti_bench":
+        if args.dataset_file == "":
+            args.dataset_file = "benchmarks/utils/cti_bench_dataset/cti-mcq1.tsv"
         if "ate" in args.dataset_file:
             instruction = """
             Return your answer in the MITRE ATT&CK technique ID format.
@@ -511,15 +513,11 @@ def main():
         elif "vsp" in args.dataset_file:
             instruction = """
             Return your answer in this CVSS format: 'ANSWER: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H'"""
-        if args.dataset_file == "":
-            args.dataset_file = "benchmarks/cti_bench/data/cti-mcq1.tsv"
         dataset = load_dataset(args.dataset_file, "cti_bench")
     
     start_time = datetime.datetime.now()
     result = run_evaluation(dataset, instruction, model, api_base, api_key, custom_llm_provider)
     end_time = datetime.datetime.now()
-
-    print(result)
 
     accuracy, correct_count, total_count = compute_accuracy(result, args.eval, dataset_file=args.dataset_file)
     

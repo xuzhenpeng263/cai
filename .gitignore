@@ -148,4 +148,4 @@ cython_debug/
 .vscode/
 
 # benchmarks
-benchmarks/cybermetric/outputs
+benchmarks/outputs
