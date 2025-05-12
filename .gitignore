@@ -147,5 +147,8 @@ cython_debug/
 .cai/
 .vscode/
 
+# workspaces
+workspaces/
+
 # benchmarks
 benchmarks/outputs
