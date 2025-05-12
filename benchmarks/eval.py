@@ -14,12 +14,10 @@ Arguments:
 
 Example:
 
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/utils/cybermetric_dataset/CyberMetric-2-v1.json --eval cybermetric --backend ollama
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/utils/seceval_dataset/questions-2.json --eval seceval --backend ollama
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/utils/cti_bench_dataset/cti-mcq1.tsv --eval cti_bench --backend ollama
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/utils/cti_bench_dataset/cti-ate2.tsv --eval cti_bench --backend ollama
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/utils/cti_bench_dataset/cti-rcm2.tsv --eval cti_bench --backend ollama
-     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/utils/cti_bench_dataset/cti-vsp2.tsv --eval cti_bench --backend ollama
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cybermetric/CyberMetric-80-v1.json --eval cybermetric --backend ollama
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/seceval/eval/datasets/questions-2.json --eval seceval --backend ollama
+     python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-mcq.tsv --eval cti_bench --backend ollama
+     
      python benchmarks/eval.py --model qwen/qwen3-32b:free --dataset_file benchmarks/utils/cybermetric_dataset/CyberMetric-2-v1.json --eval cybermetric --backend openrouter
 
 Environment Variables:
