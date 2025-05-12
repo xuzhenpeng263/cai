@@ -16,11 +16,11 @@ theme:
     - content.code.annotate
   palette:
     primary: black
-  logo: assets/logo.svg
+  logo: assets/imago.png
   favicon: images/favicon-platform.svg
 nav:
   - Intro: cai.md
-  - Agents SDK v0.0.6:
+  - SDK:
     - Intro: index.md
     - Quickstart: quickstart.md
     - Examples: examples.md
