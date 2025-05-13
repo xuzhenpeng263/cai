@@ -9,7 +9,8 @@ Usage:
 Arguments:
     -m, --model           Specify the model to evaluate (e.g., "gpt-4", "qwen2.5:14b", etc.)
     -d, --dataset_file    Path to the dataset file (JSON or TSV) containing questions to evaluate
-    -B, --backend         Backend to use: "openai", "openrouter", "ollama" (required)
+    -B, --backend         Backend to use: "openai", "openrouter", "ollama", "anthropic", etc. 
+                          (is important to set the api key and api base in environment variables for the backend)
     -e, --eval            Specify the evaluation benchmark
 
 Example:
@@ -19,6 +20,10 @@ Example:
      python benchmarks/eval.py --model ollama/qwen2.5:14b --dataset_file benchmarks/cti_bench/data/cti-mcq.tsv --eval cti_bench --backend ollama
      
      python benchmarks/eval.py --model qwen/qwen3-32b:free --dataset_file benchmarks/utils/cybermetric_dataset/CyberMetric-2-v1.json --eval cybermetric --backend openrouter
+
+     python benchmarks/eval.py --model gpt-4o-mini --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend openai
+
+     python benchmarks/eval.py --model claude-3-7-sonnet-20250219 --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend anthropic
 
 Environment Variables:
     OPENROUTER_API_KEY:  API key for OpenRouter (if using OpenRouter models)
@@ -47,7 +52,6 @@ import datetime
 OPENROUTER_API_BASE = os.environ.get("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 OLLAMA_API_BASE = os.environ.get("OLLAMA_API_BASE", "http://localhost:8000/v1")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_API_BASE = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
 
 
@@ -450,7 +454,7 @@ def save_benchmark_results(
 def main():
     parser = argparse.ArgumentParser(description="SecEval Evaluation CLI")
     parser.add_argument("-d", "--dataset_file", type=str, required=True, help="Specify the dataset file to evaluate on.")
-    parser.add_argument("-B", "--backend", type=str, choices=["openai", "ollama", "openrouter"], required=True, help="Specify the llm type. openai: openai model, ollama: ollama model, openrouter: openrouter model")
+    parser.add_argument("-B", "--backend", type=str, required=True, help="Specify the llm type. openai: openai model, ollama: ollama model, openrouter: openrouter model")
     parser.add_argument("-m", "--model", type=str, required=True, help="Specify the models.")
     parser.add_argument("-e", "--eval", type=str, required=True, help="Specify the evaluation benchmark.")
     args = parser.parse_args()
@@ -458,12 +462,10 @@ def main():
     model = args.model
 
     print(f"Evaluating model: {model}")
- 
-    if args.backend == "openai":
-        api_base=OPENAI_API_BASE
-        api_key=OPENAI_API_KEY
-        custom_llm_provider=None
-    elif args.backend == "ollama":
+    OPENROUTER_API_KEY="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"
+    OPENROUTER_API_BASE="https://openrouter.ai/api/v1"
+    
+    if args.backend == "ollama":
         api_base=OLLAMA_API_BASE
         api_base = api_base.rstrip('/v1')
         api_key=None
@@ -472,6 +474,12 @@ def main():
         api_base=OPENROUTER_API_BASE
         api_key=OPENROUTER_API_KEY
         custom_llm_provider="openrouter"
+    elif args.backend:
+        api_base=os.environ.get(args.backend.upper() + "_API_BASE")
+        api_key= os.environ.get(args.backend.upper() + "_API_KEY")
+        custom_llm_provider=args.backend
+        if api_key is None:
+            raise RuntimeError("Unknown backend")
     else:
         raise RuntimeError("Unknown backend")
 

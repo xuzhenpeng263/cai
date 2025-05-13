@@ -11,7 +11,7 @@ Currently, this are the benchmarks included:
 | [SecEval](https://github.com/XuanwuAI/SecEval) | Benchmark designed to evaluate large language models (LLMs) on security-related tasks. It includes various real-world scenarios such as phishing email analysis, vulnerability classification, and response generation. |
 | [CyberMetric](https://github.com/CyberMetric) | Benchmark framework that focuses on measuring the performance of AI systems in cybersecurity-specific question answering, knowledge extraction, and contextual understanding. It emphasizes both domain knowledge and reasoning ability. |
 | [CTIBench](https://github.com/xashru/cti-bench) | Benchmark focused on evaluating LLM models' capabilities in understanding and processing Cyber Threat Intelligence (CTI) information. |
-
+| [PentestPerf](https://gitlab.com/aliasrobotics/alias_research/caiextensions/pentestperf) | Internal Benchmark to evaluate the security capabilities. It is built as a composition of individual benchmarks, each represented by a Docker container. Each container scenario (CTF) can contain multiple challenges and tasks. The system is designed to be modular and extensible, allowing for the addition of new benchmarks and challenges. |
 
 
 The goal is to consolidate diverse evaluation tasks under a single framework to support rigorous, standardized testing.
@@ -68,4 +68,20 @@ python benchmarks/eval.py --model qwen/qwen3-32b:free  --dataset_file benchmarks
 ````
 ```bash
 python benchmarks/eval.py --model qwen/qwen3-32b:free  --dataset_file benchmarks/cti_bench/data/cti-ate2.tsv --eval cti_bench --backend openrouter
+````
+
+**How to run different backends such as openai and anthropic**
+
+Set the API_KEY for the corresponding backend as follows in .env: NAME_BACKEND + API_KEY
+
+```bash
+OPENAI_API_KEY = "..."
+ANTHROPIC_API_KEY="..."
+````
+
+```bash
+python benchmarks/eval.py --model gpt-4o-mini --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend openai
+````
+```bash
+python benchmarks/eval.py --model claude-3-7-sonnet-20250219 --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend anthropic
 ````
