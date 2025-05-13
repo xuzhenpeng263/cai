@@ -1762,10 +1762,13 @@ class OpenAIChatCompletionsModel(Model):
         parallel_tool_calls: bool
     ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
         """Handle standard LiteLLM API calls for OpenAI and compatible models."""
+        # Make sure model is the first parameter
+        model = kwargs.pop("model", self.model)
+        
         if stream:
             # Standard LiteLLM handling for streaming
-            ret = litellm.completion(**kwargs)
-            stream_obj = await litellm.acompletion(**kwargs)
+            ret = litellm.completion(model=model, **kwargs)
+            stream_obj = await litellm.acompletion(model=model, **kwargs)
 
             response = Response(
                 id=FAKE_RESPONSES_ID,
@@ -1782,7 +1785,7 @@ class OpenAIChatCompletionsModel(Model):
             return response, stream_obj
         else:
             # Standard OpenAI handling for non-streaming
-            ret = litellm.completion(**kwargs)
+            ret = litellm.completion(model=model, **kwargs)
             return ret
             
     async def _fetch_response_litellm_ollama(
@@ -1794,9 +1797,11 @@ class OpenAIChatCompletionsModel(Model):
         parallel_tool_calls: bool,
         provider="ollama"
     ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
+        # Extract the model first to ensure it's the first parameter
+        model = kwargs.get("model", self.model)
+        
         # Extract only supported parameters for Ollama
         ollama_supported_params = {
-            "model": kwargs.get("model", ""),
             "messages": kwargs.get("messages", []),
             "stream": kwargs.get("stream", False)
         }
@@ -1821,7 +1826,7 @@ class OpenAIChatCompletionsModel(Model):
         ollama_kwargs = {k: v for k, v in ollama_supported_params.items() if v is not None}
         
         # Check if this is a Qwen model
-        model_str = str(self.model).lower()
+        model_str = str(model).lower()
         is_qwen = "qwen" in model_str
                 
         api_base = get_ollama_api_base()
@@ -1842,21 +1847,21 @@ class OpenAIChatCompletionsModel(Model):
                 tools=[],
                 parallel_tool_calls=parallel_tool_calls or False,
             )
-            # Get streaming response
+            # Get streaming response - ensure model is first parameter
             stream_obj = await litellm.acompletion(
-                **ollama_kwargs,
+                model=model,
                 api_base=api_base,
                 custom_llm_provider=provider,
+                **ollama_kwargs
             )
             return response, stream_obj
         else:
-
-        
-            # Get completion response
+            # Get completion response - ensure model is first parameter
             return litellm.completion(
-                **ollama_kwargs,
+                model=model,
                 api_base=api_base,
                 custom_llm_provider=provider,
+                **ollama_kwargs
             )
 
     def _intermediate_logs(self):
