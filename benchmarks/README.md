@@ -31,6 +31,22 @@ git submodule update --init --recursive  # init submodules
 pip install cvss
 ```
 
+Set the API_KEY for the corresponding backend as follows in .env: NAME_BACKEND + API_KEY
+
+```bash
+OPENAI_API_KEY = "..."
+ANTHROPIC_API_KEY="..."
+OPENROUTER_API_KEY="..."
+````
+
+Some of the backends need and url to the api base, set as follows in .env: NAME_BACKEND + API_BASE:
+
+```bash
+OLLAMA_API_BASE="..."
+OPENROUTER_API_BASE="..."
+````
+Once evething is configured run the script
+
 ```bash
 python benchmarks/eval.py --model MODEL_NAME --dataset_file INPUT_FILE --eval EVAL_TYPE --backend BACKEND
 ```
@@ -49,6 +65,8 @@ Output:
            └── information.txt    # report of that precise run (e.g. model_name, benchmark_name, metrics, date)
 
 ```
+
+
 #### 🔍 Examples
 
 **How to run different CTI Bench tests with the "llama/qwen2.5:14b" model using Ollama as the backend**
@@ -72,16 +90,10 @@ python benchmarks/eval.py --model qwen/qwen3-32b:free  --dataset_file benchmarks
 
 **How to run different backends such as openai and anthropic**
 
-Set the API_KEY for the corresponding backend as follows in .env: NAME_BACKEND + API_KEY
-
-```bash
-OPENAI_API_KEY = "..."
-ANTHROPIC_API_KEY="..."
-````
-
 ```bash
 python benchmarks/eval.py --model gpt-4o-mini --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend openai
 ````
+
 ```bash
 python benchmarks/eval.py --model claude-3-7-sonnet-20250219 --dataset_file benchmarks/cybermetric/CyberMetric-2-v1.json --eval cybermetric --backend anthropic
 ````

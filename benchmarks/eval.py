@@ -462,8 +462,6 @@ def main():
     model = args.model
 
     print(f"Evaluating model: {model}")
-    OPENROUTER_API_KEY="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"
-    OPENROUTER_API_BASE="https://openrouter.ai/api/v1"
     
     if args.backend == "ollama":
         api_base=OLLAMA_API_BASE
