@@ -1485,9 +1485,16 @@ class OpenAIChatCompletionsModel(Model):
         # Match the behavior of Responses where store is True when not given
         store = model_settings.store if model_settings.store is not None else True
 
+        # Check if we should use the agent's model instead of self.model
+        # This prioritizes the model from Agent when available
+        agent_model = None
+        if hasattr(model_settings, 'agent_model') and model_settings.agent_model:
+            agent_model = model_settings.agent_model
+            logger.debug(f"Using agent model: {agent_model} instead of {self.model}")
+        
         # Prepare kwargs for the API call
         kwargs = {
-            "model": self.model,
+            "model": agent_model if agent_model else self.model,
             "messages": converted_messages,
             "tools": converted_tools or NOT_GIVEN,
             "temperature": self._non_null_or_not_given(model_settings.temperature),
@@ -1505,7 +1512,7 @@ class OpenAIChatCompletionsModel(Model):
         }
 
         # Determine provider based on model string
-        model_str = str(self.model).lower()
+        model_str = str(kwargs["model"]).lower()
         
         # Provider-specific adjustments
         if "/" in model_str:

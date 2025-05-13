@@ -657,6 +657,13 @@ class Runner:
         model = cls._get_model(agent, run_config)
         model_settings = agent.model_settings.resolve(run_config.model_settings)
         model_settings = RunImpl.maybe_reset_tool_choice(agent, tool_use_tracker, model_settings)
+        
+        # Ensure agent model is set in model_settings for streaming mode
+        if not hasattr(model_settings, 'agent_model') or not model_settings.agent_model:
+            if isinstance(agent.model, str):
+                model_settings.agent_model = agent.model
+            elif isinstance(run_config.model, str):
+                model_settings.agent_model = run_config.model
 
         final_response: ModelResponse | None = None
 
@@ -941,6 +948,13 @@ class Runner:
         model_settings = agent.model_settings.resolve(run_config.model_settings)
         model_settings = RunImpl.maybe_reset_tool_choice(agent, tool_use_tracker, model_settings)
 
+        # Ensure agent model is set in model_settings
+        if not hasattr(model_settings, 'agent_model') or not model_settings.agent_model:
+            if isinstance(agent.model, str):
+                model_settings.agent_model = agent.model
+            elif isinstance(run_config.model, str):
+                model_settings.agent_model = run_config.model
+
         new_response = await model.get_response(
             system_instructions=system_prompt,
             input=input,
@@ -981,14 +995,21 @@ class Runner:
     @classmethod
     def _get_model(cls, agent: Agent[Any], run_config: RunConfig) -> Model:
         model = None
+        agent_model = None
         if isinstance(run_config.model, Model):
             model = run_config.model
         elif isinstance(run_config.model, str):
             model = run_config.model_provider.get_model(run_config.model)
+            agent_model = run_config.model
         elif isinstance(agent.model, Model):
             model = agent.model
         else:
             model = run_config.model_provider.get_model(agent.model)
+            agent_model = agent.model
+            
+        # Store the original agent model in model_settings for later use
+        if agent_model and hasattr(agent, 'model_settings'):
+            agent.model_settings.agent_model = agent_model
             
         # Set agent name if the model supports it (for CLI display)
         if hasattr(model, 'set_agent_name'):
