@@ -45,7 +45,18 @@ from .usage import Usage
 from .util import _coro, _error_tracing
 import os
 
-DEFAULT_MAX_TURNS = os.getenv("CAI_MAX_TURNS", float("inf"))
+# CAI_MAX_TURNS must be converted to an int to avoid type mismatch error when comparing.
+max_turns_env = os.getenv("CAI_MAX_TURNS")
+if max_turns_env is not None:
+    try:
+        DEFAULT_MAX_TURNS = int(max_turns_env)
+    except ValueError:
+        try:
+            DEFAULT_MAX_TURNS = float(max_turns_env)
+        except ValueError:
+            DEFAULT_MAX_TURNS = float("inf")
+else:
+    DEFAULT_MAX_TURNS = float("inf")
 
 
 @dataclass
