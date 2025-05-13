@@ -210,6 +210,7 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
 
     # Display banner
     display_banner(console)
+    print("\n")
     display_quick_guide(console)
     # Function to get the short name of the agent for display
     def get_agent_short_name(agent):
