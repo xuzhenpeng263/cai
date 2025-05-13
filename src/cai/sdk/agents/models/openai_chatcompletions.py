@@ -1485,9 +1485,16 @@ class OpenAIChatCompletionsModel(Model):
         # Match the behavior of Responses where store is True when not given
         store = model_settings.store if model_settings.store is not None else True
 
+        # Check if we should use the agent's model instead of self.model
+        # This prioritizes the model from Agent when available
+        agent_model = None
+        if hasattr(model_settings, 'agent_model') and model_settings.agent_model:
+            agent_model = model_settings.agent_model
+            logger.debug(f"Using agent model: {agent_model} instead of {self.model}")
+        
         # Prepare kwargs for the API call
         kwargs = {
-            "model": self.model,
+            "model": agent_model if agent_model else self.model,
             "messages": converted_messages,
             "tools": converted_tools or NOT_GIVEN,
             "temperature": self._non_null_or_not_given(model_settings.temperature),
@@ -1505,7 +1512,7 @@ class OpenAIChatCompletionsModel(Model):
         }
 
         # Determine provider based on model string
-        model_str = str(self.model).lower()
+        model_str = str(kwargs["model"]).lower()
         
         # Provider-specific adjustments
         if "/" in model_str:
@@ -1762,13 +1769,10 @@ class OpenAIChatCompletionsModel(Model):
         parallel_tool_calls: bool
     ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
         """Handle standard LiteLLM API calls for OpenAI and compatible models."""
-        # Make sure model is the first parameter
-        model = kwargs.pop("model", self.model)
-        
         if stream:
             # Standard LiteLLM handling for streaming
-            ret = litellm.completion(model=model, **kwargs)
-            stream_obj = await litellm.acompletion(model=model, **kwargs)
+            ret = litellm.completion(**kwargs)
+            stream_obj = await litellm.acompletion(**kwargs)
 
             response = Response(
                 id=FAKE_RESPONSES_ID,
@@ -1785,7 +1789,7 @@ class OpenAIChatCompletionsModel(Model):
             return response, stream_obj
         else:
             # Standard OpenAI handling for non-streaming
-            ret = litellm.completion(model=model, **kwargs)
+            ret = litellm.completion(**kwargs)
             return ret
             
     async def _fetch_response_litellm_ollama(
@@ -1797,11 +1801,9 @@ class OpenAIChatCompletionsModel(Model):
         parallel_tool_calls: bool,
         provider="ollama"
     ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
-        # Extract the model first to ensure it's the first parameter
-        model = kwargs.get("model", self.model)
-        
         # Extract only supported parameters for Ollama
         ollama_supported_params = {
+            "model": kwargs.get("model", ""),
             "messages": kwargs.get("messages", []),
             "stream": kwargs.get("stream", False)
         }
@@ -1826,7 +1828,7 @@ class OpenAIChatCompletionsModel(Model):
         ollama_kwargs = {k: v for k, v in ollama_supported_params.items() if v is not None}
         
         # Check if this is a Qwen model
-        model_str = str(model).lower()
+        model_str = str(self.model).lower()
         is_qwen = "qwen" in model_str
                 
         api_base = get_ollama_api_base()
@@ -1847,21 +1849,21 @@ class OpenAIChatCompletionsModel(Model):
                 tools=[],
                 parallel_tool_calls=parallel_tool_calls or False,
             )
-            # Get streaming response - ensure model is first parameter
+            # Get streaming response
             stream_obj = await litellm.acompletion(
-                model=model,
+                **ollama_kwargs,
                 api_base=api_base,
                 custom_llm_provider=provider,
-                **ollama_kwargs
             )
             return response, stream_obj
         else:
-            # Get completion response - ensure model is first parameter
+
+        
+            # Get completion response
             return litellm.completion(
-                model=model,
+                **ollama_kwargs,
                 api_base=api_base,
                 custom_llm_provider=provider,
-                **ollama_kwargs
             )
 
     def _intermediate_logs(self):
