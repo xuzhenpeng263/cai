@@ -26,9 +26,31 @@ CAI focuses on making cybersecurity agent **coordination** and **execution** lig
 
 If you want to dive deeper into the code, check the following files as a start point for using CAI:
 
-If you want to dive deeper into the code, check the following files as a start point for using CAI:
+cai
+├── benchmarks 
+├── ci  
+├── docs
+├── examples                     # Basic use of CAI for start building on your own
+├── src
+│   └── cai
+│        ├── __init__.py
+│        ├── agents
+│        │   ├── one_tool.py     # Agent definitions, one agent per file
+│        │   └── patterns
+│        ├── cli.py              # Entrypoint for CLI
+│        ├── prompts
+│        ├── repl                # CLI aesthetics and commands
+│        │   ├── commands
+│        │   └── ui
+│        ├── sdk                 # Necessary class for chat completions
+│        │   └── agents 
+│        │       └── model             
+│        ├── tools               # Agent tools
+│        │   └──common.py
+│        └── util.py             # Utility functions
+├── tests
+└── tools                        # Usable tools
 
-<span style="color: red;">TODO: files tree</span>
 
 
 ### 🔹 Agent
