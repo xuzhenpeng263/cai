@@ -42,8 +42,8 @@ For more details, including examples and implementation guidance, see the [Agent
 
 `Tools` let cybersecurity agents take actions by providing interfaces to execute system commands, run security scans, analyze vulnerabilities, and interact with target systems and APIs - they are the core capabilities that enable CAI agents to perform security tasks effectively; in CAI, tools include built-in cybersecurity utilities (like LinuxCmd for command execution, WebSearch for OSINT gathering, Code for dynamic script execution, and SSHTunnel for secure remote access), function calling mechanisms that allow integration of any Python function as a security tool, and agent-as-tool functionality that enables specialized security agents (such as reconnaissance or exploit agents) to be used by other agents, creating powerful collaborative security workflows without requiring formal handoffs between agents.
 
-You may find different [tools](src/cai/tools). They are grouped in 6 major categories inspired by the <span style="color: red;">security kill chain[2]:
-s
+You may find different [tools](src/cai/tools). They are grouped in 6 major categories inspired by the security kill chain[2]:
+
 1. Reconnaissance and weaponization - *reconnaissance*  (crypto, listing, etc)
 2. Exploitation - *exploitation*
 3. Privilege escalation - *escalation*
@@ -83,8 +83,8 @@ While orchestrating via LLM is powerful, orchestrating via code makes tasks more
 
 ### 🔹 Patterns
 
-<span style="color: red;">An agentic `Pattern` is a *structured design paradigm* in artificial intelligence systems where autonomous or semi-autonomous agents operate within a defined *interaction framework* (the pattern) to achieve a goal. These `Patterns` specify the organization, coordination, and communication
-methods among agents, guiding decision-making, task execution, and delegation.</span>
+An agentic `Pattern` is a *structured design paradigm* in artificial intelligence systems where autonomous or semi-autonomous agents operate within a defined *interaction framework* (the pattern) to achieve a goal. These `Patterns` specify the organization, coordination, and communication
+methods among agents, guiding decision-making, task execution, and delegation.
 
 An agentic pattern (`AP`) can be formally defined as a tuple:
 
@@ -112,23 +112,20 @@ When building `Patterns`, we generall y classify them among one of the following
 
 Building a `Pattern` is rather straightforward and only requires to link together `Agents`, `Tools` and `Handoffs`. For example, the following builds an offensive `Pattern` that adopts the `Swarm` category:
 
+
 ### 🔹 Turns 
 During the agentic flow (conversation), we distinguish between **interactions** and **turns**.
 
-- **Interactions** are sequential exchanges between one or multiple agents. Each agent executing its logic corresponds with one *interaction*. Since an `Agent` in CAI generally implements the `ReACT` <span style="color: red;">agent model[^3]</span>, each *interaction* consists of 1) a reasoning step via an LLM inference and 2) act by calling zero-to-n `Tools`. 
+- **Interactions** are sequential exchanges between one or multiple agents. Each agent executing its logic corresponds with one *interaction*. Since an `Agent` in CAI generally implements the `ReACT` agent model[3], each *interaction* consists of 1) a reasoning step via an LLM inference and 2) act by calling zero-to-n `Tools`. 
 - **Turns**: A turn represents a cycle of one ore more **interactions** which finishes when the `Agent` (or `Pattern`) executing returns `None`, judging there're no further actions to undertake.
 
 
-> [!NOTE]
 > CAI Agents are not related to Assistants in the Assistants API. They are named similarly for convenience, but are otherwise completely unrelated. CAI is entirely powered by the Chat Completions API and is hence stateless between calls.
 
 
 ### 🔹 Tracing
+> ⚠️ TRACING IS STILL IN PROGRESS
 
-<span style="color: red;">CAI implements AI observability by adopting the OpenTelemetry standard and to do so, it leverages [Phoenix](https://github.com/Arize-ai/phoenix) which provides comprehensive tracing capabilities through OpenTelemetry-based instrumentation, allowing you to monitor and analyze your security operations in real-time. This integration enables detailed visibility into agent interactions, tool usage, and attack vectors throughout penetration testing workflows, making it easier to debug complex exploitation chains, track vulnerability discovery processes, and optimize agent performance for more effective security assessments.</span>
-
-
-![](media/tracing.png)
 
 ### 🔹 Human-In-The-Loop (HITL)
 
