@@ -78,7 +78,7 @@ agent = Agent(
 ```
 
 !!! note
-   <span style="color: red;"> When you pass an `output_type`, that tells the model to use [structured outputs](https://platform.openai.com/docs/guides/structured-outputs) instead of regular plain text responses.</span> 
+   When you pass an `output_type`, that tells the model to use structured outputs instead of regular plain text responses.
 
 ## Handoffs
 

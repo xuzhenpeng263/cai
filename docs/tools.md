@@ -8,8 +8,8 @@ Tools let agents take actions: things like fetching data, running code, calling 
 
 ## Hosted tools
 
-CAI offers a few built-in tools when using the [`OpenAIResponsesModel`][cai.sdk.agents.models.openai_responses.OpenAIResponsesModel]. They are in [tools](src/cai/tools) and grouped in 6 major categories inspired by the <span style="color: red;">security kill chain[^2]<span>:
-s
+CAI offers a few built-in tools when using the [`OpenAIResponsesModel`][cai.sdk.agents.models.openai_responses.OpenAIResponsesModel]. They are in [tools](src/cai/tools) and grouped in 6 major categories inspired by the security kill chain[2]:
+
  
 1. Reconnaissance and weaponization - *reconnaissance*  (crypto, listing, etc)
 2. Exploitation - *exploitation*
@@ -300,3 +300,10 @@ When you create a function tool via `@function_tool`, you can pass a `failure_er
 -   If you explicitly pass `None`, then any tool call errors will be re-raised for you to handle. This could be a `ModelBehaviorError` if the model produced invalid JSON, or a `UserError` if your code crashed, etc.
 
 If you are manually creating a `FunctionTool` object, then you must handle errors inside the `on_invoke_tool` function.
+
+
+---
+
+[1] Arguably, the Chain-of-Thought agentic pattern is a special case of the Hierarchical agentic pattern.
+[2] Kamhoua, C. A., Leslie, N. O., & Weisman, M. J. (2018). Game theoretic modeling of advanced persistent threat in internet of things. Journal of Cyber Security and Information Systems.
+[3] Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan, K., & Cao, Y. (2023, January). React: Synergizing reasoning and acting in language models. In International Conference on Learning Representations (ICLR).
