@@ -1,52 +1,102 @@
-# OpenAI Agents SDK
+# Cybersecurity AI (`CAI`)
 
-The [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) enables you to build agentic AI apps in a lightweight, easy-to-use package with very few abstractions. It's a production-ready upgrade of our previous experimentation for agents, [Swarm](https://github.com/openai/swarm/tree/main). The Agents SDK has a very small set of primitives:
+<div align="center">
+  <p>
+    <a align="center" href="" target="https://github.com/aliasrobotics/CAI">
+      <img
+        width="100%"
+        src="https://github.com/aliasrobotics/cai/raw/main/media/cai.png"
+      >
+    </a>
+  </p>
 
--   **Agents**, which are LLMs equipped with instructions and tools
--   **Handoffs**, which allow agents to delegate to other agents for specific tasks
--   **Guardrails**, which enable the inputs to agents to be validated
+<h2>🎯 Milestones</h2>
+<p>
+<a href="https://app.hackthebox.com/users/2268644"><img src="https://img.shields.io/badge/HTB_ranking-top_90_Spain_(5_days)-red.svg" alt="HTB top 90 Spain (5 days)"></a>
+<a href="https://app.hackthebox.com/users/2268644"><img src="https://img.shields.io/badge/HTB_ranking-top_50_Spain_(6_days)-red.svg" alt="HTB ranking top 50 Spain (6 days)"></a>
+<a href="https://app.hackthebox.com/users/2268644"><img src="https://img.shields.io/badge/HTB_ranking-top_30_Spain_(7_days)-red.svg" alt="HTB ranking top 30 Spain (7 days)"></a>
+<a href="https://app.hackthebox.com/users/2268644"><img src="https://img.shields.io/badge/HTB_ranking-top_500_World_(7_days)-red.svg" alt="HTB ranking top 500 World (7 days)"></a>
+<a href="https://ctf.hackthebox.com/event/2000/scoreboard"><img src="https://img.shields.io/badge/HTB_Human_vs_AI_CTF-top_1_(AIs)_world-red.svg" alt="HTB Human vs AI CTF top 1 (AIs) world"></a>
+<a href="https://ctf.hackthebox.com/event/2000/scoreboard"><img src="https://img.shields.io/badge/HTB_Human_vs_AI_CTF-top_1_Spain-red.svg" alt="HTB Human vs AI CTF top 1 Spain"></a>
+<a href="https://ctf.hackthebox.com/event/2000/scoreboard"><img src="https://img.shields.io/badge/HTB_Human_vs_AI_CTF-top_20_World-red.svg" alt="HTB Human vs AI CTF top 20 World"></a>
+<a href="https://ctf.hackthebox.com/event/2000/scoreboard"><img src="https://img.shields.io/badge/HTB_Human_vs_AI_CTF-750_$-yellow.svg" alt="HTB Human vs AI CTF 750 $"></a>
+<a href="https://lu.ma/roboticshack?tk=RuryKF"><img src="https://img.shields.io/badge/Mistral_AI_Robotics_Hackathon-2500_$-yellow.svg" alt="Mistral AI Robotics Hackathon 2500 $"></a>
+<a href="https://github.com/aliasrobotics/cai"><img src="https://img.shields.io/badge/Bug_rewards-250_$-yellow.svg" alt="Bug rewards 250 $"></a>
+</p>
 
-In combination with Python, these primitives are powerful enough to express complex relationships between tools and agents, and allow you to build real-world applications without a steep learning curve. In addition, the SDK comes with built-in **tracing** that lets you visualize and debug your agentic flows, as well as evaluate them and even fine-tune models for your application.
+<h2>📦 Package Attributes</h2>
+<p>
+<a href="https://badge.fury.io/py/cai-framework"><img src="https://badge.fury.io/py/cai-framework.svg" alt="version"></a>
+<a href="https://pypistats.org/packages/cai-framework"><img src="https://img.shields.io/pypi/dm/cai-framework" alt="downloads"></a>
+<a href="https://github.com/aliasrobotics/cai"><img src="https://img.shields.io/badge/Linux-Supported-brightgreen?logo=linux&logoColor=white" alt="Linux"></a>
+<a href="https://github.com/aliasrobotics/cai"><img src="https://img.shields.io/badge/OS%20X-Supported-brightgreen?logo=apple&logoColor=white" alt="OS X"></a>
+<a href="https://github.com/aliasrobotics/cai"><img src="https://img.shields.io/badge/Windows-Supported-brightgreen?logo=windows&logoColor=white" alt="Windows"></a>
+<a href="https://github.com/aliasrobotics/cai"><img src="https://img.shields.io/badge/Android-Supported-brightgreen?logo=android&logoColor=white" alt="Android"></a>
+<a href="https://discord.gg/fnUFcTaQAC"><img src="https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white" alt="Discord"></a>
+<a href="https://arxiv.org/pdf/2504.06017"><img src="https://img.shields.io/badge/arXiv-2504.06017-b31b1b.svg" alt="arXiv"></a>
+</p>
 
-## Why use the Agents SDK
+</div>
 
-The SDK has two driving design principles:
+A lightweight, ergonomic framework for building bug bounty-ready Cybersecurity AIs (CAIs).
 
-1. Enough features to be worth using, but few enough primitives to make it quick to learn.
-2. Works great out of the box, but you can customize exactly what happens.
+| CAI on JWT@PortSwigger CTF — Cybersecurity AI | CAI on HackableII Boot2Root CTF — Cybersecurity AI |
+|-----------------------------------------------|---------------------------------|
+| [![asciicast](https://asciinema.org/a/713487.svg)](https://asciinema.org/a/713487) | [![asciicast](https://asciinema.org/a/713485.svg)](https://asciinema.org/a/713485) |
 
-Here are the main features of the SDK:
 
--   Agent loop: Built-in agent loop that handles calling tools, sending results to the LLM, and looping until the LLM is done.
--   Python-first: Use built-in language features to orchestrate and chain agents, rather than needing to learn new abstractions.
--   Handoffs: A powerful feature to coordinate and delegate between multiple agents.
--   Guardrails: Run input validations and checks in parallel to your agents, breaking early if the checks fail.
--   Function tools: Turn any Python function into a tool, with automatic schema generation and Pydantic-powered validation.
--   Tracing: Built-in tracing that lets you visualize, debug and monitor your workflows, as well as use the OpenAI suite of evaluation, fine-tuning and distillation tools.
+> ⚠️ CAI is in active development, so don't expect it to work flawlessly. Instead, contribute by raising an issue or [sending a PR](https://github.com/aliasrobotics/cai/pulls).
+>
+> Access to this library and the use of information, materials (or portions thereof), is **<u>not intended</u>, and is <u>prohibited</u>, where such access or use violates applicable laws or regulations**. By no means the authors encourage or promote the unauthorized tampering with running systems. This can cause serious human harm and material damages.
+>
+> *By no means the authors of CAI encourage or promote the unauthorized tampering with compute systems. Please don't use the source code in here for cybercrime. <u>Pentest for good instead</u>*. By downloading, using, or modifying this source code, you agree to the terms of the [`LICENSE`](LICENSE) and the limitations outlined in the [`DISCLAIMER`](DISCLAIMER) file.
 
-## Installation
 
-```bash
-pip install openai-agents
-```
+## Motivation
+### Why CAI?
+The cybersecurity landscape is undergoing a dramatic transformation as AI becomes increasingly integrated into security operations. **We predict that by 2028, AI-powered security testing tools will outnumber human pentesters**. This shift represents a fundamental change in how we approach cybersecurity challenges. *AI is not just another tool - it's becoming essential for addressing complex security vulnerabilities and staying ahead of sophisticated threats. As organizations face more advanced cyber attacks, AI-enhanced security testing will be crucial for maintaining robust defenses.*
 
-## Hello world example
+This work builds upon prior efforts[1] and similarly, we believe that democratizing access to advanced cybersecurity AI tools is vital for the entire security community. That's why we're releasing Cybersecurity AI (`CAI`) as an open source framework. Our goal is to empower security researchers, ethical hackers, and organizations to build and deploy powerful AI-driven security tools. By making these capabilities openly available, we aim to level the playing field and ensure that cutting-edge security AI technology isn't limited to well-funded private companies or state actors.
 
-```python
-from cai.sdk.agents import Agent, Runner
+Bug Bounty programs have become a cornerstone of modern cybersecurity, providing a crucial mechanism for organizations to identify and fix vulnerabilities in their systems before they can be exploited. These programs have proven highly effective at securing both public and private infrastructure, with researchers discovering critical vulnerabilities that might have otherwise gone unnoticed. CAI is specifically designed to enhance these efforts by providing a lightweight, ergonomic framework for building specialized AI agents that can assist in various aspects of Bug Bounty hunting - from initial reconnaissance to vulnerability validation and reporting. Our framework aims to augment human expertise with AI capabilities, helping researchers work more efficiently and thoroughly in their quest to make digital systems more secure.
 
-agent = Agent(name="Assistant", instructions="You are a helpful assistant")
+### Ethical principles behind CAI
 
-result = Runner.run_sync(agent, "Write a haiku about recursion in programming.")
-print(result.final_output)
+You might be wondering if releasing CAI *in-the-wild* given its capabilities and security implications is ethical. Our decision to open-source this framework is guided by two core ethical principles:
 
-# Code within the code,
-# Functions calling themselves,
-# Infinite loop's dance.
-```
+1. **Democratizing Cybersecurity AI**: We believe that advanced cybersecurity AI tools should be accessible to the entire security community, not just well-funded private companies or state actors. By releasing CAI as an open source framework, we aim to empower security researchers, ethical hackers, and organizations to build and deploy powerful AI-driven security tools, leveling the playing field in cybersecurity.
 
-(_If running this, ensure you set the `OPENAI_API_KEY` environment variable_)
+2. **Transparency in AI Security Capabilities**: Based on our research results, understanding of the technology, and dissection of top technical reports, we argue that current LLM vendors are undermining their cybersecurity capabilities. This is extremely dangerous and misleading. By developing CAI openly, we provide a transparent benchmark of what AI systems can actually do in cybersecurity contexts, enabling more informed decisions about security postures.
 
-```bash
-export OPENAI_API_KEY=sk-...
-```
+CAI is built on the following core principles:
+
+- **Cybersecurity oriented AI framework**: CAI is specifically designed for cybersecurity use cases, aiming at semi- and fully-automating offensive and defensive security tasks.
+- **Open source, free for research**: CAI is open source and free for research purposes. We aim at democratizing access to AI and Cybersecurity. For professional or commercial use, including on-premise deployments, dedicated technical support and custom extensions [reach out](mailto:research@aliasrobotics.com) to obtain a license.
+- **Lightweight**: CAI is designed to be fast, and easy to use.
+- **Modular and agent-centric design**: CAI operates on the basis of agents and agentic patterns, which allows flexibility and scalability. You can easily add the most suitable agents and pattern for your cybersecurity target case.
+- **Tool-integration**: CAI integrates already built-in tools, and allows the user to integrate their own tools with their own logic easily.
+- **Logging and tracing integrated**: using [`phoenix`](https://github.com/Arize-ai/phoenix), the open source tracing and logging tool for LLMs. This provides the user with a detailed traceability of the agents and their execution.
+- **Multi-Model Support**: more than 300 supported and empowered by [LiteLLM](https://github.com/BerriAI/litellm). The most popular providers:
+
+### Popular Model Providers
+* **Anthropic**: `Claude 3.7`, `Claude 3.5`, `Claude 3`, `Claude 3 Opus`
+* **OpenAI**: `O1`, `O1 Mini`, `O3 Mini`, `GPT-4o`, `GPT-4.5 Preview`
+* **DeepSeek**: `DeepSeek V3`, `DeepSeek R1`
+* **Ollama**: `Qwen2.5 72B`, `Qwen2.5 14B`, And many more
+
+### Closed-source alternatives
+Cybersecurity AI is a critical field, yet many groups are misguidedly pursuing it through closed-source methods for pure economic return, leveraging similar techniques and building upon existing closed-source (*often third-party owned*) models. This approach not only squanders valuable engineering resources but also represents an economic waste and results in redundant efforts, as they often end up reinventing the wheel. Here are some of the closed-source initiatives we keep track of and attempting to leverage genAI and agentic frameworks in cybersecurity AI:
+
+- [Runsybil](https://www.runsybil.com)
+- [Selfhack](https://www.selfhack.fi)
+- [Sxipher](https://www.sxipher.com/) (seems discontinued)
+- [Staris](https://staris.tech/)
+- [Terra Security](https://www.terra.security)
+- [Xint](https://xint.io/)
+- [XBOW](https://www.xbow.com)
+- [ZeroPath](https://www.zeropath.com)
+- [Zynap](https://www.zynap.com)
+
+---
+
+[1] Deng, G., Liu, Y., Mayoral-Vilches, V., Liu, P., Li, Y., Xu, Y., ... & Rass, S. (2024). {PentestGPT}: Evaluating and harnessing large language models for automated penetration testing. In 33rd USENIX Security Symposium (USENIX Security 24) (pp. 847-864).

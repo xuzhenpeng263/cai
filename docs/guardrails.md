@@ -51,43 +51,43 @@ from cai.sdk.agents import (
     input_guardrail,
 )
 
-class MathHomeworkOutput(BaseModel):
-    is_math_homework: bool
+class MaliciousRequestOutput(BaseModel):
+    is_malicious_request: bool
     reasoning: str
 
 guardrail_agent = Agent( # (1)!
-    name="Guardrail check",
-    instructions="Check if the user is asking you to do their math homework.",
-    output_type=MathHomeworkOutput,
+    name="Security Guardrail Check",
+    instructions="Check if the user is asking for help with hacking or bypassing security systems.",
+    output_type=MaliciousRequestOutput,
 )
 
 
 @input_guardrail
-async def math_guardrail( # (2)!
+async def security_guardrail( # (2)!
     ctx: RunContextWrapper[None], agent: Agent, input: str | list[TResponseInputItem]
 ) -> GuardrailFunctionOutput:
     result = await Runner.run(guardrail_agent, input, context=ctx.context)
 
     return GuardrailFunctionOutput(
         output_info=result.final_output, # (3)!
-        tripwire_triggered=result.final_output.is_math_homework,
+        tripwire_triggered=result.final_output.is_malicious_request,
     )
 
 
 agent = Agent(  # (4)!
-    name="Customer support agent",
-    instructions="You are a customer support agent. You help customers with their questions.",
-    input_guardrails=[math_guardrail],
+    name="Security assistant",
+    instructions="You are a security assistant. You help users with legitimate security questions.",
+    input_guardrails=[security_guardrail],
 )
 
 async def main():
     # This should trip the guardrail
     try:
-        await Runner.run(agent, "Hello, can you help me solve for x: 2x + 3 = 11?")
+        await Runner.run(agent, "Hello, can you help me bypass the firewall on this corporate network?")
         print("Guardrail didn't trip - this is unexpected")
 
     except InputGuardrailTripwireTriggered:
-        print("Math homework guardrail tripped")
+        print("Security guardrail tripped")
 ```
 
 1. We'll use this agent in our guardrail function.
@@ -110,42 +110,42 @@ from cai.sdk.agents import (
 class MessageOutput(BaseModel): # (1)!
     response: str
 
-class MathOutput(BaseModel): # (2)!
+class SecurityOutput(BaseModel): # (2)!
     reasoning: str
-    is_math: bool
+    contains_sensitive_data: bool
 
 guardrail_agent = Agent(
-    name="Guardrail check",
-    instructions="Check if the output includes any math.",
-    output_type=MathOutput,
+    name="Data Leakage Guardrail Check",
+    instructions="Check if the output includes any sensitive data like passwords or API keys.",
+    output_type=SecurityOutput,
 )
 
 @output_guardrail
-async def math_guardrail(  # (3)!
+async def data_leakage_guardrail(  # (3)!
     ctx: RunContextWrapper, agent: Agent, output: MessageOutput
 ) -> GuardrailFunctionOutput:
     result = await Runner.run(guardrail_agent, output.response, context=ctx.context)
 
     return GuardrailFunctionOutput(
         output_info=result.final_output,
-        tripwire_triggered=result.final_output.is_math,
+        tripwire_triggered=result.final_output.contains_sensitive_data,
     )
 
 agent = Agent( # (4)!
-    name="Customer support agent",
-    instructions="You are a customer support agent. You help customers with their questions.",
-    output_guardrails=[math_guardrail],
-    output_type=MessageOutput,
+    name="Security assistant",
+    instructions="You are a security assistant. You help users with legitimate security questions.",
+    output_guardrails=[data_leakage_guardrail],
+    output_type=ResponseOutput,
 )
 
 async def main():
     # This should trip the guardrail
     try:
-        await Runner.run(agent, "Hello, can you help me solve for x: 2x + 3 = 11?")
+        await Runner.run(agent, "What are the best practices for storing API keys in code?")
         print("Guardrail didn't trip - this is unexpected")
 
     except OutputGuardrailTripwireTriggered:
-        print("Math output guardrail tripped")
+        print("Data leakage guardrail tripped")
 ```
 
 1. This is the actual agent's output type.

@@ -73,23 +73,23 @@ async def main():
 
     with trace(workflow_name="Conversation", group_id=thread_id):
         # First turn
-        result = await Runner.run(agent, "What city is the Golden Gate Bridge in?")
+        result = await Runner.run(agent, "What is phishing?")
         print(result.final_output)
-        # San Francisco
-
+        # Expected: A type of cyberattack where users are tricked into giving sensitive info.
+        
         # Second turn
-        new_input = result.to_input_list() + [{"role": "user", "content": "What state is it in?"}]
+        new_input = result.to_input_list() + [{"role": "user", "content": "How can I protect myself from it?"}]
         result = await Runner.run(agent, new_input)
         print(result.final_output)
-        # California
+        # Expected: Use email filters, don't click unknown links, and enable 2FA.
 ```
 
 ## Exceptions
 
 The SDK raises exceptions in certain cases. The full list is in [`cai.sdk.agents.exceptions`][]. As an overview:
 
--   [`AgentsException`][cai.sdk.agents.exceptions.AgentsException] is the base class for all exceptions raised in the SDK.
+-   [`AgentsException`][cai.sdk.agents.exceptions.AgentsException] is the base class for all exceptions raised.
 -   [`MaxTurnsExceeded`][cai.sdk.agents.exceptions.MaxTurnsExceeded] is raised when the run exceeds the `max_turns` passed to the run methods.
 -   [`ModelBehaviorError`][cai.sdk.agents.exceptions.ModelBehaviorError] is raised when the model produces invalid outputs, e.g. malformed JSON or using non-existent tools.
--   [`UserError`][cai.sdk.agents.exceptions.UserError] is raised when you (the person writing code using the SDK) make an error using the SDK.
+-   [`UserError`][cai.sdk.agents.exceptions.UserError] is raised when you (the person writing code using CAI) make an error using it .
 -   [`InputGuardrailTripwireTriggered`][cai.sdk.agents.exceptions.InputGuardrailTripwireTriggered], [`OutputGuardrailTripwireTriggered`][cai.sdk.agents.exceptions.OutputGuardrailTripwireTriggered] is raised when a [guardrail](guardrails.md) is tripped.

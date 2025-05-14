@@ -10,10 +10,10 @@ Context is an overloaded term. There are two main classes of context you might c
 This is represented via the [`RunContextWrapper`][cai.sdk.agents.run_context.RunContextWrapper] class and the [`context`][cai.sdk.agents.run_context.RunContextWrapper.context] property within it. The way this works is:
 
 1. You create any Python object you want. A common pattern is to use a dataclass or a Pydantic object.
-2. You pass that object to the various run methods (e.g. `Runner.run(..., **context=whatever**))`.
+2. You pass that object to the various run methods (e.g. `Runner.run(..., **context=whatever**))`).
 3. All your tool calls, lifecycle hooks etc will be passed a wrapper object, `RunContextWrapper[T]`, where `T` represents your context object type which you can access via `wrapper.context`.
 
-The **most important** thing to be aware of: every agent, tool function, lifecycle etc for a given agent run must use the same _type_ of context.
+The **most important** thing to be aware of: every agent, tool function, lifecycle, etc for a given agent run must use the same _type_ of context.
 
 You can use the context for things like:
 
@@ -32,40 +32,40 @@ from dataclasses import dataclass
 from cai.sdk.agents import Agent, RunContextWrapper, Runner, function_tool
 
 @dataclass
-class UserInfo:  # (1)!
-    name: str
-    uid: int
+class SecurityAlert:  # (1)!
+    ip_address: str
+    threat_id: int
 
 @function_tool
-async def fetch_user_age(wrapper: RunContextWrapper[UserInfo]) -> str:  # (2)!
-    return f"User {wrapper.context.name} is 47 years old"
+async def fetch_threat_details(wrapper: RunContextWrapper[SecurityAlert]) -> str:  # (2)!
+    return f"IP {wrapper.context.ip_address} is associated with a DDoS attack"
 
 async def main():
-    user_info = UserInfo(name="John", uid=123)
+    security_alert = SecurityAlert(ip_address="192.168.1.100", threat_id=507)
 
-    agent = Agent[UserInfo](  # (3)!
-        name="Assistant",
-        tools=[fetch_user_age],
+    agent = Agent[SecurityAlert](  # (3)!
+        name="SecurityAnalyst",
+        tools=[fetch_threat_details],
     )
 
     result = await Runner.run(  # (4)!
         starting_agent=agent,
-        input="What is the age of the user?",
-        context=user_info,
+        input="What type of threat is associated with this IP?",
+        context=security_alert,
     )
 
     print(result.final_output)  # (5)!
-    # The user John is 47 years old.
+    # IP 192.168.1.100 is associated with a DDoS attack.
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
 1. This is the context object. We've used a dataclass here, but you can use any type.
-2. This is a tool. You can see it takes a `RunContextWrapper[UserInfo]`. The tool implementation reads from the context.
-3. We mark the agent with the generic `UserInfo`, so that the typechecker can catch errors (for example, if we tried to pass a tool that took a different context type).
+2. This is a tool. You can see it takes a `RunContextWrapper[SecurityAlert]`. The tool implementation reads from the context.
+3. We mark the agent with the generic `SecurityAlert`, so that the typechecker can catch errors (for example, if we tried to pass a tool that took a different context type).
 4. The context is passed to the `run` function.
-5. The agent correctly calls the tool and gets the age.
+5. The agent correctly calls the tool and gets the threat information.
 
 ## Agent/LLM context
 

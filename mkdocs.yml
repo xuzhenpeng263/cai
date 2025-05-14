@@ -17,16 +17,21 @@ theme:
   palette:
     primary: black
   logo: assets/imago.png
-  favicon: images/favicon-platform.svg
+  #favicon: images/favicon-platform.svg
 nav:
-  - Intro: cai.md
-  - SDK:
-    - Intro: index.md
-    - Quickstart: quickstart.md
-    - Examples: examples.md
+  - Introduction: index.md
+  - Installation: cai_installation.md
+  - Quickstart: cai_quickstart.md 
+  - List of Models: cai_list_of_models.md
+  - Architecture: cai_architecture.md
+  - Development: cai_development.md
+  - Start Building:
+    #- Intro: index.md
+    #- Quickstart: quickstart.md
+    #- Examples: examples.md
     - Documentation:
-        - agents.md
-        - running_agents.md
+        - agents.md # 
+        - running_agents.md 
         - results.md
         - streaming.md
         - tools.md
@@ -35,10 +40,10 @@ nav:
         - tracing.md
         - context.md
         - guardrails.md
-        - multi_agent.md
-        - models.md
-        - config.md
-        - visualization.md
+        #- multi_agent.md
+        #- models.md
+        #- config.md
+        #- visualization.md
         - Voice agents:
             - voice/quickstart.md
             - voice/pipeline.md
@@ -93,7 +98,10 @@ nav:
         - Extensions:
             - ref/extensions/handoff_filters.md
             - ref/extensions/handoff_prompt.md
-
+  - More About CAI:          
+    - FAQ: cai_faq.md
+    - Find Us: cai_find_us.md
+    - Citation & Acknowledgments: cai_citation_and_acknowledgments.md
 plugins:
   - search
   - autorefs
@@ -128,6 +136,7 @@ markdown_extensions:
           class: mermaid
           format: pymdownx.superfences.fence_code_format
   - admonition
+  - codehilite
   - pymdownx.details
   - attr_list
   - md_in_html
@@ -137,6 +146,7 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.superfences
+  - pymdownx.details
 
 validation:
   omitted_files: warn
