@@ -17,7 +17,7 @@ theme:
   palette:
     primary: black
   logo: assets/imago.png
-  #favicon: images/favicon-platform.svg
+  favicon: assets/imago.png
 nav:
   - Introduction: index.md
   - Installation: cai_installation.md
