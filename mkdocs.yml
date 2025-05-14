@@ -51,7 +51,7 @@ nav:
         #     - voice/tracing.md
     - API Reference:
         - Agents:
-            - ref/index.md
+            #- ref/index.md
             - ref/agent.md
             - ref/run.md
             - ref/tool.md
@@ -70,8 +70,8 @@ nav:
             - ref/models/interface.md
             - ref/models/openai_chatcompletions.md
             - ref/models/openai_responses.md
-            - ref/mcp/server.md
-            - ref/mcp/util.md
+            # - ref/mcp/server.md
+            # - ref/mcp/util.md
         # - Tracing:
         #     - ref/tracing/index.md
         #     - ref/tracing/create.md
