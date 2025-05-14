@@ -1,5 +1,7 @@
 # Cybersecurity AI (`CAI`)
 
+A lightweight, ergonomic framework for building bug bounty-ready Cybersecurity AIs (CAIs).
+
 <div align="center">
   <p>
     <a align="center" href="" target="https://github.com/aliasrobotics/CAI">
@@ -9,8 +11,14 @@
       >
     </a>
   </p>
+</div>
 
-<h2>🎯 Milestones</h2>
+| CAI on JWT@PortSwigger CTF — Cybersecurity AI | CAI on HackableII Boot2Root CTF — Cybersecurity AI |
+|-----------------------------------------------|---------------------------------|
+| [![asciicast](https://asciinema.org/a/713487.svg)](https://asciinema.org/a/713487) | [![asciicast](https://asciinema.org/a/713485.svg)](https://asciinema.org/a/713485) |
+
+
+## 🎯 Milestones
 <p>
 <a href="https://app.hackthebox.com/users/2268644"><img src="https://img.shields.io/badge/HTB_ranking-top_90_Spain_(5_days)-red.svg" alt="HTB top 90 Spain (5 days)"></a>
 <a href="https://app.hackthebox.com/users/2268644"><img src="https://img.shields.io/badge/HTB_ranking-top_50_Spain_(6_days)-red.svg" alt="HTB ranking top 50 Spain (6 days)"></a>
@@ -24,7 +32,7 @@
 <a href="https://github.com/aliasrobotics/cai"><img src="https://img.shields.io/badge/Bug_rewards-250_$-yellow.svg" alt="Bug rewards 250 $"></a>
 </p>
 
-<h2>📦 Package Attributes</h2>
+## 📦 Package Attributes
 <p>
 <a href="https://badge.fury.io/py/cai-framework"><img src="https://badge.fury.io/py/cai-framework.svg" alt="version"></a>
 <a href="https://pypistats.org/packages/cai-framework"><img src="https://img.shields.io/pypi/dm/cai-framework" alt="downloads"></a>
@@ -36,13 +44,6 @@
 <a href="https://arxiv.org/pdf/2504.06017"><img src="https://img.shields.io/badge/arXiv-2504.06017-b31b1b.svg" alt="arXiv"></a>
 </p>
 
-</div>
-
-A lightweight, ergonomic framework for building bug bounty-ready Cybersecurity AIs (CAIs).
-
-| CAI on JWT@PortSwigger CTF — Cybersecurity AI | CAI on HackableII Boot2Root CTF — Cybersecurity AI |
-|-----------------------------------------------|---------------------------------|
-| [![asciicast](https://asciinema.org/a/713487.svg)](https://asciinema.org/a/713487) | [![asciicast](https://asciinema.org/a/713485.svg)](https://asciinema.org/a/713485) |
 
 
 > ⚠️ CAI is in active development, so don't expect it to work flawlessly. Instead, contribute by raising an issue or [sending a PR](https://github.com/aliasrobotics/cai/pulls).
@@ -100,3 +101,21 @@ Cybersecurity AI is a critical field, yet many groups are misguidedly pursuing i
 ---
 
 [1] Deng, G., Liu, Y., Mayoral-Vilches, V., Liu, P., Li, Y., Xu, Y., ... & Rass, S. (2024). {PentestGPT}: Evaluating and harnessing large language models for automated penetration testing. In 33rd USENIX Security Symposium (USENIX Security 24) (pp. 847-864).
+
+## Citation
+If you want to cite our work, please use the following format
+```bibtex
+@misc{mayoralvilches2025caiopenbugbountyready,
+      title={CAI: An Open, Bug Bounty-Ready Cybersecurity AI},
+      author={Víctor Mayoral-Vilches and Luis Javier Navarrete-Lozano and María Sanz-Gómez and Lidia Salas Espejo and Martiño Crespo-Álvarez and Francisco Oca-Gonzalez and Francesco Balassone and Alfonso Glera-Picón and Unai Ayucar-Carbajo and Jon Ander Ruiz-Alcalde and Stefan Rass and Martin Pinzger and Endika Gil-Uriarte},
+      year={2025},
+      eprint={2504.06017},
+      archivePrefix={arXiv},
+      primaryClass={cs.CR},
+      url={https://arxiv.org/abs/2504.06017},
+}
+```
+
+## Acknowledgements
+
+CAI was initially developed by [Alias Robotics](https://aliasrobotics.com) and co-funded by the European EIC accelerator project RIS (GA 101161136) - HORIZON-EIC-2023-ACCELERATOR-01 call. The original agentic principles are inspired from OpenAI's [`swarm`](https://github.com/openai/swarm) library and translated into newer prototypes. This project also makes use of other relevant open source building blocks including [`LiteLLM`](https://github.com/BerriAI/litellm), and [`phoenix`](https://github.com/Arize-ai/phoenix).

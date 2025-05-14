@@ -19,7 +19,7 @@ theme:
   logo: assets/imago.png
   favicon: assets/imago.png
 nav:
-  - Introduction: index.md
+  - Intro: index.md
   - Installation: cai_installation.md
   - Quickstart: cai_quickstart.md 
   - List of Models: cai_list_of_models.md
@@ -38,7 +38,7 @@ nav:
         #- mcp.md
         #- cai_mcp.md
         - handoffs.md
-        - tracing_cai.md
+        - tracing.md
         - context.md
         - guardrails.md
         - multi_agent.md
