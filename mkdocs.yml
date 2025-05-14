@@ -41,7 +41,7 @@ nav:
         - tracing_cai.md
         - context.md
         - guardrails.md
-        #- multi_agent.md
+        - multi_agent.md
         #- models.md
         #- config.md
         #- visualization.md
