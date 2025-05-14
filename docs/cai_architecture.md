@@ -26,6 +26,7 @@ CAI focuses on making cybersecurity agent **coordination** and **execution** lig
 
 If you want to dive deeper into the code, check the following files as a start point for using CAI:
 
+```
 cai
 ├── benchmarks 
 ├── ci  
@@ -50,7 +51,7 @@ cai
 │        └── util.py             # Utility functions
 ├── tests
 └── tools                        # Usable tools
-
+```
 
 
 ### 🔹 Agent
