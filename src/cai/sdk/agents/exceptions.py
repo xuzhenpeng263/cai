@@ -5,7 +5,7 @@ if TYPE_CHECKING:
 
 
 class AgentsException(Exception):
-    """Base class for all exceptions in the Agents SDK."""
+    """Base class for all exceptions in the CAI Agents."""
 
 
 class MaxTurnsExceeded(AgentsException):
@@ -29,7 +29,7 @@ class ModelBehaviorError(AgentsException):
 
 
 class UserError(AgentsException):
-    """Exception raised when the user makes an error using the SDK."""
+    """Exception raised when the user makes an error using CAI."""
 
     message: str
 

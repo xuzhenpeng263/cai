@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 class MCPUtil:
-    """Set of utilities for interop between MCP and Agents SDK tools."""
+    """Set of utilities for interop between MCP and CAI tools."""
 
     @classmethod
     async def get_all_function_tools(cls, servers: list["MCPServer"]) -> list[Tool]:
@@ -48,7 +48,7 @@ class MCPUtil:
 
     @classmethod
     def to_function_tool(cls, tool: "MCPTool", server: "MCPServer") -> FunctionTool:
-        """Convert an MCP tool to an Agents SDK function tool."""
+        """Convert an MCP tool to an CAI function tool."""
         invoke_func = functools.partial(cls.invoke_mcp_tool, server, tool)
         return FunctionTool(
             name=tool.name,
