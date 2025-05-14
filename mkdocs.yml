@@ -37,17 +37,17 @@ nav:
         - tools.md
         - mcp.md
         - handoffs.md
-        - tracing.md
+        - tracing_cai.md
         - context.md
         - guardrails.md
         #- multi_agent.md
         #- models.md
         #- config.md
         #- visualization.md
-        - Voice agents:
-            - voice/quickstart.md
-            - voice/pipeline.md
-            - voice/tracing.md
+        # - Voice agents:
+        #     - voice/quickstart.md
+        #     - voice/pipeline.md
+        #     - voice/tracing.md
     - API Reference:
         - Agents:
             - ref/index.md
@@ -71,30 +71,30 @@ nav:
             - ref/models/openai_responses.md
             - ref/mcp/server.md
             - ref/mcp/util.md
-        - Tracing:
-            - ref/tracing/index.md
-            - ref/tracing/create.md
-            - ref/tracing/traces.md
-            - ref/tracing/spans.md
-            - ref/tracing/processor_interface.md
-            - ref/tracing/processors.md
-            - ref/tracing/scope.md
-            - ref/tracing/setup.md
-            - ref/tracing/span_data.md
-            - ref/tracing/util.md
-        - Voice:
-            - ref/voice/pipeline.md
-            - ref/voice/workflow.md
-            - ref/voice/input.md
-            - ref/voice/result.md
-            - ref/voice/pipeline_config.md
-            - ref/voice/events.md
-            - ref/voice/exceptions.md
-            - ref/voice/model.md
-            - ref/voice/utils.md
-            - ref/voice/models/openai_provider.md
-            - ref/voice/models/openai_stt.md
-            - ref/voice/models/openai_tts.md
+        # - Tracing:
+        #     - ref/tracing/index.md
+        #     - ref/tracing/create.md
+        #     - ref/tracing/traces.md
+        #     - ref/tracing/spans.md
+        #     - ref/tracing/processor_interface.md
+        #     - ref/tracing/processors.md
+        #     - ref/tracing/scope.md
+        #     - ref/tracing/setup.md
+        #     - ref/tracing/span_data.md
+        #     - ref/tracing/util.md
+        # - Voice:
+        #     - ref/voice/pipeline.md
+        #     - ref/voice/workflow.md
+        #     - ref/voice/input.md
+        #     - ref/voice/result.md
+        #     - ref/voice/pipeline_config.md
+        #     - ref/voice/events.md
+        #     - ref/voice/exceptions.md
+        #     - ref/voice/model.md
+        #     - ref/voice/utils.md
+        #     - ref/voice/models/openai_provider.md
+        #     - ref/voice/models/openai_stt.md
+        #     - ref/voice/models/openai_tts.md
         - Extensions:
             - ref/extensions/handoff_filters.md
             - ref/extensions/handoff_prompt.md
