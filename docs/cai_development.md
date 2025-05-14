@@ -5,18 +5,32 @@ Development is facilitated via VS Code dev. environments. To try out our develop
 
 ### Contributions
 
-If you’d like to contribute to this project, feel free to jump in! Whether it’s fixing bugs, improving documentation, or adding new features—your help is welcome and appreciated. Please open an issue or submit a pull request to get started.
+If you want to contribute to this project, use [**Pre-commit**](https://pre-commit.com/) before your MR
+
+```bash
+pip install pre-commit
+pre-commit # files staged
+pre-commit run --all-files # all files
+```
+
+### Optional Requirements: caiextensions
+
+Currently, the extensions are not available as they have been (largely) integrated or are in the process of being integrated into the core architecture. We aim to have everything converge in version 0.4.x. Coming soon!
 
 ### Usage Data Collection
 
-CAI is provided free of charge for researchers. Instead of payment for research use cases, we ask you to contribute to the CAI community by allowing usage data collection. This data helps us understand how the framework is being used, identify areas for improvement, and prioritize new features. The collected data includes:
+CAI is provided free of charge for researchers. To improve CAI’s detection accuracy and publish open security research, instead of payment for research use cases, we ask you to contribute to the CAI community by allowing usage data collection. This data helps us identify areas for improvement, understand how the framework is being used, and prioritize new features. Legal basis of data collection is under Art. 6 (1)(f) GDPR — CAI’s legitimate interest in maintaining and improving security tooling, with Art. 89 safeguards for research. The collected data includes:
 
 - Basic system information (OS type, Python version)
 - Username and IP information
 - Tool usage patterns and performance metrics
 - Model interactions and token usage statistics
 
-We take your privacy seriously and only collect what's needed to make CAI better.
+We take your privacy seriously and only collect what's needed to make CAI better. For further info, reach out to research＠aliasrobotics.com. You can disable some of the data collection features via the `CAI_TELEMETRY` environment variable but we encourage you to keep it enabled and contribute back to research:
+
+```bash
+CAI_TELEMETRY=False cai
+```
 
 ### Reproduce CI-Setup locally
 
