@@ -44,14 +44,13 @@ From here on, type on `CAI` and start your security exercise. Best way to learn 
     | CTF_IP | IP address for the CTF container |
     | CTF_INSIDE | Whether to conquer the CTF from within container |
     | CAI_MODEL | Model to use for agents |
-    | CAI_DEBUG | Set debug output level (0: Only tool outputs, 1: Verbose debug output, 2: CLI debug output) |
-    | CAI_BRIEF | Enable/disable brief output mode |
+    | ⚠️ CAI_DEBUG | Set debug output level (0: Only tool outputs, 1: Verbose debug output, 2: CLI debug output) |
+    | ⚠️ CAI_BRIEF | Enable/disable brief output mode |
     | CAI_MAX_TURNS | Maximum number of turns for agent interactions |
-    | CAI_TRACING | Enable/disable OpenTelemetry tracing |
+    | ⚠️ CAI_TRACING | Enable/disable OpenTelemetry tracing |
     | CAI_AGENT_TYPE | Specify the agents to use (e.g. "boot2root") |
     | CAI_PRICE_LIMIT | Price limit for the conversation in dollars |
     | CAI_WORKSPACE | Defines the name of the workspace |
-    | CAI_WORKSPACE_DIR | Specifies the directory path where the workspace is located |
 
 
 ## Setting Environment Variables
