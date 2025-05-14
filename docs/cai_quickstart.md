@@ -60,7 +60,7 @@ There are several ways to configure environment variables for CAI:
 
 ---
 
-### 1. Using the `.env` file
+#### 1. Using the `.env` file
 
 ```
 # Add any env variable to your .env file
@@ -68,7 +68,7 @@ CAI_PRICE_LIMIT="0.004"
 CAI_MODEL="qwen2.5:72b"
 ```
 
-### 2. Command-line parameters
+#### 2. Command-line parameters
 
 Pass variables directly when launching CAI
 
@@ -76,7 +76,7 @@ Pass variables directly when launching CAI
 CAI_PRICE_LIMIT="0.004" CAI_MODEL="qwen2.5:72b" cai
 ```
 
-### 3. Runtime configuration
+#### 3. Runtime configuration
 
 After running CAI, use `/config`
 
