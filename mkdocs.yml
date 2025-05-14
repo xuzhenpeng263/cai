@@ -30,12 +30,13 @@ nav:
     #- Quickstart: quickstart.md
     #- Examples: examples.md
     - Documentation:
-        - agents.md # 
+        - agents.md  
         - running_agents.md 
         - results.md
         - streaming.md
         - tools.md
-        - mcp.md
+        #- mcp.md
+        #- cai_mcp.md
         - handoffs.md
         - tracing_cai.md
         - context.md

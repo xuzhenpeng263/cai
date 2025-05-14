@@ -58,7 +58,9 @@ From here on, type on `CAI` and start your security exercise. Best way to learn 
 
 There are several ways to configure environment variables for CAI:
 
-1. **Using the `.env` file**: 
+---
+
+### 1. Using the `.env` file
 
 ```
 # Add any env variable to your .env file
@@ -66,13 +68,17 @@ CAI_PRICE_LIMIT="0.004"
 CAI_MODEL="qwen2.5:72b"
 ```
 
-2. **Command-line parameters**: Pass variables directly when launching CAI
+### 2. Command-line parameters
+
+Pass variables directly when launching CAI
 
 ```
 CAI_PRICE_LIMIT="0.004" CAI_MODEL="qwen2.5:72b" cai
 ```
 
-3. **Runtime configuration**: after running CAI, use `/config`
+### 3. Runtime configuration
+
+After running CAI, use `/config`
 
 ```
   /config set <number> <value> to configure a variable # see `config.py` or type `/help`

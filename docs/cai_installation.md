@@ -145,7 +145,20 @@ ANTHROPIC_API_KEY=""
 OLLAMA=""
 PROMPT_TOOLKIT_NO_CPR=1
 ```
-
-
 ⚠️ CAI does NOT provide API keys for any model by default. 
+
+
+### Custom OpenAI Base URL Support
+``` 
+CAI supports configuring a custom OpenAI API base URL via the `OPENAI_BASE_URL` environment variable. This allows users to redirect API calls to a custom endpoint, such as a proxy or self-hosted OpenAI-compatible service.
+
+Example `.env` entry configuration:
+```
+OLLAMA_API_BASE="https://custom-openai-proxy.com/v1"
+```
+
+Or directly from the command line:
+```bash
+OLLAMA_API_BASE="https://custom-openai-proxy.com/v1" cai
+```
 
