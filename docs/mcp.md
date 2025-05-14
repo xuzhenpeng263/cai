@@ -4,7 +4,7 @@ The [Model context protocol](https://modelcontextprotocol.io/introduction) (aka 
 
 > MCP is an open protocol that standardizes how applications provide context to LLMs. Think of MCP like a USB-C port for AI applications. Just as USB-C provides a standardized way to connect your devices to various peripherals and accessories, MCP provides a standardized way to connect AI models to different data sources and tools.
 
-The Agents SDK has support for MCP. This enables you to use a wide range of MCP servers to provide tools to your Agents.
+MCP enables you to use a wide range of MCP servers to provide tools to your Agents.
 
 ## MCP servers
 
@@ -33,9 +33,12 @@ MCP servers can be added to Agents. The Agents SDK will call `list_tools()` on t
 
 ```python
 
-agent=Agent(
-    name="Assistant",
-    instructions="Use the tools to achieve the task",
+
+```python
+from cai.sdk.agents import Agent
+cybersecurity_lead = Agent(
+    name="Cybersecurity Lead Agent",
+    instructions="Use the tools to solve the",
     mcp_servers=[mcp_server_1, mcp_server_2]
 )
 ```
@@ -50,11 +53,10 @@ If you want to invalidate the cache, you can call `invalidate_tools_cache()` on 
 
 View complete working examples at [examples/mcp](https://github.com/openai/openai-agents-python/tree/main/examples/mcp).
 
-## Tracing
 
+## Tracing   
 [Tracing](./tracing.md) automatically captures MCP operations, including:
 
 1. Calls to the MCP server to list tools
 2. MCP-related info on function calls
-
 ![MCP Tracing Screenshot](./assets/images/mcp-tracing.jpg)

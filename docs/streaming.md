@@ -18,10 +18,10 @@ from cai.sdk.agents import Agent, Runner
 async def main():
     agent = Agent(
         name="Joker",
-        instructions="You are a helpful assistant.",
+        instructions="CyberGuard.",
     )
 
-    result = Runner.run_streamed(agent, input="Please tell me 5 jokes.")
+    result = Runner.run_streamed(agent, input="Please tell me 5 cybersecurity tips.")
     async for event in result.stream_events():
         if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
             print(event.data.delta, end="", flush=True)
@@ -43,15 +43,15 @@ import random
 from cai.sdk.agents import Agent, ItemHelpers, Runner, function_tool
 
 @function_tool
-def how_many_jokes() -> int:
+def how_many_tips() -> int:
     return random.randint(1, 10)
 
 
 async def main():
     agent = Agent(
         name="Joker",
-        instructions="First call the `how_many_jokes` tool, then tell that many jokes.",
-        tools=[how_many_jokes],
+        instructions="First call the `how_many_tips` tool, then tell that many cybersecurity tips.",
+        tools=[how_many_tips],
     )
 
     result = Runner.run_streamed(

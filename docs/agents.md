@@ -1,44 +1,57 @@
 # Agents
 
-Agents are the core building block in your apps. An agent is a large language model (LLM), configured with instructions and tools.
+Agents are the core of CAI. An agent uses Large Language Models (LLMs), configured with instructions and tools.
+Each agent is defined in its own `.py` file in `src/cai/agents`.
 
 ## Basic configuration
 
-The most common properties of an agent you'll configure are:
+Key agent properties include:
 
--   `instructions`: also known as a developer message or system prompt.
--   `model`: which LLM to use, and optional `model_settings` to configure model tuning parameters like temperature, top_p, etc.
+-   `name`: of the agent e.g. the name of `one_tool_agent` is 'CTF Agent'.
+-   `instructions`: known as the system prompt.
+-   `model`: which LLM to use, and optional `model_settings` to configure their parameters like temperature, top_p, etc.
 -   `tools`: Tools that the agent can use to achieve its tasks.
+-   `handoffs`: wich allows an agent to delegate tasks to another agent.
+
+
+## Example: `one_tool_agent.py`
 
 ```python
-from cai.sdk.agents import Agent, ModelSettings, function_tool
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
+from cai.tools.reconnaissance.generic_linux_command import generic_linux_command 
+from openai import AsyncOpenAI
 
-@function_tool
-def get_weather(city: str) -> str:
-    return f"The weather in {city} is sunny"
-
-agent = Agent(
-    name="Haiku agent",
-    instructions="Always respond in haiku form",
-    model="o3-mini",
-    tools=[get_weather],
+one_tool_agent = Agent(
+    name="CTF agent",
+    description="Agent focused on conquering security challenges using generic linux commands",
+    instructions="You are a Cybersecurity expert Leader facing a CTF challenge.",
+    tools=[
+        generic_linux_command,
+    ],
+    model=OpenAIChatCompletionsModel(
+        model="qwen2.5:14b",
+        openai_client=AsyncOpenAI(),
+    )
 )
 ```
 
+
 ## Context
+
+There are two main context types. See [context](context.md) for details.
 
 Agents are generic on their `context` type. Context is a dependency-injection tool: it's an object you create and pass to `Runner.run()`, that is passed to every agent, tool, handoff etc, and it serves as a grab bag of dependencies and state for the agent run. You can provide any Python object as the context.
 
 ```python
 @dataclass
-class UserContext:
-  uid: str
-  is_pro_user: bool
+class SecurityContext:
+  target_system: str
+  is_compromised: bool
 
-  async def fetch_purchases() -> list[Purchase]:
+  async def get_exploits() -> list[Exploits]:
      return ...
 
-agent = Agent[UserContext](
+agent = Agent[SecurityContext](
     ...,
 )
 ```
@@ -51,22 +64,21 @@ By default, agents produce plain text (i.e. `str`) outputs. If you want the agen
 from pydantic import BaseModel
 from cai.sdk.agents import Agent
 
-
-class CalendarEvent(BaseModel):
+class SecurityVulnerability(BaseModel):
     name: str
-    date: str
-    participants: list[str]
+    severity: str
+    affected_files: list[str]
+    description: str
 
 agent = Agent(
-    name="Calendar extractor",
-    instructions="Extract calendar events from text",
-    output_type=CalendarEvent,
+    name="Vulnerability scanner",
+    instructions="Analyze system output and identify security vulnerabilities",
+    output_type=SecurityVulnerability,
 )
 ```
 
 !!! note
-
-    When you pass an `output_type`, that tells the model to use [structured outputs](https://platform.openai.com/docs/guides/structured-outputs) instead of regular plain text responses.
+   When you pass an `output_type`, that tells the model to use structured outputs instead of regular plain text responses.
 
 ## Handoffs
 
@@ -75,17 +87,38 @@ Handoffs are sub-agents that the agent can delegate to. You provide a list of ha
 ```python
 from cai.sdk.agents import Agent
 
-booking_agent = Agent(...)
-refund_agent = Agent(...)
-
-triage_agent = Agent(
-    name="Triage agent",
+crypto_agent = Agent(
+    name="Cryptography agent",
+    description="Agent specialized in solving cryptographic challenges and decoding encrypted messages",
+    instructions="Analyze encrypted data and apply cryptographic techniques to decode it.",
+    tools=[
+        execute_cli_command,
+    ],
+    handoff_description="Specialized agent in Cryptography and code breaking",
+    model=OpenAIChatCompletionsModel(
+        model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
+        openai_client=AsyncOpenAI(),
+    )
+)
+network_agent = Agent(
+    name="Network Agent",
+    description="Agent specialized in network analysis, packet inspection, and network security assessments",
+    instructions="Analyze network traffic, identify suspicious patterns, and help with network-related CTF challenges",
+    handoff_description="Specialized agent in network security, traffic analysis, and protocol understanding",
+    model=OpenAIChatCompletionsModel(
+        model=os.getenv('CAI_MODEL', "qwen2.5:72b"),
+        openai_client=AsyncOpenAI(),
+    )
+)
+lead_agent = Agent(
+    name="Cybersecurity Lead Agent",
     instructions=(
-        "Help the user with their questions."
-        "If they ask about booking, handoff to the booking agent."
-        "If they ask about refunds, handoff to the refund agent."
+        "You are a lead cybersecurity expert coordinating security operations."
+        "If the user needs network analysis or traffic inspection, handoff to the network agent."
+        "If the user needs cryptographic solutions or code breaking, handoff to the crypto agent."
     ),
-    handoffs=[booking_agent, refund_agent],
+    handoffs=[network_agent, crypto_agent],
+    model="qwen2.5:72b"
 )
 ```
 
@@ -97,51 +130,21 @@ In most cases, you can provide instructions when you create the agent. However, 
 def dynamic_instructions(
     context: RunContextWrapper[UserContext], agent: Agent[UserContext]
 ) -> str:
-    return f"The user's name is {context.context.name}. Help them with their questions."
+    security_level = "high" if context.context.is_admin else "standard"
+    return f"You are assisting {context.context.name} with cybersecurity operations. Their security clearance level is {security_level}. Tailor your security recommendations appropriately and prioritize addressing their immediate security concerns."
 
 
 agent = Agent[UserContext](
-    name="Triage agent",
+    name="Cybersecurity Triage Agent",
     instructions=dynamic_instructions,
 )
 ```
 
-## Lifecycle events (hooks)
 
-Sometimes, you want to observe the lifecycle of an agent. For example, you may want to log events, or pre-fetch data when certain events occur. You can hook into the agent lifecycle with the `hooks` property. Subclass the [`AgentHooks`][cai.sdk.agents.lifecycle.AgentHooks] class, and override the methods you're interested in.
+## Next steps
 
-## Guardrails
+- For running agents, see [running_agents documentation](running_agents.md). 
 
-Guardrails allow you to run checks/validations on user input, in parallel to the agent running. For example, you could screen the user's input for relevance. Read more in the [guardrails](guardrails.md) documentation.
+- For understanding what it returns, see [results documentation](results.md). 
 
-## Cloning/copying agents
-
-By using the `clone()` method on an agent, you can duplicate an Agent, and optionally change any properties you like.
-
-```python
-pirate_agent = Agent(
-    name="Pirate",
-    instructions="Write like a pirate",
-    model="o3-mini",
-)
-
-robot_agent = pirate_agent.clone(
-    name="Robot",
-    instructions="Write like a robot",
-)
-```
-
-## Forcing tool use
-
-Supplying a list of tools doesn't always mean the LLM will use a tool. You can force tool use by setting [`ModelSettings.tool_choice`][cai.sdk.agents.model_settings.ModelSettings.tool_choice]. Valid values are:
-
-1. `auto`, which allows the LLM to decide whether or not to use a tool.
-2. `required`, which requires the LLM to use a tool (but it can intelligently decide which tool).
-3. `none`, which requires the LLM to _not_ use a tool.
-4. Setting a specific string e.g. `my_tool`, which requires the LLM to use that specific tool.
-
-!!! note
-
-    To prevent infinite loops, the framework automatically resets `tool_choice` to "auto" after a tool call. This behavior is configurable via [`agent.reset_tool_choice`][cai.sdk.agents.agent.Agent.reset_tool_choice]. The infinite loop is because tool results are sent to the LLM, which then generates another tool call because of `tool_choice`, ad infinitum.
-
-    If you want the Agent to completely stop after a tool call (rather than continuing with auto mode), you can set [`Agent.tool_use_behavior="stop_on_first_tool"`] which will directly use the tool output as the final response without further LLM processing.
+- For connecting Agents to external tools (Model Context Protocol), see [mcp documentation](mcp.md).

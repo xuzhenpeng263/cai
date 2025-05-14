@@ -25,7 +25,7 @@ include:
       # - 'ci/build/.build.yml'                # build
       #- 'ci/setup/.setup.yml'               # setup
       - 'ci/test/.test.yml'
-      - 'ci/benchmarks/.benchmarks.yml'
+      #- 'ci/benchmarks/.benchmarks.yml'
       # - 'ci/ctfs/.ctf.yml'                  # ctf
 
   # - project: 'aliasrobotics/alias_research/cai'
