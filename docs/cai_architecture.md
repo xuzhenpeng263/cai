@@ -1,6 +1,30 @@
-CAI focuses on making cybersecurity agent **coordination** and **execution** lightweight, highly controllable, and useful for humans. To do so it builds upon 7 pillars: `Agent`s, `Tools`, `Orchestation`, <span style="color: red;">`Patterns`</span>, `Turns`, `Tracing` and `HITL`.
+CAI focuses on making cybersecurity agent **coordination** and **execution** lightweight, highly controllable, and useful for humans. To do so it builds upon 7 pillars: `Agent`s, `Tools`, `Orchestation`, `Patterns`, `Turns`, `Tracing` and `HITL`.
 
-<span style="color: red;">TODO: Graph</span>
+
+```
+                  ┌───────────────┐           ┌───────────┐
+                  │      HITL     │◀─────────▶│   Turns   │
+                  └───────┬───────┘           └───────────┘
+                          │
+                          ▼
+┌───────────┐       ┌───────────┐       ┌───────────┐      ┌───────────┐
+│  Patterns │◀─────▶│  Handoffs │◀────▶ │   Agents  │◀────▶│    LLMs   │
+└───────────┘       └─────┬─────┘       └───────────┘      └───────────┘
+                          │                   │
+                          │                   ▼
+┌────────────┐       ┌────┴──────┐       ┌───────────┐
+│ Extensions │◀─────▶│  Tracing  │       │   Tools   │
+└────────────┘       └───────────┘       └───────────┘
+                                              │
+                          ┌─────────────┬─────┴────┬─────────────┐
+                          ▼             ▼          ▼             ▼
+                    ┌───────────┐┌───────────┐┌────────────┐┌───────────┐
+                    │ LinuxCmd  ││ WebSearch ││    Code    ││ SSHTunnel │
+                    └───────────┘└───────────┘└────────────┘└───────────┘
+```
+
+
+If you want to dive deeper into the code, check the following files as a start point for using CAI:
 
 If you want to dive deeper into the code, check the following files as a start point for using CAI:
 
@@ -9,7 +33,7 @@ If you want to dive deeper into the code, check the following files as a start p
 
 ### 🔹 Agent
 
-At its core, CAI abstracts its cybersecurity behavior via `Agents` and agentic `Patterns`. An Agent in *an intelligent system that interacts with some environment*. More technically, within CAI we embrace a robotics-centric definition wherein an agent is anything that can be viewed as a system perceiving its environment through sensors, reasoning about its goals and and acting accordingly upon that environment through actuators (*adapted* from Russel & Norvig, AI: A Modern Approach). In cybersecurity, an `Agent` interacts with systems and networks, using peripherals and network interfaces as sensors, reasons accordingly and then executes network actions as if actuators. Correspondingly, in CAI, `Agent`s implement the `ReACT` (Reasoning and Action) <span style="color: red;">agent model[3].
+At its core, CAI abstracts its cybersecurity behavior via `Agents` and agentic `Patterns`. An Agent in *an intelligent system that interacts with some environment*. More technically, within CAI we embrace a robotics-centric definition wherein an agent is anything that can be viewed as a system perceiving its environment through sensors, reasoning about its goals and and acting accordingly upon that environment through actuators (*adapted* from Russel & Norvig, AI: A Modern Approach). In cybersecurity, an `Agent` interacts with systems and networks, using peripherals and network interfaces as sensors, reasons accordingly and then executes network actions as if actuators. Correspondingly, in CAI, `Agent`s implement the `ReACT` (Reasoning and Action) agent model[3].
 
 For more details, including examples and implementation guidance, see the [Agents documentation](agents.md).
 
