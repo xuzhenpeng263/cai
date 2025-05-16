@@ -1514,8 +1514,11 @@ class OpenAIChatCompletionsModel(Model):
         # Determine provider based on model string
         model_str = str(kwargs["model"]).lower()
         
-        # Provider-specific adjustments
-        if "/" in model_str:
+        if "alias" in model_str:
+            kwargs["api_base"] = "http://11.0.0.4:4000/"
+            kwargs["custom_llm_provider"] = "openai"
+            kwargs["api_key"] = os.getenv("OPENAI_API_KEY")
+        elif "/" in model_str:
             # Handle provider/model format
             provider = model_str.split("/")[0]
             
