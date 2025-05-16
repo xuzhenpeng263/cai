@@ -1515,9 +1515,9 @@ class OpenAIChatCompletionsModel(Model):
         model_str = str(kwargs["model"]).lower()
         
         if "alias" in model_str:
-            kwargs["api_base"] = "http://11.0.0.4:4000/"
+            kwargs["api_base"] = "http://api.aliasrobotics.com:666/"
             kwargs["custom_llm_provider"] = "openai"
-            kwargs["api_key"] = os.getenv("OPENAI_API_KEY")
+            kwargs["api_key"] = os.getenv("ALIAS_API_KEY", "sk-alias-1234567890")
         elif "/" in model_str:
             # Handle provider/model format
             provider = model_str.split("/")[0]
