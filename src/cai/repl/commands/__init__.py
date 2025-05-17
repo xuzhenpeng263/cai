@@ -39,7 +39,8 @@ from cai.repl.commands import (  # pylint: disable=import-error,unused-import,li
     flush,
     workspace,
     virtualization,
-    load
+    load,
+    parallel  # Add the new parallel command
 )
 
 # Define helper functions
