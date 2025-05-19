@@ -1249,7 +1249,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
             command, 
             stdout, 
             timeout, 
-            stream=stream, 
+            stream=True, 
             call_id=call_id,
             tool_name=tool_name,
             workspace_dir=_get_workspace_dir(),
