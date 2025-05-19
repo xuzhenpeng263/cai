@@ -187,14 +187,13 @@ agent = Agent(
     )
 )
 
-def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=float('inf')):
+def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
     """
     Run a simple interactive CLI loop for CAI.
 
     Args:
         starting_agent: The initial agent to use for the conversation
         context_variables: Optional dictionary of context variables to initialize the session
-        stream: Boolean flag to enable/disable streaming responses (default: False)
         max_turns: Maximum number of interaction turns before terminating (default: infinity)
 
     Returns:
@@ -581,6 +580,9 @@ def run_cai_cli(starting_agent, context_variables=None, stream=False, max_turns=
                             "content": f"{result.final_output}"
                         })
             else:
+                # Enable streaming by default, unless specifically disabled
+                stream = os.getenv('CAI_STREAM', 'true').lower() != 'false'
+                
                 # Single agent execution (original behavior)
                 if stream:
                     async def process_streamed_response(agent, conversation_input):
@@ -736,11 +738,8 @@ def main():
         if hasattr(agent.model, 'suppress_final_output'):
             agent.model.suppress_final_output = True
 
-    # Enable streaming by default, unless specifically disabled
-    stream = os.getenv('CAI_STREAM', 'true').lower() != 'false'
-
     # Run the CLI with the selected agent
-    run_cai_cli(agent, stream=stream)
+    run_cai_cli(agent)
 
 if __name__ == "__main__":
     main()
