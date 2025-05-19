@@ -625,9 +625,7 @@ class OpenAIChatCompletionsModel(Model):
                 # Get token count estimate before API call for consistent counting
                 estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
                 
-                response, stream = await self._fetch_response(
-                    system_instructions,
-                    input,
+                response, stream, messages_sent_to_api = await self._fetch_response(
                     model_settings,
                     tools,
                     output_schema,
@@ -1237,8 +1235,8 @@ class OpenAIChatCompletionsModel(Model):
                 total_cost = calculate_model_cost(model_name, total_input, total_output)
                 
                 # Explicit conversion to float with fallback to ensure they're never None or 0
-                interaction_cost = max(float(interaction_cost if interaction_cost is not None else 0.0), 0.00001)
-                total_cost = max(float(total_cost if total_cost is not None else 0.0), 0.00001)
+                interaction_cost = max(float(interaction_cost if interaction_cost is not None else 0.0), 0)
+                total_cost = max(float(total_cost if total_cost is not None else 0.0), 0)
                 
                 # Store the total cost for future recording
                 self.total_cost = total_cost
@@ -1311,7 +1309,7 @@ class OpenAIChatCompletionsModel(Model):
                 self.logger.rec_training_data(
                     {
                         "model": str(self.model),
-                        "messages": final_converted_messages_for_log, # Use the messages actually sent
+                        "messages": messages_sent_to_api, # Use the messages actually sent
                         "stream": True,
                         "tools": [t.params_json_schema for t in tools] if tools else [],
                         "tool_choice": model_settings.tool_choice
@@ -1463,7 +1461,7 @@ class OpenAIChatCompletionsModel(Model):
         model_str = str(kwargs["model"]).lower()
         
         if "alias" in model_str:
-            kwargs["api_base"] = "http://api.aliasrobotics.com:666/"
+            kwargs["api_base"] = "http://11.0.0.4:4000/"
             kwargs["custom_llm_provider"] = "openai"
             kwargs["api_key"] = os.getenv("ALIAS_API_KEY", "sk-alias-1234567890")
         elif "/" in model_str:
@@ -1554,7 +1552,13 @@ class OpenAIChatCompletionsModel(Model):
                 if is_qwen:
                     try:
                         # Use the specialized Qwen approach first
-                        return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                        ollama_result = await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                        if stream:
+                            # ollama_result is (response, stream_obj)
+                            return ollama_result[0], ollama_result[1], messages_for_api
+                        else:
+                            # ollama_result is completion
+                            return ollama_result, messages_for_api
                     except Exception as qwen_e:
                         print(qwen_e)
                         # If that fails, try our direct OpenAI approach
@@ -1584,11 +1588,11 @@ class OpenAIChatCompletionsModel(Model):
                                     parallel_tool_calls=parallel_tool_calls or False,
                                 )
                                 stream_obj = await litellm.acompletion(**qwen_params)
-                                return response, stream_obj
+                                return response, stream_obj, messages_for_api
                             else:
                                 # Non-streaming case
                                 ret = litellm.completion(**qwen_params)
-                                return ret
+                                return ret, messages_for_api
                         except Exception as direct_e:
                             # All approaches failed, log and raise the original error
                             print(f"All Qwen approaches failed. Original error: {str(e)}, Direct error: {str(direct_e)}")
@@ -1659,7 +1663,13 @@ class OpenAIChatCompletionsModel(Model):
                 except Exception as fix_error:
                     print(f"Failed to fix message sequence: {fix_error}")
                 
-                return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                openai_res = await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                if stream:
+                    # openai_res is (response, stream_obj)
+                    return openai_res[0], openai_res[1], messages_for_api
+                else:
+                    # openai_res is completion
+                    return openai_res, messages_for_api
 
             # this captures an error related to the fact
             # that the messages list contains an empty
@@ -1671,7 +1681,11 @@ class OpenAIChatCompletionsModel(Model):
                     msg if msg.get("content") is not None else
                     {**msg, "content": ""} for msg in kwargs["messages"]
                 ]
-                return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                openai_res = await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                if stream:
+                    return openai_res[0], openai_res[1], messages_for_api
+                else:
+                    return openai_res, messages_for_api
 
             # Handle Anthropic error for empty text content blocks
             elif ("text content blocks must be non-empty" in str(e) or
@@ -1689,7 +1703,11 @@ class OpenAIChatCompletionsModel(Model):
                         "content": "Empty content block"
                     } for msg in kwargs["messages"]
                 ]
-                return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                openai_res = await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                if stream:
+                    return openai_res[0], openai_res[1], messages_for_api
+                else:
+                    return openai_res, messages_for_api
             else:
                 raise e
         except litellm.exceptions.RateLimitError as e:
@@ -1718,10 +1736,14 @@ class OpenAIChatCompletionsModel(Model):
         except Exception as e:  # pylint: disable=W0718
             print(color("Error encountered: " + str(e), fg="yellow"))
             try:
-                return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                ollama_result = await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
+                if stream:
+                    return ollama_result[0], ollama_result[1], messages_for_api
+                else:
+                    return ollama_result, messages_for_api
             except Exception as execp:  # pylint: disable=W0718
                 print("Error: " + str(execp))
-                return None
+                raise execp
 
     async def _fetch_response_litellm_openai(
         self,
