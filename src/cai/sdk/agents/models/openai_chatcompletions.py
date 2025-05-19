@@ -289,44 +289,68 @@ class OpenAIChatCompletionsModel(Model):
         stop_idle_timer()
         start_active_timer()
         
-        # Process current input (user messages, tool results from previous turn)
-        # and add them to the global message_history.
-        # _Converter.items_to_messages converts input to ChatCompletionMessageParam list
-        current_turn_chat_completion_params = _Converter.items_to_messages(input)
-        for msg_param in current_turn_chat_completion_params:
-            # Ensure these are plain dicts for add_to_message_history if they are typed objects
-            # add_to_message_history expects dicts. ChatCompletionMessageParam are TypedDicts.
-            add_to_message_history(cast(dict, msg_param))
-
-        # Ensure system instructions are in history (add_to_message_history handles duplicates)
-        if system_instructions:
-            sys_msg_for_history = {"role": "system", "content": system_instructions}
-            add_to_message_history(sys_msg_for_history)
-            
-        # Original logic for preparing converted_messages for token counting and logging (local scope)
-        # This specific `converted_messages` variable is for logging, the API call will use message_history.
-        # However, for consistent logging, it should reflect what's sent.
-        # Let's defer defining this until after _fetch_response returns the actual sent messages.
-
         with generation_span(
             model=str(self.model),
             model_config=dataclasses.asdict(model_settings)
             | {"base_url": str(self._client.base_url)},
             disabled=tracing.is_disabled(),
         ) as span_generation:
-            # Get token count estimate using the current state of message_history for better accuracy
-            # as this reflects what will be sent to _fetch_response.
-            # Note: fix_message_list might alter it further, this is an estimate.
-            estimating_messages = list(message_history) # Use a copy
-            # Append current_turn_chat_completion_params for estimation if not already fully reflected
-            # This part is tricky as add_to_message_history might deduplicate.
-            # For simplicity, let's assume message_history is now the source for estimation.
-            estimated_input_tokens, _ = count_tokens_with_tiktoken(list(message_history))
+            # Prepare the messages for consistent token counting
+            converted_messages = _Converter.items_to_messages(input)
+            if system_instructions:
+                converted_messages.insert(
+                    0,
+                    {
+                        "content": system_instructions,
+                        "role": "system",
+                    },
+                )
+            # --- Add to message_history: user, system, and assistant tool call messages ---
+            # Add system prompt to message_history
+            if system_instructions:
+                sys_msg = {
+                    "role": "system",
+                    "content": system_instructions
+                }
+                add_to_message_history(sys_msg)
+                
+            # Add user prompt(s) to message_history
+            if isinstance(input, str):
+                user_msg = {
+                    "role": "user",
+                    "content": input
+                }
+                add_to_message_history(user_msg)
+                # Log the user message
+                self.logger.log_user_message(input)
+            elif isinstance(input, list):
+                for item in input:
+                    # Try to extract user messages
+                    if isinstance(item, dict):
+                        if item.get("role") == "user":
+                            user_msg = {
+                                "role": "user",
+                                "content": item.get("content", "")
+                            }
+                            add_to_message_history(user_msg)
+                            # Log the user message
+                            if item.get("content"):
+                                self.logger.log_user_message(item.get("content"))
             
-            # _fetch_response will now use the global message_history
-            api_response, messages_sent_to_api = await self._fetch_response(
-                # system_instructions, # Removed
-                # input,               # Removed
+            # IMPORTANT: Ensure the message list has valid tool call/result pairs
+            # This needs to happen before the API call to prevent errors
+            try:
+                from cai.util import fix_message_list
+                converted_messages = fix_message_list(converted_messages)
+            except Exception as e:
+                logger.warning(f"Failed to fix message list: {e}")
+                
+            # Get token count estimate before API call for consistent counting
+            estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
+            
+            response = await self._fetch_response(
+                system_instructions,
+                input,
                 model_settings,
                 tools,
                 output_schema,
@@ -336,79 +360,84 @@ class OpenAIChatCompletionsModel(Model):
                 stream=False,
             )
 
-            # Use messages_sent_to_api for logging and further processing if needed
-            final_converted_messages_for_log = messages_sent_to_api
-
             if _debug.DONT_LOG_MODEL_DATA:
                 logger.debug("Received model response")
             else:
                 logger.debug(
-                    f"LLM resp:\\n{json.dumps(api_response.choices[0].message.model_dump(), indent=2)}\\n"
+                    f"LLM resp:\n{json.dumps(response.choices[0].message.model_dump(), indent=2)}\n"
                 )
 
             # Ensure we have reasonable token counts
-            if api_response.usage:
-                input_tokens = api_response.usage.prompt_tokens
-                output_tokens = api_response.usage.completion_tokens
-                # total_tokens = api_response.usage.total_tokens # total_tokens might be unused
+            if response.usage:
+                input_tokens = response.usage.prompt_tokens
+                output_tokens = response.usage.completion_tokens
+                total_tokens = response.usage.total_tokens
                 
                 # Use estimated tokens if API returns zeroes or implausible values
-                # Compare against the length of the messages actually sent
-                if input_tokens == 0 or input_tokens < (len(json.dumps(messages_sent_to_api)) // 20): # Heuristic
+                if input_tokens == 0 or input_tokens < (len(str(input)) // 10):  # Sanity check
                     input_tokens = estimated_input_tokens
-                    # total_tokens = input_tokens + output_tokens
+                    total_tokens = input_tokens + output_tokens
+                
+                # # Debug information
+                # print(f"\nDEBUG CONSISTENT TOKEN COUNTS - API tokens: input={input_tokens}, output={output_tokens}, total={total_tokens}")
+                # print(f"Estimated tokens were: input={estimated_input_tokens}")
             else:
                 # If no usage info, use our estimates
                 input_tokens = estimated_input_tokens
-                output_tokens = 0 # Output tokens can't be estimated accurately before response
-                # total_tokens = input_tokens
+                output_tokens = 0
+                total_tokens = input_tokens
+                # print(f"\nDEBUG CONSISTENT TOKEN COUNTS - No API tokens, using estimates: input={input_tokens}, output={output_tokens}")
 
             
             # Update token totals for CLI display
             self.total_input_tokens += input_tokens
-            self.total_output_tokens += output_tokens # This should be from actual response usage
-            if hasattr(api_response.usage, 'completion_tokens') and api_response.usage.completion_tokens is not None:
-                 self.total_output_tokens = self.total_output_tokens - output_tokens + api_response.usage.completion_tokens # adjust if output_tokens was 0
-                 output_tokens = api_response.usage.completion_tokens
-
-
-            if (api_response.usage and 
-                hasattr(api_response.usage, 'completion_tokens_details') and 
-                api_response.usage.completion_tokens_details and 
-                hasattr(api_response.usage.completion_tokens_details, 'reasoning_tokens')):
-                self.total_reasoning_tokens += api_response.usage.completion_tokens_details.reasoning_tokens
+            self.total_output_tokens += output_tokens
+            if (response.usage and 
+                hasattr(response.usage, 'completion_tokens_details') and 
+                response.usage.completion_tokens_details and 
+                hasattr(response.usage.completion_tokens_details, 'reasoning_tokens')):
+                self.total_reasoning_tokens += response.usage.completion_tokens_details.reasoning_tokens
 
             # Check if this message contains tool calls
-            # tool_output = None # tool_output seems unused here
+            tool_output = None
             should_display_message = True
 
-            if (hasattr(api_response.choices[0].message, 'tool_calls') and 
-                api_response.choices[0].message.tool_calls):
+            if (hasattr(response.choices[0].message, 'tool_calls') and 
+                response.choices[0].message.tool_calls):
                 
-                for tool_call in api_response.choices[0].message.tool_calls:
+                # For each tool call in the message, get corresponding output if available
+                for tool_call in response.choices[0].message.tool_calls:
                     call_id = tool_call.id
+                    
+                    # If we're using direct tool output display with cli_print_tool_output,
+                    # and we've already displayed this tool call output, we can skip displaying
+                    # the assistant message to avoid duplication
                     if (hasattr(_Converter, 'tool_outputs') and call_id in _Converter.tool_outputs and
                         hasattr(_Converter, 'recent_tool_calls') and call_id in _Converter.recent_tool_calls):
+                        # We've already displayed this tool and its output directly
                         should_display_message = False
                         break
 
+            # Only display the agent message if we haven't already shown the tool output
             if should_display_message:
+                # Ensure we're in non-streaming mode for proper markdown parsing
                 previous_stream_setting = os.environ.get('CAI_STREAM', 'false')
-                os.environ['CAI_STREAM'] = 'false'
+                os.environ['CAI_STREAM'] = 'false'  # Force non-streaming mode for markdown parsing
                 
+                # Print the agent message for CLI display
                 cli_print_agent_messages(
                     agent_name=getattr(self, 'agent_name', 'Agent'),
-                    message=api_response.choices[0].message,
+                    message=response.choices[0].message,
                     counter=getattr(self, 'interaction_counter', 0),
                     model=str(self.model),
                     debug=False,
                     interaction_input_tokens=input_tokens,
                     interaction_output_tokens=output_tokens,
                     interaction_reasoning_tokens=(
-                        api_response.usage.completion_tokens_details.reasoning_tokens 
-                        if api_response.usage and hasattr(api_response.usage, 'completion_tokens_details') 
-                        and api_response.usage.completion_tokens_details
-                        and hasattr(api_response.usage.completion_tokens_details, 'reasoning_tokens')
+                        response.usage.completion_tokens_details.reasoning_tokens 
+                        if response.usage and hasattr(response.usage, 'completion_tokens_details') 
+                        and response.usage.completion_tokens_details
+                        and hasattr(response.usage.completion_tokens_details, 'reasoning_tokens')
                         else 0
                     ),
                     total_input_tokens=getattr(self, 'total_input_tokens', 0),
@@ -416,96 +445,118 @@ class OpenAIChatCompletionsModel(Model):
                     total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
                     interaction_cost=None,
                     total_cost=None,
-                    tool_output=None,
-                    suppress_empty=True
+                    tool_output=None,  # Don't pass tool output here, we're using direct display
+                    suppress_empty=True  # Suppress empty panels
                 )
                 
+                # Restore previous streaming setting
                 os.environ['CAI_STREAM'] = previous_stream_setting
 
-            assistant_msg_from_api = api_response.choices[0].message
-            if hasattr(assistant_msg_from_api, "tool_calls") and assistant_msg_from_api.tool_calls:
-                for tool_call_param in assistant_msg_from_api.tool_calls:
-                    tool_call_dict = {
+            # --- Add assistant tool call to message_history if present ---
+            # If the response contains tool_calls, add them to message_history as assistant messages
+            assistant_msg = response.choices[0].message
+            if hasattr(assistant_msg, "tool_calls") and assistant_msg.tool_calls:
+                for tool_call in assistant_msg.tool_calls:
+                    # Compose a message for the tool call
+                    tool_call_msg = {
                         "role": "assistant",
-                        "content": None, # Or assistant_msg_from_api.content if it can coexist
+                        "content": None,
                         "tool_calls": [
                             {
-                                "id": tool_call_param.id,
-                                "type": tool_call_param.type,
+                                "id": tool_call.id,
+                                "type": tool_call.type,
                                 "function": {
-                                    "name": tool_call_param.function.name,
-                                    "arguments": tool_call_param.function.arguments
+                                    "name": tool_call.function.name,
+                                    "arguments": tool_call.function.arguments
                                 }
                             }
                         ]
                     }
-                    add_to_message_history(tool_call_dict)
                     
+                    add_to_message_history(tool_call_msg)
+                    
+                    # Save the tool call details for later matching with output
+                    # This is important for non-streaming mode to track tool calls properly
                     if not hasattr(_Converter, 'recent_tool_calls'):
                         _Converter.recent_tool_calls = {}
-                    _Converter.recent_tool_calls[tool_call_param.id] = {
-                        'name': tool_call_param.function.name,
-                        'arguments': tool_call_param.function.arguments,
-                        'start_time': time.time(), # This time might be slightly off; tool call already received
-                        'execution_info': {'start_time': time.time()}
+                    
+                    # Store the tool call by ID for later reference
+                    import time
+                    _Converter.recent_tool_calls[tool_call.id] = {
+                        'name': tool_call.function.name,
+                        'arguments': tool_call.function.arguments,
+                        'start_time': time.time(),
+                        'execution_info': {
+                            'start_time': time.time()
+                        }
                     }
                 
-                tool_calls_for_log = [{
-                    "id": tc.id, "type": tc.type, 
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments}
-                } for tc in assistant_msg_from_api.tool_calls]
-                self.logger.log_assistant_message(None, tool_calls_for_log)
-
-            elif hasattr(assistant_msg_from_api, "content") and assistant_msg_from_api.content:
-                asst_msg_for_history = {
+                # Log the assistant tool call message
+                tool_calls_list = []
+                for tool_call in assistant_msg.tool_calls:
+                    tool_calls_list.append({
+                        "id": tool_call.id,
+                        "type": tool_call.type,
+                        "function": {
+                            "name": tool_call.function.name,
+                            "arguments": tool_call.function.arguments
+                        }
+                    })
+                self.logger.log_assistant_message(None, tool_calls_list)
+            # If the assistant message is just text, add it as well
+            elif hasattr(assistant_msg, "content") and assistant_msg.content:
+                asst_msg = {
                     "role": "assistant",
-                    "content": assistant_msg_from_api.content
+                    "content": assistant_msg.content
                 }
-                add_to_message_history(asst_msg_for_history)
-                self.logger.log_assistant_message(assistant_msg_from_api.content)
+                add_to_message_history(asst_msg)
+                # Log the assistant message
+                self.logger.log_assistant_message(assistant_msg.content)
             
+            # Log the complete response for the session
             self.logger.rec_training_data(
                 {
                     "model": str(self.model),
-                    "messages": final_converted_messages_for_log, # Use the messages actually sent
+                    "messages": converted_messages,
                     "stream": False,
                     "tools": [t.params_json_schema for t in tools] if tools else [],
                     "tool_choice": model_settings.tool_choice
                 },
-                api_response, # This is ChatCompletion, not the Response object
+                response,
                 self.total_cost
             )
 
-            usage_obj = (
+            usage = (
                 Usage(
                     requests=1,
                     input_tokens=input_tokens,
-                    output_tokens=output_tokens, # Ensure this is the final output_tokens
+                    output_tokens=output_tokens,
                     total_tokens=input_tokens + output_tokens,
                 )
-                if api_response.usage or input_tokens > 0
+                if response.usage or input_tokens > 0
                 else Usage()
             )
             if tracing.include_data():
-                span_generation.span_data.output = [assistant_msg_from_api.model_dump()]
+                span_generation.span_data.output = [response.choices[0].message.model_dump()]
             span_generation.span_data.usage = {
-                "input_tokens": usage_obj.input_tokens,
-                "output_tokens": usage_obj.output_tokens,
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
             }
 
-            items = _Converter.message_to_output_items(assistant_msg_from_api)
+            items = _Converter.message_to_output_items(response.choices[0].message)
             
-            # Ensure usage compatibility for ModelResponse
-            final_usage = {}
-            if api_response.usage:
-                final_usage['input_tokens'] = api_response.usage.prompt_tokens
-                final_usage['output_tokens'] = api_response.usage.completion_tokens
-                final_usage['total_tokens'] = api_response.usage.total_tokens
-            # else: ModelResponse will use its default Usage() if no API usage
+            # For non-streaming responses, make sure we also log token usage with compatible field names
+            # This ensures both streaming and non-streaming use consistent naming
+            if not hasattr(response, 'usage'):
+                response.usage = {}
+            if hasattr(response.usage, 'prompt_tokens') and not hasattr(response.usage, 'input_tokens'):
+                response.usage.input_tokens = response.usage.prompt_tokens
+            if hasattr(response.usage, 'completion_tokens') and not hasattr(response.usage, 'output_tokens'):
+                response.usage.output_tokens = response.usage.completion_tokens
 
             return ModelResponse(
                 output=items,
-                usage=Usage(**final_usage) if final_usage else usage_obj, # Pass constructed Usage
+                usage=usage,
                 referenceable_id=None,
             )
             
@@ -625,7 +676,9 @@ class OpenAIChatCompletionsModel(Model):
                 # Get token count estimate before API call for consistent counting
                 estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
                 
-                response, stream, messages_sent_to_api = await self._fetch_response(
+                response, stream = await self._fetch_response(
+                    system_instructions,
+                    input,
                     model_settings,
                     tools,
                     output_schema,
@@ -1235,8 +1288,8 @@ class OpenAIChatCompletionsModel(Model):
                 total_cost = calculate_model_cost(model_name, total_input, total_output)
                 
                 # Explicit conversion to float with fallback to ensure they're never None or 0
-                interaction_cost = max(float(interaction_cost if interaction_cost is not None else 0.0), 0)
-                total_cost = max(float(total_cost if total_cost is not None else 0.0), 0)
+                interaction_cost = float(interaction_cost if interaction_cost is not None else 0.0)
+                total_cost = float(total_cost if total_cost is not None else 0.0)
                 
                 # Store the total cost for future recording
                 self.total_cost = total_cost
@@ -1309,7 +1362,7 @@ class OpenAIChatCompletionsModel(Model):
                 self.logger.rec_training_data(
                     {
                         "model": str(self.model),
-                        "messages": messages_sent_to_api, # Use the messages actually sent
+                        "messages": converted_messages,
                         "stream": True,
                         "tools": [t.params_json_schema for t in tools] if tools else [],
                         "tool_choice": model_settings.tool_choice
@@ -1339,8 +1392,8 @@ class OpenAIChatCompletionsModel(Model):
     @overload
     async def _fetch_response(
         self,
-        # system_instructions: str | None, # REMOVED
-        # input: str | list[TResponseInputItem], # REMOVED
+        system_instructions: str | None,
+        input: str | list[TResponseInputItem],
         model_settings: ModelSettings,
         tools: list[Tool],
         output_schema: AgentOutputSchema | None,
@@ -1348,13 +1401,13 @@ class OpenAIChatCompletionsModel(Model):
         span: Span[GenerationSpanData],
         tracing: ModelTracing,
         stream: Literal[True],
-    ) -> tuple[Response, AsyncStream[ChatCompletionChunk], list[dict]]: ... # Added messages_sent_to_api
+    ) -> tuple[Response, AsyncStream[ChatCompletionChunk]]: ...
 
     @overload
     async def _fetch_response(
         self,
-        # system_instructions: str | None, # REMOVED
-        # input: str | list[TResponseInputItem], # REMOVED
+        system_instructions: str | None,
+        input: str | list[TResponseInputItem],
         model_settings: ModelSettings,
         tools: list[Tool],
         output_schema: AgentOutputSchema | None,
@@ -1362,12 +1415,12 @@ class OpenAIChatCompletionsModel(Model):
         span: Span[GenerationSpanData],
         tracing: ModelTracing,
         stream: Literal[False],
-    ) -> tuple[ChatCompletion, list[dict]]: ... # Added messages_sent_to_api
+    ) -> ChatCompletion: ...
 
     async def _fetch_response(
         self,
-        # system_instructions: str | None, # REMOVED
-        # input: str | list[TResponseInputItem], # REMOVED
+        system_instructions: str | None,
+        input: str | list[TResponseInputItem],
         model_settings: ModelSettings,
         tools: list[Tool],
         output_schema: AgentOutputSchema | None,
@@ -1375,37 +1428,38 @@ class OpenAIChatCompletionsModel(Model):
         span: Span[GenerationSpanData],
         tracing: ModelTracing,
         stream: bool = False,
-    ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]] | tuple[ChatCompletion, list[dict]] | tuple[Response, AsyncStream[ChatCompletionChunk], list[dict]]:
+    ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
 
         # start by re-fetching self.is_ollama
         self.is_ollama = os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() == 'true'
 
-        # Messages for API are now derived from the global message_history
-        messages_for_api = list(message_history) # Create a mutable copy
+        converted_messages = _Converter.items_to_messages(input)
 
+        if system_instructions:
+            converted_messages.insert(
+                0,
+                {
+                    "content": system_instructions,
+                    "role": "system",
+                },
+            )
         if tracing.include_data():
-            span.span_data.input = messages_for_api # Log the full list
+            span.span_data.input = converted_messages
 
-        # IMPORTANT: Always sanitize the message list (which is the full history)
+        # IMPORTANT: Always sanitize the message list to prevent tool call errors
+        # This is critical to fix common errors with tool/assistant sequences
         try:
             from cai.util import fix_message_list
-            prev_length = len(messages_for_api)
-            # Critical: fix_message_list operates on the full history now
-            messages_for_api_fixed = fix_message_list(messages_for_api)
-            new_length = len(messages_for_api_fixed)
+            prev_length = len(converted_messages)
+            converted_messages = fix_message_list(converted_messages)
+            new_length = len(converted_messages)
             
+            # Log if the message list was changed significantly
             if new_length != prev_length:
-                logger.debug(f"Message list was fixed: {prev_length} -> {new_length} messages. Old: {messages_for_api}, New: {messages_for_api_fixed}")
-            messages_for_api = messages_for_api_fixed # Use the fixed list
+                logger.debug(f"Message list was fixed: {prev_length} -> {new_length} messages")
         except Exception as e:
-            # Log more detailed error if fix_message_list fails
-            logger.error(f"CRITICAL: fix_message_list failed on message history: {e}", exc_info=True)
-            logger.error(f"Message history that caused failure: {json.dumps(messages_for_api, indent=2)}")
-            # It's crucial to understand why fix_message_list might fail here.
-            # Re-raise or handle as an AgentsException if appropriate.
-            raise AgentsException(f"Message history sanitization failed processing full history: {e}") from e
-        
-        # parallel_tool_calls, tool_choice, response_format, converted_tools...
+            logger.warning(f"Failed to fix message list: {e}")
+
         parallel_tool_calls = (
             True if model_settings.parallel_tool_calls and tools and len(tools) > 0 else NOT_GIVEN
         )
@@ -1420,7 +1474,7 @@ class OpenAIChatCompletionsModel(Model):
             logger.debug("Calling LLM")
         else:
             logger.debug(
-                f"{json.dumps(messages_for_api, indent=2)}\n"
+                f"{json.dumps(converted_messages, indent=2)}\n"
                 f"Tools:\n{json.dumps(converted_tools, indent=2)}\n"
                 f"Stream: {stream}\n"
                 f"Tool choice: {tool_choice}\n"
@@ -1441,7 +1495,7 @@ class OpenAIChatCompletionsModel(Model):
         # Prepare kwargs for the API call
         kwargs = {
             "model": agent_model if agent_model else self.model,
-            "messages": messages_for_api, # Use the fully prepared and fixed message list
+            "messages": converted_messages,
             "tools": converted_tools or NOT_GIVEN,
             "temperature": self._non_null_or_not_given(model_settings.temperature),
             "top_p": self._non_null_or_not_given(model_settings.top_p),
@@ -1461,7 +1515,7 @@ class OpenAIChatCompletionsModel(Model):
         model_str = str(kwargs["model"]).lower()
         
         if "alias" in model_str:
-            kwargs["api_base"] = "http://11.0.0.4:4000/"
+            kwargs["api_base"] = "http://api.aliasrobotics.com:666/"
             kwargs["custom_llm_provider"] = "openai"
             kwargs["api_key"] = os.getenv("ALIAS_API_KEY", "sk-alias-1234567890")
         elif "/" in model_str:
@@ -1525,21 +1579,9 @@ class OpenAIChatCompletionsModel(Model):
         
         try:
             if self.is_ollama:
-                # Adjust Ollama fetch to return messages_for_api
-                if stream:
-                    response_obj, stream_obj = await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
-                    return response_obj, stream_obj, messages_for_api
-                else:
-                    completion = await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
-                    return completion, messages_for_api
+                return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
             else:
-                # Adjust OpenAI fetch to return messages_for_api
-                if stream:
-                    response_obj, stream_obj = await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
-                    return response_obj, stream_obj, messages_for_api
-                else:
-                    completion = await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
-                    return completion, messages_for_api
+                return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
                 
         except litellm.exceptions.BadRequestError as e:
             # print(color("BadRequestError encountered: " + str(e), fg="yellow"))
@@ -1552,13 +1594,7 @@ class OpenAIChatCompletionsModel(Model):
                 if is_qwen:
                     try:
                         # Use the specialized Qwen approach first
-                        ollama_result = await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
-                        if stream:
-                            # ollama_result is (response, stream_obj)
-                            return ollama_result[0], ollama_result[1], messages_for_api
-                        else:
-                            # ollama_result is completion
-                            return ollama_result, messages_for_api
+                        return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
                     except Exception as qwen_e:
                         print(qwen_e)
                         # If that fails, try our direct OpenAI approach
@@ -1588,11 +1624,11 @@ class OpenAIChatCompletionsModel(Model):
                                     parallel_tool_calls=parallel_tool_calls or False,
                                 )
                                 stream_obj = await litellm.acompletion(**qwen_params)
-                                return response, stream_obj, messages_for_api
+                                return response, stream_obj
                             else:
                                 # Non-streaming case
                                 ret = litellm.completion(**qwen_params)
-                                return ret, messages_for_api
+                                return ret
                         except Exception as direct_e:
                             # All approaches failed, log and raise the original error
                             print(f"All Qwen approaches failed. Original error: {str(e)}, Direct error: {str(direct_e)}")
@@ -1663,13 +1699,7 @@ class OpenAIChatCompletionsModel(Model):
                 except Exception as fix_error:
                     print(f"Failed to fix message sequence: {fix_error}")
                 
-                openai_res = await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
-                if stream:
-                    # openai_res is (response, stream_obj)
-                    return openai_res[0], openai_res[1], messages_for_api
-                else:
-                    # openai_res is completion
-                    return openai_res, messages_for_api
+                return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
 
             # this captures an error related to the fact
             # that the messages list contains an empty
@@ -1681,11 +1711,7 @@ class OpenAIChatCompletionsModel(Model):
                     msg if msg.get("content") is not None else
                     {**msg, "content": ""} for msg in kwargs["messages"]
                 ]
-                openai_res = await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
-                if stream:
-                    return openai_res[0], openai_res[1], messages_for_api
-                else:
-                    return openai_res, messages_for_api
+                return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
 
             # Handle Anthropic error for empty text content blocks
             elif ("text content blocks must be non-empty" in str(e) or
@@ -1703,11 +1729,7 @@ class OpenAIChatCompletionsModel(Model):
                         "content": "Empty content block"
                     } for msg in kwargs["messages"]
                 ]
-                openai_res = await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
-                if stream:
-                    return openai_res[0], openai_res[1], messages_for_api
-                else:
-                    return openai_res, messages_for_api
+                return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
             else:
                 raise e
         except litellm.exceptions.RateLimitError as e:
@@ -1736,14 +1758,10 @@ class OpenAIChatCompletionsModel(Model):
         except Exception as e:  # pylint: disable=W0718
             print(color("Error encountered: " + str(e), fg="yellow"))
             try:
-                ollama_result = await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
-                if stream:
-                    return ollama_result[0], ollama_result[1], messages_for_api
-                else:
-                    return ollama_result, messages_for_api
+                return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
             except Exception as execp:  # pylint: disable=W0718
                 print("Error: " + str(execp))
-                raise execp
+                return None
 
     async def _fetch_response_litellm_openai(
         self,
@@ -1752,11 +1770,11 @@ class OpenAIChatCompletionsModel(Model):
         tool_choice: ChatCompletionToolChoiceOptionParam | NotGiven,
         stream: bool,
         parallel_tool_calls: bool
-    ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]: # Return type will be wrapped by _fetch_response
+    ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
         """Handle standard LiteLLM API calls for OpenAI and compatible models."""
         if stream:
             # Standard LiteLLM handling for streaming
-            # ret = litellm.completion(**kwargs) # This was likely a typo, should be acompletion for stream
+            ret = litellm.completion(**kwargs)
             stream_obj = await litellm.acompletion(**kwargs)
 
             response = Response(
@@ -1785,7 +1803,7 @@ class OpenAIChatCompletionsModel(Model):
         stream: bool,
         parallel_tool_calls: bool,
         provider="ollama"
-    ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]: # Return type will be wrapped by _fetch_response
+    ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
         # Extract only supported parameters for Ollama
         ollama_supported_params = {
             "model": kwargs.get("model", ""),
