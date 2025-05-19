@@ -340,7 +340,7 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                     get_toolbar_with_refresh,
                     current_text
                 ) + messages_ctf 
-            else:
+                else:
                 user_input = messages_ctf 
             idle_time += time.time() - idle_start_time
 
