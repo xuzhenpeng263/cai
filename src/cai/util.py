@@ -232,12 +232,17 @@ class CostTracker:
     def check_price_limit(self, new_cost: float) -> None:
         """Check if adding the new cost would exceed the price limit."""
         from cai.sdk.agents.exceptions import PriceLimitExceeded
-        from cai.sdk.agents.run import DEFAULT_PRICE_LIMIT
-        
-        if DEFAULT_PRICE_LIMIT != float("inf"):
+        import os
+        price_limit_env = os.getenv("CAI_PRICE_LIMIT")
+        try:
+            price_limit = float(price_limit_env) if price_limit_env is not None else float("inf")
+        except ValueError:
+            price_limit = float("inf")
+
+        if price_limit != float("inf"):
             total_cost = self.session_total_cost + new_cost
-            if total_cost > DEFAULT_PRICE_LIMIT:
-                raise PriceLimitExceeded(total_cost, DEFAULT_PRICE_LIMIT)
+            if total_cost > price_limit:
+                raise PriceLimitExceeded(total_cost, price_limit)
     
     def update_session_cost(self, new_cost: float) -> None:
         """Add cost to session total and log the update"""
