@@ -702,7 +702,20 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
             start_idle_timer()
 
         except KeyboardInterrupt:
-            # No need to clean up streaming context as model handles it
+            print("\n\033[91mKeyboard interrupt detected\033[0m")
+            
+            if hasattr(agent, 'model'):
+                from cai.sdk.agents.models.openai_chatcompletions import _Converter
+                if hasattr(_Converter, 'recent_tool_calls'):
+                    for call_id, call_info in _Converter.recent_tool_calls.items():
+                        # Add a tool response indicating the interruption
+                        tool_msg = {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "content": "Operation interrupted by user",
+                        }
+                        add_to_message_history(tool_msg)
+            
             pass
         except Exception as e:
             import traceback
