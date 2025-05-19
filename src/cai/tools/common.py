@@ -127,7 +127,7 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
             except Exception as e:
                 self.output_buffer.append(f"Error starting container session: {str(e)}")
                 self.is_running = False
-            return
+                return str(e)
 
         # --- Start in CTF ---
         if self.ctf:
@@ -141,8 +141,8 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                 self.output_buffer.append(output)
             except Exception as e:  # pylint: disable=broad-except
                 self.output_buffer.append(f"Error executing CTF command: {str(e)}")
-            self.is_running = False 
-            return
+                self.is_running = False 
+                return str(e)
 
         # --- Start Locally (Host) ---
         try:
@@ -167,7 +167,7 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
         except Exception as e:  # pylint: disable=broad-except
             self.output_buffer.append(f"Error starting local session: {str(e)}")
             self.is_running = False
-
+            return str(e)
     def _read_output(self):
         """Read output from the process"""
         try:
@@ -195,6 +195,7 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
         except Exception as e:
             self.output_buffer.append(f"Error in read_output loop: {str(e)}")
             self.is_running = False
+            return str(e)
     
 
     def is_process_running(self):
@@ -645,6 +646,8 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             
         if stdout:
             print("\033[32m" + error_msg + "\033[0m")
+            return error_msg
+
             
         return error_msg
     except Exception as e:  # pylint: disable=broad-except
@@ -1258,15 +1261,10 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
             custom_args=args
         )
         
-        # Switch back to idle mode after local command completes
         stop_active_timer()
         start_idle_timer()
         return result
-    except Exception as KeyboardInterrupt:
-        stop_active_timer()
-        start_idle_timer()
-        return "User interrupted execution pressing ctrl+c"
     except Exception as e:
         stop_active_timer()
         start_idle_timer()
-        return f"Error: {str(e)}"
+        raise

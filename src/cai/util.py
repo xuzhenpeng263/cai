@@ -844,7 +844,6 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
             i += 2
         else:
             i += 1
-    
     return sanitized_messages
 
 def cli_print_tool_call(tool_name="", args="", output="", prefix="  "):
@@ -2103,8 +2102,8 @@ def print_message_history(messages, title="Message History"):
     table = Table(show_header=True, header_style="bold magenta", expand=True)
     table.add_column("#", style="dim", width=3)
     table.add_column("Role", style="cyan", width=10)
-    table.add_column("Content", width=40)
-    table.add_column("Metadata", width=30)
+    table.add_column("Content", width=1000)
+    table.add_column("Metadata", width=1000)
     
     # Process each message
     for i, msg in enumerate(messages):

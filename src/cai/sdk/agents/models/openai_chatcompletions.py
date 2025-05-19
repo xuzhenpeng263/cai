@@ -343,7 +343,7 @@ class OpenAIChatCompletionsModel(Model):
                 from cai.util import fix_message_list
                 converted_messages = fix_message_list(converted_messages)
             except Exception as e:
-                logger.warning(f"Failed to fix message list: {e}")
+                pass
                 
             # Get token count estimate before API call for consistent counting
             estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
@@ -1463,7 +1463,7 @@ class OpenAIChatCompletionsModel(Model):
             if new_length != prev_length:
                 logger.debug(f"Message list was fixed: {prev_length} -> {new_length} messages")
         except Exception as e:
-            logger.warning(f"Failed to fix message list: {e}")
+            pass
 
         parallel_tool_calls = (
             True if model_settings.parallel_tool_calls and tools and len(tools) > 0 else NOT_GIVEN
@@ -1702,7 +1702,7 @@ class OpenAIChatCompletionsModel(Model):
                             
                     kwargs["messages"] = fixed_messages
                 except Exception as fix_error:
-                    print(f"Failed to fix message sequence: {fix_error}")
+                    pass
                 
                 return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
 
