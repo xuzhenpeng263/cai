@@ -123,6 +123,8 @@ def update_toolbar_in_background():
                 os.getenv('CAI_MODEL', 'default')}</ansigreen> | "
             f"<ansicyan><b>Max Turns:</b></ansicyan> <ansiblue>{
                 os.getenv('CAI_MAX_TURNS', 'inf')}</ansiblue> | "
+            f"<ansiyellow><b>Price Limit:</b></ansiyellow> <ansiblue>{
+                os.getenv('CAI_PRICE_LIMIT', 'inf')}</ansiblue> | "
             f"<ansigray>{current_time_with_tz}</ansigray>"
         )
         toolbar_cache['last_update'] = datetime.datetime.now()
