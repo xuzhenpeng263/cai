@@ -708,6 +708,9 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
     # Use the active timer during tool execution
     stop_idle_timer()
     start_active_timer()
+ 
+    from cai.cli import ctf_global
+    ctf = ctf_global
     
     # Parse command into standard parts to ensure consistent naming
     parts = command.strip().split(' ', 1)

@@ -134,7 +134,10 @@ from cai.util import (
     start_idle_timer, 
     stop_idle_timer, 
     start_active_timer, 
-    stop_active_timer
+    stop_active_timer,
+    setup_ctf,
+    check_flag
+
 )
 
 # CAI REPL imports
@@ -151,6 +154,11 @@ from cai.internal.components.metrics import process_metrics
 
 # Add import for parallel configs at the top of the file
 from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
+from cai import is_pentestperf_available
+ctf_global = None
+if is_pentestperf_available() and os.getenv('CTF_NAME', None):
+    ctf, messages_ctf = setup_ctf()
+    ctf_global = ctf
 
 # Load environment variables from .env file
 load_dotenv()
@@ -187,7 +195,7 @@ agent = Agent(
     )
 )
 
-def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
+def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), force_until_flag=False):
     """
     Run a simple interactive CLI loop for CAI.
 
@@ -283,14 +291,17 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
                 except Exception as e:
                     console.print(f"[red]Error switching agent: {str(e)}[/red]")
 
-            # Get user input with command completion and history
-            user_input = get_user_input(
-                command_completer,
-                kb,
-                history_file,
-                get_toolbar_with_refresh,
-                current_text
-            )
+            if not force_until_flag:
+                # Get user input with command completion and history
+                user_input = get_user_input(
+                    command_completer,
+                    kb,
+                    history_file,
+                    get_toolbar_with_refresh,
+                    current_text
+                )
+            else:
+                user_input = messages_ctf 
             idle_time += time.time() - idle_start_time
 
             # Stop measuring user idle time and start measuring active time
@@ -392,6 +403,11 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
 
                 # Prevent duplicate cost display from the COST_TRACKER exit handler
                 os.environ["CAI_COST_DISPLAYED"] = "true"
+
+                if (is_pentestperf_available() and os.getenv('CTF_NAME', None)):
+                    ctf.stop_ctf()
+                    return False
+
 
             except Exception:
                 pass
