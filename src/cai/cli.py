@@ -702,7 +702,7 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
             start_idle_timer()
 
         except KeyboardInterrupt:
-            # No need to clean up streaming context as model handles it
+            print("\n\033[91mKeyboard interrupt detected\033[0m")
             pass
         except Exception as e:
             import traceback
