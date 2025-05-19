@@ -133,6 +133,11 @@ ENV_VARS = {
         "description": "Name of the current workspace (affects log file naming)",
         "default": None 
     },
+    24: {
+        "name": "CAI_STREAM",
+        "description": "Boolean to enable real-time, chunked responses instead of full messages.",
+        "default": "True"
+    },
 }
 
 
