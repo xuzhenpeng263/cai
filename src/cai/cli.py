@@ -156,6 +156,7 @@ from cai.internal.components.metrics import process_metrics
 from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
 from cai import is_pentestperf_available
 ctf_global = None
+messages_ctf = ""
 if is_pentestperf_available() and os.getenv('CTF_NAME', None):
     ctf, messages_ctf = setup_ctf()
     ctf_global = ctf
@@ -299,7 +300,7 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                     history_file,
                     get_toolbar_with_refresh,
                     current_text
-                )
+                ) + messages_ctf 
             else:
                 user_input = messages_ctf 
             idle_time += time.time() - idle_start_time
