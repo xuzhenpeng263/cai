@@ -1014,7 +1014,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir(), args) # noqa E501
 
         # --- CTF Execution ---
-        if ctf and os.getenv('CTF_INSIDE', True) == "True":
+        if ctf and os.getenv('CTF_INSIDE', True).lower() == "true":
             # If streaming is enabled and we have a call_id, show streaming UI for CTF too
             if stream:
                 # Import the streaming utilities from util
