@@ -1261,12 +1261,10 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
         start_idle_timer()
         return result
     except Exception as KeyboardInterrupt:
-        # Ensure we switch back to idle mode if any unexpected error occurs
         stop_active_timer()
         start_idle_timer()
         return "User interrupted execution pressing ctrl+c"
     except Exception as e:
-        # Ensure we switch back to idle mode if any unexpected error occurs
         stop_active_timer()
         start_idle_timer()
-        raise e
+        return f"Error: {str(e)}"

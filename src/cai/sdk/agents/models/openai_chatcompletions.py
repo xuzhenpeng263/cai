@@ -1375,6 +1375,7 @@ class OpenAIChatCompletionsModel(Model):
                     self.total_cost
                 )
                 
+                
                 # Stop active timer and start idle timer when streaming is complete
                 stop_active_timer()
                 start_idle_timer()
@@ -1827,9 +1828,6 @@ class OpenAIChatCompletionsModel(Model):
         # Add tools and tool_choice for compatibility with Qwen
         if "tools" in kwargs and kwargs.get("tools") and kwargs.get("tools") is not NOT_GIVEN:
             ollama_supported_params["tools"] = kwargs.get("tools")
-            
-        if "tool_choice" in kwargs and kwargs.get("tool_choice") is not NOT_GIVEN:
-            ollama_supported_params["tool_choice"] = kwargs.get("tool_choice")
 
         # Remove None values
         ollama_kwargs = {k: v for k, v in ollama_supported_params.items() if v is not None}
@@ -1841,7 +1839,6 @@ class OpenAIChatCompletionsModel(Model):
         api_base = get_ollama_api_base()
         if "ollama" in provider:
             api_base = api_base.rstrip('/v1')
-        # Create response object for streaming
         if stream:
             response = Response(
                 id=FAKE_RESPONSES_ID,
@@ -2254,7 +2251,7 @@ class _Converter:
 
                     tool_calls_param.append(
                         ChatCompletionMessageToolCallParam(
-                            id=tc.get("id", ""),
+                            id=tc.get("id", "")[:40],
                             type=tc.get("type", "function"),
                             function={
                                 "name": function_details.get("name", "unknown_function"),
@@ -2366,7 +2363,7 @@ class _Converter:
                 asst = ensure_assistant_message()
                 tool_calls = list(asst.get("tool_calls", []))
                 new_tool_call = ChatCompletionMessageToolCallParam(
-                    id=file_search["id"],
+                    id=file_search["id"][:40],
                     type="function",
                     function={
                         "name": "file_search_call",
@@ -2409,7 +2406,7 @@ class _Converter:
                     arguments = json.dumps(arguments)
 
                 new_tool_call = ChatCompletionMessageToolCallParam(
-                    id=func_call["call_id"],
+                    id=func_call["call_id"][:40],
                     type="function",
                     function={
                         "name": func_call["name"],
