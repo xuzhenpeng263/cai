@@ -1589,7 +1589,7 @@ class OpenAIChatCompletionsModel(Model):
                 return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
                 
         except litellm.exceptions.BadRequestError as e:
-            # print(color("BadRequestError encountered: " + str(e), fg="yellow"))
+            #print(color("BadRequestError encountered: " + str(e), fg="yellow"))
             if "LLM Provider NOT provided" in str(e):
                 model_str = str(self.model).lower()
                 provider = None
@@ -1872,36 +1872,60 @@ class OpenAIChatCompletionsModel(Model):
         parallel_tool_calls: bool,
         provider="ollama"
     ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
+        """
+        Fetches a response from an Ollama or Qwen model using LiteLLM, ensuring
+        that the 'format' parameter is not set to a JSON string, which can cause
+        issues with the Ollama API.
+
+        Args:
+            kwargs (dict): Parameters for the completion request.
+            model_settings (ModelSettings): Model configuration.
+            tool_choice (ChatCompletionToolChoiceOptionParam | NotGiven): Tool choice.
+            stream (bool): Whether to stream the response.
+            parallel_tool_calls (bool): Whether to allow parallel tool calls.
+            provider (str): Provider name, defaults to "ollama".
+
+        Returns:
+            ChatCompletion or tuple[Response, AsyncStream[ChatCompletionChunk]]:
+                The completion response or a tuple for streaming.
+        """
         # Extract only supported parameters for Ollama
         ollama_supported_params = {
             "model": kwargs.get("model", ""),
             "messages": kwargs.get("messages", []),
             "stream": kwargs.get("stream", False)
         }
-        
+
         # Add optional parameters if they exist and are not NOT_GIVEN
         for param in ["temperature", "top_p", "max_tokens"]:
             if param in kwargs and kwargs[param] is not NOT_GIVEN:
                 ollama_supported_params[param] = kwargs[param]
-        
+
         # Add extra headers if available
         if "extra_headers" in kwargs:
             ollama_supported_params["extra_headers"] = kwargs["extra_headers"]
-            
-        # Add tools and tool_choice for compatibility with Qwen
-        if "tools" in kwargs and kwargs.get("tools") and kwargs.get("tools") is not NOT_GIVEN:
+
+        # Add tools for compatibility with Qwen
+        if (
+            "tools" in kwargs
+            and kwargs.get("tools")
+            and kwargs.get("tools") is not NOT_GIVEN
+        ):
             ollama_supported_params["tools"] = kwargs.get("tools")
 
-        # Remove None values
-        ollama_kwargs = {k: v for k, v in ollama_supported_params.items() if v is not None}
-        
+        # Remove None values and filter out 'response_format'
+        ollama_kwargs = {
+            k: v for k, v in ollama_supported_params.items()
+            if v is not None and k != "response_format"
+        }
+
         # Check if this is a Qwen model
         model_str = str(self.model).lower()
         is_qwen = "qwen" in model_str
-                
         api_base = get_ollama_api_base()
         if "ollama" in provider:
             api_base = api_base.rstrip('/v1')
+
         if stream:
             response = Response(
                 id=FAKE_RESPONSES_ID,
@@ -1909,8 +1933,9 @@ class OpenAIChatCompletionsModel(Model):
                 model=self.model,
                 object="response",
                 output=[],
-                tool_choice="auto" if tool_choice is None or tool_choice == NOT_GIVEN else 
-                    cast(Literal["auto", "required", "none"], tool_choice),
+                tool_choice="auto"
+                if tool_choice is None or tool_choice == NOT_GIVEN
+                else cast(Literal["auto", "required", "none"], tool_choice),
                 top_p=model_settings.top_p,
                 temperature=model_settings.temperature,
                 tools=[],
@@ -1924,8 +1949,6 @@ class OpenAIChatCompletionsModel(Model):
             )
             return response, stream_obj
         else:
-
-        
             # Get completion response
             return litellm.completion(
                 **ollama_kwargs,

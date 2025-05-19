@@ -705,7 +705,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
     Returns:
         str: Command output, status message, or session ID.
     """
-    print(ctf)
+    if ctf and not hasattr(ctf, "get_shell"):
+        ctf = None
     # Use the active timer during tool execution
     stop_idle_timer()
     start_active_timer()
