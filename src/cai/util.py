@@ -228,16 +228,27 @@ class CostTracker:
     # Track the last calculation to debug inconsistencies
     last_interaction_cost: float = 0.0
     last_total_cost: float = 0.0
-    
-    def reset_interaction_stats(self):
-        """Reset stats for a new interaction"""
-        self.interaction_input_tokens = 0
-        self.interaction_output_tokens = 0
-        self.interaction_reasoning_tokens = 0
-        self.interaction_cost = 0.0
+
+    def check_price_limit(self, new_cost: float) -> None:
+        """Check if adding the new cost would exceed the price limit."""
+        from cai.sdk.agents.exceptions import PriceLimitExceeded
+        import os
+        price_limit_env = os.getenv("CAI_PRICE_LIMIT")
+        try:
+            price_limit = float(price_limit_env) if price_limit_env is not None else float("inf")
+        except ValueError:
+            price_limit = float("inf")
+
+        if price_limit != float("inf"):
+            total_cost = self.session_total_cost + new_cost
+            if total_cost > price_limit:
+                raise PriceLimitExceeded(total_cost, price_limit)
     
     def update_session_cost(self, new_cost: float) -> None:
         """Add cost to session total and log the update"""
+        # Check price limit before updating
+        self.check_price_limit(new_cost)
+        
         old_total = self.session_total_cost
         self.session_total_cost += new_cost
         
