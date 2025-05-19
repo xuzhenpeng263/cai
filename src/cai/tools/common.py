@@ -759,7 +759,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
         is_ssh_env = all(os.getenv(var) for var in ['SSH_USER', 'SSH_HOST'])
 
         # --- Docker Container Execution ---
-        if active_container and not ctf and not is_ssh_env:
+        if active_container and not is_ssh_env:
             container_id = active_container
             container_workspace = _get_container_workspace_path()
             context_msg = f"(docker:{container_id[:12]}:{container_workspace})"
