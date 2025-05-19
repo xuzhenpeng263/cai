@@ -305,6 +305,67 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
 
             Total = time.time() - START_TIME
             idle_time += time.time() - idle_start_time
+            
+            # NEW: Clean up any pending tool calls before exiting
+            try:
+                # Access the _Converter directly to clean up any pending tool calls
+                from cai.sdk.agents.models.openai_chatcompletions import _Converter
+                
+                # Check if any tool calls are pending (have been issued but don't have responses)
+                pending_calls = []
+                if hasattr(_Converter, 'recent_tool_calls'):
+                    for call_id, call_info in list(_Converter.recent_tool_calls.items()):
+                        # Check if this tool call has a corresponding response in message_history
+                        tool_response_exists = False
+                        for msg in message_history:
+                            if msg.get("role") == "tool" and msg.get("tool_call_id") == call_id:
+                                tool_response_exists = True
+                                break
+                                
+                        # If no tool response exists, create a synthetic one
+                        if not tool_response_exists:
+                            # First ensure there's a matching assistant message with this tool call
+                            assistant_exists = False
+                            for msg in message_history:
+                                if (msg.get("role") == "assistant" and 
+                                    msg.get("tool_calls") and 
+                                    any(tc.get("id") == call_id for tc in msg.get("tool_calls", []))):
+                                    assistant_exists = True
+                                    break
+                            
+                            # Add assistant message if needed
+                            if not assistant_exists:
+                                tool_call_msg = {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [{
+                                        "id": call_id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": call_info.get('name', 'unknown_function'),
+                                            "arguments": call_info.get('arguments', '{}')
+                                        }
+                                    }]
+                                }
+                                add_to_message_history(tool_call_msg)
+                            
+                            # Add a synthetic tool response
+                            tool_msg = {
+                                "role": "tool",
+                                "tool_call_id": call_id,
+                                "content": "Operation interrupted by user (Keyboard Interrupt during shutdown)"
+                            }
+                            add_to_message_history(tool_msg)
+                            pending_calls.append(call_info.get('name', 'unknown'))
+                
+                # Apply message list fixes
+                if pending_calls:
+                    from cai.util import fix_message_list
+                    message_history[:] = fix_message_list(message_history)
+                    print(f"\033[93mCleaned up {len(pending_calls)} pending tool calls before exit\033[0m")
+            except Exception:
+                pass
+            
             try:
                 # Get more accurate active and idle time measurements from the timer functions
                 from cai.util import get_active_time_seconds, get_idle_time_seconds, COST_TRACKER
@@ -703,6 +764,63 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
 
         except KeyboardInterrupt:
             print("\n\033[91mKeyboard interrupt detected\033[0m")
+            
+            # NEW: Handle pending tool calls to prevent errors on next iteration
+            try:
+                # Access the _Converter directly to clean up any pending tool calls
+                from cai.sdk.agents.models.openai_chatcompletions import _Converter
+                
+                # Check if any tool calls are pending (have been issued but don't have responses)
+                if hasattr(_Converter, 'recent_tool_calls'):
+                    for call_id, call_info in list(_Converter.recent_tool_calls.items()):
+                        # Check if this tool call has a corresponding response in message_history
+                        tool_response_exists = False
+                        for msg in message_history:
+                            if msg.get("role") == "tool" and msg.get("tool_call_id") == call_id:
+                                tool_response_exists = True
+                                break
+                                
+                        # If no tool response exists, create a synthetic one
+                        if not tool_response_exists:
+                            # First ensure there's a matching assistant message with this tool call
+                            assistant_exists = False
+                            for msg in message_history:
+                                if (msg.get("role") == "assistant" and 
+                                    msg.get("tool_calls") and 
+                                    any(tc.get("id") == call_id for tc in msg.get("tool_calls", []))):
+                                    assistant_exists = True
+                                    break
+                            
+                            # Add assistant message if needed
+                            if not assistant_exists:
+                                tool_call_msg = {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [{
+                                        "id": call_id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": call_info.get('name', 'unknown_function'),
+                                            "arguments": call_info.get('arguments', '{}')
+                                        }
+                                    }]
+                                }
+                                add_to_message_history(tool_call_msg)
+                            
+                            # Add a synthetic tool response
+                            tool_msg = {
+                                "role": "tool",
+                                "tool_call_id": call_id,
+                                "content": "Operation interrupted by user (Keyboard Interrupt)"
+                            }
+                            add_to_message_history(tool_msg)
+                                                        
+                    # Apply message list fixes
+                    from cai.util import fix_message_list
+                    message_history[:] = fix_message_list(message_history)
+            except Exception as cleanup_error:
+                print(f"\033[91mError cleaning up interrupted tools: {str(cleanup_error)}\033[0m")
+            
             pass
         except Exception as e:
             import traceback

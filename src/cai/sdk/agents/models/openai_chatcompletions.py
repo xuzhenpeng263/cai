@@ -348,17 +348,41 @@ class OpenAIChatCompletionsModel(Model):
             # Get token count estimate before API call for consistent counting
             estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
             
-            response = await self._fetch_response(
-                system_instructions,
-                input,
-                model_settings,
-                tools,
-                output_schema,
-                handoffs,
-                span_generation,
-                tracing,
-                stream=False,
-            )
+            try:
+                response = await self._fetch_response(
+                    system_instructions,
+                    input,
+                    model_settings,
+                    tools,
+                    output_schema,
+                    handoffs,
+                    span_generation,
+                    tracing,
+                    stream=False,
+                )
+            except KeyboardInterrupt:
+                # Handle KeyboardInterrupt during API call
+                # Make sure to clean up anything needed for proper state before allowing interrupt to propagate
+                
+                # If this call generated any tool calls, they were stored in _Converter.recent_tool_calls but 
+                # we couldn't add them to message_history since we didn't get the response.
+                # We should generate synthetic responses to avoid broken message sequences.
+                
+                # Add synthetic tool output to prevent errors in next turn
+                if hasattr(_Converter, 'tool_outputs') and hasattr(_Converter, 'recent_tool_calls'):
+                    # Add a placeholder response for any tool call generated during this interaction
+                    # We don't know the actual tool calls, so we'll use what we know from timing
+                    # Any tool call that was generated within the last 5 seconds is likely from this interaction
+                    current_time = time.time()
+                    for call_id, call_info in list(_Converter.recent_tool_calls.items()):
+                        if 'start_time' in call_info and (current_time - call_info['start_time']) < 5.0:
+                            # Add a placeholder output for this tool call
+                            _Converter.tool_outputs[call_id] = "Operation interrupted by user (KeyboardInterrupt)"
+                
+                # Let the interrupt propagate up to end the current operation
+                stop_active_timer()
+                start_idle_timer()
+                raise
 
             if _debug.DONT_LOG_MODEL_DATA:
                 logger.debug("Received model response")

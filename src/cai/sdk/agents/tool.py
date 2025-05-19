@@ -272,11 +272,6 @@ def function_tool(
         async def _on_invoke_tool(ctx: RunContextWrapper[Any], input: str) -> Any:
             try:
                 return await _on_invoke_tool_impl(ctx, input)
-            except KeyboardInterrupt:
-                logger.info(
-                    f"Tool {schema.name} execution was interrupted by the user (Ctrl+C)."
-                )
-                return "execution was interrupted by the user (Ctrl+C)"
             except Exception as e:
                 if failure_error_function is None:
                     raise
