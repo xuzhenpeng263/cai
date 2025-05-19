@@ -263,7 +263,13 @@ def function_schema(
     #   field_name -> (type_annotation, default_value_or_Field(...))
     fields: dict[str, Any] = {}
 
-    for name, param in filtered_params:
+    filtered_params_no_ctf = [
+        (name, param)
+        for name, param in filtered_params
+        if name.lower() != 'ctf'
+    ]
+
+    for name, param in filtered_params_no_ctf:
         ann = type_hints.get(name, param.annotation)
         default = param.default
 
