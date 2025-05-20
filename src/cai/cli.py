@@ -157,6 +157,7 @@ from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
 from cai import is_pentestperf_available
 ctf_global = None
 messages_ctf = ""
+previous_ctf_name = os.getenv('CTF_NAME', None)
 if is_pentestperf_available() and os.getenv('CTF_NAME', None):
     ctf, messages_ctf = setup_ctf()
     ctf_global = ctf
@@ -253,6 +254,18 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
             agent.model.set_agent_name(get_agent_short_name(agent))
 
     while turn_count < max_turns:
+
+        # Check if the ctf name has changed and instanciate the ctf
+        global previous_ctf_name
+        global ctf_global
+        global messages_ctf   
+        if previous_ctf_name != os.getenv('CTF_NAME', None):
+            if is_pentestperf_available():
+                if ctf_global:
+                    ctf_global.stop_ctf()
+                ctf, messages_ctf = setup_ctf()
+                ctf_global = ctf
+                previous_ctf_name = os.getenv('CTF_NAME', None)
         try:
             # Start measuring user idle time
             start_idle_timer()
@@ -291,7 +304,9 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                             agent.model.set_agent_name(get_agent_short_name(agent))
                 except Exception as e:
                     console.print(f"[red]Error switching agent: {str(e)}[/red]")
+           
 
+        
             if not force_until_flag:
                 # Get user input with command completion and history
                 user_input = get_user_input(
