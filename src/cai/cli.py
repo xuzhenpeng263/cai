@@ -136,8 +136,9 @@ from cai.util import (
     start_active_timer, 
     stop_active_timer,
     setup_ctf,
-    check_flag
-
+    check_flag,
+    build_docker_container,
+    remove_container
 )
 
 # CAI REPL imports
@@ -161,6 +162,10 @@ previous_ctf_name = os.getenv('CTF_NAME', None)
 if is_pentestperf_available() and os.getenv('CTF_NAME', None):
     ctf, messages_ctf = setup_ctf()
     ctf_global = ctf
+    if os.getenv('CTF_INSIDE', 'True').lower() == 'false':
+        # instanciate dev container
+        container_id = build_docker_container("./.devcontainer")
+        os.environ['CAI_ACTIVE_CONTAINER'] = container_id
 
 # Load environment variables from .env file
 load_dotenv()
@@ -266,6 +271,10 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                 ctf, messages_ctf = setup_ctf()
                 ctf_global = ctf
                 previous_ctf_name = os.getenv('CTF_NAME', None)
+                if os.getenv('CTF_INSIDE', 'True') == 'False':
+                    # instanciate dev container
+                    container_id = build_docker_container("./.devcontainer")
+                    os.environ['CAI_ACTIVE_CONTAINER'] = container_id
         try:
             # Start measuring user idle time
             start_idle_timer()
@@ -422,6 +431,8 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
 
                 if (is_pentestperf_available() and os.getenv('CTF_NAME', None)):
                     ctf.stop_ctf()
+                    if os.getenv('CTF_INSIDE', 'True').lower() == 'false':
+                        remove_container(os.environ['CAI_ACTIVE_CONTAINER'])
                     return False
 
 
