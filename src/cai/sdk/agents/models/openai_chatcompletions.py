@@ -373,6 +373,7 @@ class OpenAIChatCompletionsModel(Model):
                     # Add a placeholder response for any tool call generated during this interaction
                     # We don't know the actual tool calls, so we'll use what we know from timing
                     # Any tool call that was generated within the last 5 seconds is likely from this interaction
+                    import time
                     current_time = time.time()
                     for call_id, call_info in list(_Converter.recent_tool_calls.items()):
                         if 'start_time' in call_info and (current_time - call_info['start_time']) < 5.0:

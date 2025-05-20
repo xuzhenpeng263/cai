@@ -2443,6 +2443,42 @@ def _create_tool_panel_content(tool_name, args, output, execution_info=None, tok
             # Fallback if syntax highlighting fails, just add raw output
             group_content.extend([Text("\n"), Text(output)])
     
+    # Fallback for other tools to display their output if not handled above
+    elif output and output.strip(): # Check if output is not None and not just whitespace
+        output_lang_name = "text"
+        try:
+            # Attempt to parse as JSON to infer language
+            json.loads(output)
+            output_lang_name = "json"
+        except json.JSONDecodeError:
+            # Basic check for XML-like content if not JSON
+            if output.strip().startswith("<") and output.strip().endswith(">"):
+                output_lang_name = "xml"
+            # Add more detections for other types (e.g., YAML) if needed
+        
+        # Use get_language_from_code_block for consistent language mapping
+        syntax_lang = get_language_from_code_block(output_lang_name)
+        
+        output_syntax = Syntax(
+            output,
+            syntax_lang,
+            theme="monokai",
+            background_color="#272822", # Consistent theme
+            word_wrap=True,
+            line_numbers=True, # Usually helpful for structured output
+            indent_guides=True
+        )
+        
+        output_display_panel = Panel(
+            output_syntax,
+            title="Tool Output", # Generic title
+            border_style="green", # Consistent
+            title_align="left",
+            box=ROUNDED,
+            padding=(0, 1)
+        )
+        group_content.extend([Text("\n"), output_display_panel])
+
     # Add token info if available
     if token_content:
         group_content.extend([Text("\n"), token_content])
