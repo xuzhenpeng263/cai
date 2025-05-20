@@ -158,7 +158,7 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
         # Obtener el coste de la interacción
         interaction_cost = 0.0
         if hasattr(msg, "cost"):
-            interaction_cost = float(msg.cost)
+            interaction_cost = float(msg.cost) if msg.cost is not None else 0.0
 
         # Usar el total_cost proporcionado o actualizar el interno
         if total_cost is not None:

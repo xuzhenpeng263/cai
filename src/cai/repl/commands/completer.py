@@ -120,6 +120,9 @@ class FuzzyCommandCompleter(Completer):
 
             # Standard models always available
             standard_models = [
+                # Alias models
+                "alias0",
+
                 # Claude 3.7 models
                 "claude-3-7-sonnet-20250219",
 

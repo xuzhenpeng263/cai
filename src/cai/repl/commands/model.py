@@ -67,11 +67,19 @@ class ModelCommand(Command):
         # Define model categories and their models for easy reference
         # pylint: disable=invalid-name
         MODEL_CATEGORIES = {
+            "Alias": [
+                {
+                    "name": "alias0",
+                    "description": (
+                        "Best model for Cybersecurity AI tasks"
+                    )
+                }
+            ],
             "Claude 3.7": [
                 {
                     "name": "claude-3-7-sonnet-20250219",
                     "description": (
-                        "Best model for complex reasoning and creative tasks"
+                        "Excellent model for complex reasoning and creative tasks"
                     )
                 }
             ],

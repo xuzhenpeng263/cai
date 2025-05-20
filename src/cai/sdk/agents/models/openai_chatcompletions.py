@@ -577,6 +577,10 @@ class OpenAIChatCompletionsModel(Model):
                 response.usage.input_tokens = response.usage.prompt_tokens
             if hasattr(response.usage, 'completion_tokens') and not hasattr(response.usage, 'output_tokens'):
                 response.usage.output_tokens = response.usage.completion_tokens
+                
+            # Ensure cost is properly initialized
+            if not hasattr(response, 'cost'):
+                response.cost = None
 
             return ModelResponse(
                 output=items,
