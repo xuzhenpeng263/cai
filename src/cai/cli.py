@@ -243,7 +243,28 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
         if hasattr(agent.model, 'set_agent_name'):
             agent.model.set_agent_name(get_agent_short_name(agent))
 
-    while turn_count < max_turns:
+    prev_max_turns = max_turns
+    turn_limit_reached = False
+    
+    while True:  
+        # Check if CAI_MAX_TURNS has been updated via /config
+        current_max_turns = os.getenv('CAI_MAX_TURNS', 'inf')
+        if current_max_turns != str(prev_max_turns):
+            max_turns = float(current_max_turns)
+            prev_max_turns = max_turns
+            
+            if turn_limit_reached and turn_count < max_turns:
+                turn_limit_reached = False
+                console.print("[green]Turn limit increased. You can now continue using CAI.[/green]")
+            
+        # Check if max turns is reached
+        if turn_count >= max_turns and max_turns != float('inf'):
+            if not turn_limit_reached:
+                turn_limit_reached = True
+                console.print(f"[bold red]Error: Maximum turn limit ({int(max_turns)}) reached.[/bold red]")
+                console.print("[yellow]You must increase the limit using the /config command: /config CAI_MAX_TURNS=<new_value>[/yellow]")
+                console.print("[yellow]Only CLI commands (starting with '/') will be processed until the limit is increased.[/yellow]")
+            
         try:
             # Start measuring user idle time
             start_idle_timer()
@@ -459,6 +480,15 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
             break
 
         try:
+            # Check if turn limit is reached and allow only CLI commands
+            if turn_limit_reached and not user_input.startswith('/') and not user_input.startswith('$'):
+                console.print("[bold red]Error: Turn limit reached. Only CLI commands are allowed.[/bold red]")
+                console.print("[yellow]Please use /config to increase CAI_MAX_TURNS limit.[/yellow]")
+                # Skip processing this input but continue the main loop
+                stop_active_timer()
+                start_idle_timer()
+                continue
+                
             # Check if we have parallel configurations to run
             if PARALLEL_CONFIGS and not user_input.startswith('/') and not user_input.startswith('$'):
                 # Use parallel configurations instead of normal processing
