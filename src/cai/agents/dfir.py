@@ -31,14 +31,13 @@ from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error
     execute_code
 )
 
-
 from cai.tools.reconnaissance.shodan import shodan_search
 from cai.tools.web.google_search import google_search
 from cai.tools.misc.reasoning import think  # pylint: disable=import-error
 
 # Prompts
 dfir_agent_system_prompt = load_prompt_template("prompts/system_dfir_agent.md")
-# Define functions list based on available API keys
+# Define tool list based on available API keys
 tools = [
     generic_linux_command,
     run_ssh_command_with_credentials,
