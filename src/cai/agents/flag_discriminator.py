@@ -2,10 +2,12 @@
 CTF Flag Discriminator Agent with test
 """
 import os
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, handoff
 from openai import AsyncOpenAI
+from cai.agents.one_tool import one_tool_agent
 
 model = os.getenv('CAI_MODEL', "qwen2.5:14b")
+
 flag_discriminator = Agent(
     name="Flag discriminator",
     description="Agent focused on extracting the flag from the output",
@@ -16,9 +18,16 @@ flag_discriminator = Agent(
                 4. If you do not find a flag, call `ctf_agent` to continue investigating.
                 """,
     model=OpenAIChatCompletionsModel(
-        model="gpt-4o" if os.getenv('CAI_MODEL') == "o3-mini" else model,
+        model="qwen2.5:14b" if os.getenv('CAI_MODEL') == "o3-mini" else model,
         openai_client=AsyncOpenAI(),
-    )
+    ),
+    handoffs=[
+        handoff(
+            agent=one_tool_agent,
+            tool_name_override="ctf_agent",
+            tool_description_override="Call the CTF agent to continue investigating if no flag is found"
+        )
+    ]
 )
 
 # Transfer Function
