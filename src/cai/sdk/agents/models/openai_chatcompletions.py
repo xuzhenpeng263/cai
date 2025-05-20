@@ -14,7 +14,7 @@ import asyncio
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
-from cai.util import get_ollama_api_base, fix_message_list, cli_print_agent_messages, create_agent_streaming_context, update_agent_streaming_content, finish_agent_streaming, calculate_model_cost
+from cai.util import get_ollama_api_base, fix_message_list, cli_print_agent_messages, create_agent_streaming_context, update_agent_streaming_content, finish_agent_streaming, calculate_model_cost, COST_TRACKER
 from cai.util import start_idle_timer, stop_idle_timer, start_active_timer, stop_active_timer
 from wasabi import color
 from cai.sdk.agents.run_to_jsonl import get_session_recorder
@@ -1288,8 +1288,12 @@ class OpenAIChatCompletionsModel(Model):
                 total_cost = calculate_model_cost(model_name, total_input, total_output)
                 
                 # Explicit conversion to float with fallback to ensure they're never None or 0
-                interaction_cost = max(float(interaction_cost if interaction_cost is not None else 0.0), 0.00001)
-                total_cost = max(float(total_cost if total_cost is not None else 0.0), 0.00001)
+                interaction_cost = float(interaction_cost if interaction_cost is not None else 0.0)
+                total_cost = float(total_cost if total_cost is not None else 0.0)
+                
+                # Update the global COST_TRACKER with the cost of this specific interaction
+                if hasattr(COST_TRACKER, "add_interaction_cost") and interaction_cost > 0.0:
+                    COST_TRACKER.add_interaction_cost(interaction_cost)
                 
                 # Store the total cost for future recording
                 self.total_cost = total_cost

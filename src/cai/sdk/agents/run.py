@@ -58,6 +58,15 @@ if max_turns_env is not None:
 else:
     DEFAULT_MAX_TURNS = float("inf")
 
+price_limit_env = os.getenv("CAI_PRICE_LIMIT")
+if price_limit_env is not None:
+    try:
+        DEFAULT_PRICE_LIMIT = float(price_limit_env)
+    except ValueError:
+        DEFAULT_PRICE_LIMIT = float("inf")
+else:
+    DEFAULT_PRICE_LIMIT = float("inf")
+
 
 @dataclass
 class RunConfig:

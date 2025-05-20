@@ -231,16 +231,27 @@ class CostTracker:
     # Track the last calculation to debug inconsistencies
     last_interaction_cost: float = 0.0
     last_total_cost: float = 0.0
-    
-    def reset_interaction_stats(self):
-        """Reset stats for a new interaction"""
-        self.interaction_input_tokens = 0
-        self.interaction_output_tokens = 0
-        self.interaction_reasoning_tokens = 0
-        self.interaction_cost = 0.0
+
+    def check_price_limit(self, new_cost: float) -> None:
+        """Check if adding the new cost would exceed the price limit."""
+        from cai.sdk.agents.exceptions import PriceLimitExceeded
+        import os
+        price_limit_env = os.getenv("CAI_PRICE_LIMIT")
+        try:
+            price_limit = float(price_limit_env) if price_limit_env is not None else float("inf")
+        except ValueError:
+            price_limit = float("inf")
+
+        if price_limit != float("inf"):
+            total_cost = self.session_total_cost + new_cost
+            if total_cost > price_limit:
+                raise PriceLimitExceeded(total_cost, price_limit)
     
     def update_session_cost(self, new_cost: float) -> None:
         """Add cost to session total and log the update"""
+        # Check price limit before updating
+        self.check_price_limit(new_cost)
+        
         old_total = self.session_total_cost
         self.session_total_cost += new_cost
         
@@ -250,7 +261,6 @@ class CostTracker:
         if os.environ.get("CAI_COST_DISPLAYED", "").lower() == "true":
             return
         print(f"\nTotal CAI Session Cost: ${self.session_total_cost:.6f}")
-    
     def get_model_pricing(self, model_name: str) -> tuple:
         """Get and cache pricing information for a model"""
         # Use the centralized function to standardize model names
@@ -259,8 +269,24 @@ class CostTracker:
         # Check cache first
         if model_name in self.model_pricing_cache:
             return self.model_pricing_cache[model_name]
+
+        # Try to load pricing from local pricing.json first
+        try:
+            pricing_path = pathlib.Path("pricing.json")
+            if pricing_path.exists():
+                with open(pricing_path, "r", encoding="utf-8") as f:
+                    local_pricing = json.load(f)
+                    pricing_info = local_pricing.get("alias0", {})
+                    input_cost = pricing_info.get("input_cost_per_token", 0)
+                    output_cost = pricing_info.get("output_cost_per_token", 0)
+                    
+                    # Cache and return local pricing
+                    self.model_pricing_cache[model_name] = (input_cost, output_cost)
+                    return input_cost, output_cost
+        except Exception as e:
+            print(f"  WARNING: Error loading local pricing.json: {str(e)}")
         
-        # Fetch from LiteLLM API
+        # Fallback to LiteLLM API if local pricing not found
         LITELLM_URL = (
             "https://raw.githubusercontent.com/BerriAI/litellm/main/"
             "model_prices_and_context_window.json"
@@ -283,7 +309,7 @@ class CostTracker:
         except Exception as e:
             print(f"  WARNING: Error fetching model pricing: {str(e)}")
         
-        # Default values if pricing not found
+        # Default values if no pricing found
         default_pricing = (0, 0)
         self.model_pricing_cache[model_name] = default_pricing
         return default_pricing
