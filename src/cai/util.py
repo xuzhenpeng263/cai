@@ -257,6 +257,11 @@ class CostTracker:
         Add an interaction cost to the session total and check price limit.
         This is a convenience method that combines check_price_limit and update_session_cost.
         """
+        # Skip updating costs if the cost is zero (common with local models)
+        if new_cost <= 0:
+            self.last_interaction_cost = 0.0
+            return
+            
         # Check price limit first
         self.check_price_limit(new_cost)
         
@@ -265,6 +270,31 @@ class CostTracker:
         
         # Update the last interaction cost for tracking
         self.last_interaction_cost = new_cost
+        
+    def reset_cost_for_local_model(self, model_name: str) -> bool:
+        """
+        Reset interaction cost tracking when switching to a local model.
+        Returns True if the model was identified as local and cost was reset.
+        """
+        # Check if this is a local/free model
+        model_str = model_name.lower()
+        is_local_model = (
+            "ollama" in model_str or
+            "qwen" in model_str or
+            "llama" in model_str or
+            "mistral" in model_str or
+            ":" in model_str or
+            (os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() != 'false')
+        )
+        
+        if is_local_model:
+            # Reset the current interaction costs but keep total session costs
+            self.interaction_cost = 0.0
+            self.last_interaction_cost = 0.0
+            # Don't reset session_total_cost as that includes previous paid models
+            return True
+            
+        return False
         
     def log_final_cost(self) -> None:
         """Display final cost information at exit"""
@@ -277,7 +307,25 @@ class CostTracker:
         # Use the centralized function to standardize model names
         model_name = get_model_name(model_name)
         
-        # Check cache first
+        # Check if using Ollama or local model
+        model_str = model_name.lower()
+        is_local_model = (
+            "ollama" in model_str or
+            "qwen" in model_str or
+            "llama" in model_str or
+            "mistral" in model_str or
+            ":" in model_str or  # Ollama uses formats like qwen2.5:7b
+            (os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() != 'false')
+        )
+        
+        # For local models, always return zero cost
+        if is_local_model:
+            # Set and cache zero cost for local models
+            free_pricing = (0.0, 0.0)
+            self.model_pricing_cache[model_name] = free_pricing
+            return free_pricing
+        
+        # Check cache for non-local models
         if model_name in self.model_pricing_cache:
             return self.model_pricing_cache[model_name]
 
@@ -330,6 +378,21 @@ class CostTracker:
         """Calculate and cache cost for a given model and token counts"""
         # Standardize model name using the central function
         model_name = get_model_name(model)
+        
+        # Check if this is a local model (always free) first
+        model_str = model_name.lower()
+        is_local_model = (
+            "ollama" in model_str or
+            "qwen" in model_str or
+            "llama" in model_str or
+            "mistral" in model_str or
+            ":" in model_str or
+            (os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() != 'false')
+        )
+        
+        # For local models, always return zero cost
+        if is_local_model:
+            return 0.0
         
         # Generate a cache key
         cache_key = f"{model_name}_{input_tokens}_{output_tokens}"
