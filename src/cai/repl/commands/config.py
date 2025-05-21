@@ -134,6 +134,11 @@ ENV_VARS = {
         "default": None 
     },
     24: {
+        "name": "CAI_WORKSPACE_DIR",
+        "description": "Path to the current workspace directory",
+        "default": None 
+    },
+    25: {
         "name": "CAI_STREAM",
         "description": "Boolean to enable real-time, chunked responses instead of full messages.",
         "default": "True"
