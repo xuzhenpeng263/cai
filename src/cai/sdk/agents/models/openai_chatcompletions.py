@@ -343,22 +343,47 @@ class OpenAIChatCompletionsModel(Model):
                 from cai.util import fix_message_list
                 converted_messages = fix_message_list(converted_messages)
             except Exception as e:
-                logger.warning(f"Failed to fix message list: {e}")
+                pass
                 
             # Get token count estimate before API call for consistent counting
             estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
             
-            response = await self._fetch_response(
-                system_instructions,
-                input,
-                model_settings,
-                tools,
-                output_schema,
-                handoffs,
-                span_generation,
-                tracing,
-                stream=False,
-            )
+            try:
+                response = await self._fetch_response(
+                    system_instructions,
+                    input,
+                    model_settings,
+                    tools,
+                    output_schema,
+                    handoffs,
+                    span_generation,
+                    tracing,
+                    stream=False,
+                )
+            except KeyboardInterrupt:
+                # Handle KeyboardInterrupt during API call
+                # Make sure to clean up anything needed for proper state before allowing interrupt to propagate
+                
+                # If this call generated any tool calls, they were stored in _Converter.recent_tool_calls but 
+                # we couldn't add them to message_history since we didn't get the response.
+                # We should generate synthetic responses to avoid broken message sequences.
+                
+                # Add synthetic tool output to prevent errors in next turn
+                if hasattr(_Converter, 'tool_outputs') and hasattr(_Converter, 'recent_tool_calls'):
+                    # Add a placeholder response for any tool call generated during this interaction
+                    # We don't know the actual tool calls, so we'll use what we know from timing
+                    # Any tool call that was generated within the last 5 seconds is likely from this interaction
+                    import time
+                    current_time = time.time()
+                    for call_id, call_info in list(_Converter.recent_tool_calls.items()):
+                        if 'start_time' in call_info and (current_time - call_info['start_time']) < 5.0:
+                            # Add a placeholder output for this tool call
+                            _Converter.tool_outputs[call_id] = "Operation interrupted by user (KeyboardInterrupt)"
+                
+                # Let the interrupt propagate up to end the current operation
+                stop_active_timer()
+                start_idle_timer()
+                raise
 
             if _debug.DONT_LOG_MODEL_DATA:
                 logger.debug("Received model response")
@@ -553,6 +578,10 @@ class OpenAIChatCompletionsModel(Model):
                 response.usage.input_tokens = response.usage.prompt_tokens
             if hasattr(response.usage, 'completion_tokens') and not hasattr(response.usage, 'output_tokens'):
                 response.usage.output_tokens = response.usage.completion_tokens
+                
+            # Ensure cost is properly initialized
+            if not hasattr(response, 'cost'):
+                response.cost = None
 
             return ModelResponse(
                 output=items,
@@ -1067,7 +1096,7 @@ class OpenAIChatCompletionsModel(Model):
                                     arguments=arguments_str,
                                     name=parsed['name'],
                                     type="function_call",
-                                    call_id=tool_call_id,
+                                    call_id=tool_call_id[:40],
                                 )
                                 
                                 # Display the tool call in CLI
@@ -1089,7 +1118,7 @@ class OpenAIChatCompletionsModel(Model):
                                                     'name': parsed['name'],
                                                     'arguments': arguments_str
                                                 }),
-                                                'id': tool_call_id,
+                                                'id': tool_call_id[:40],
                                                 'type': 'function'
                                             })
                                         ]
@@ -1171,7 +1200,7 @@ class OpenAIChatCompletionsModel(Model):
                     yield ResponseOutputItemAddedEvent(
                         item=ResponseFunctionToolCall(
                             id=FAKE_RESPONSES_ID,
-                            call_id=function_call.call_id,
+                            call_id=function_call.call_id[:40],
                             arguments=function_call.arguments,
                             name=function_call.name,
                             type="function_call",
@@ -1190,7 +1219,7 @@ class OpenAIChatCompletionsModel(Model):
                     yield ResponseOutputItemDoneEvent(
                         item=ResponseFunctionToolCall(
                             id=FAKE_RESPONSES_ID,
-                            call_id=function_call.call_id,
+                            call_id=function_call.call_id[:40],
                             arguments=function_call.arguments,
                             name=function_call.name,
                             type="function_call",
@@ -1375,6 +1404,7 @@ class OpenAIChatCompletionsModel(Model):
                     self.total_cost
                 )
                 
+                
                 # Stop active timer and start idle timer when streaming is complete
                 stop_active_timer()
                 start_idle_timer()
@@ -1462,7 +1492,7 @@ class OpenAIChatCompletionsModel(Model):
             if new_length != prev_length:
                 logger.debug(f"Message list was fixed: {prev_length} -> {new_length} messages")
         except Exception as e:
-            logger.warning(f"Failed to fix message list: {e}")
+            pass
 
         parallel_tool_calls = (
             True if model_settings.parallel_tool_calls and tools and len(tools) > 0 else NOT_GIVEN
@@ -1588,7 +1618,7 @@ class OpenAIChatCompletionsModel(Model):
                 return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
                 
         except litellm.exceptions.BadRequestError as e:
-            # print(color("BadRequestError encountered: " + str(e), fg="yellow"))
+            #print(color("BadRequestError encountered: " + str(e), fg="yellow"))
             if "LLM Provider NOT provided" in str(e):
                 model_str = str(self.model).lower()
                 provider = None
@@ -1701,7 +1731,7 @@ class OpenAIChatCompletionsModel(Model):
                             
                     kwargs["messages"] = fixed_messages
                 except Exception as fix_error:
-                    print(f"Failed to fix message sequence: {fix_error}")
+                    pass
                 
                 return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
 
@@ -1775,29 +1805,92 @@ class OpenAIChatCompletionsModel(Model):
         stream: bool,
         parallel_tool_calls: bool
     ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
-        """Handle standard LiteLLM API calls for OpenAI and compatible models."""
-        if stream:
-            # Standard LiteLLM handling for streaming
-            ret = litellm.completion(**kwargs)
-            stream_obj = await litellm.acompletion(**kwargs)
+        """
+        Handle standard LiteLLM API calls for OpenAI and compatible models.
+        If a ContextWindowExceededError occurs due to a tool_call id being
+        too long, truncate all tool_call ids in the messages to 40 characters
+        and retry once silently.
+        """
+        try:
+            if stream:
+                # Standard LiteLLM handling for streaming
+                ret = litellm.completion(**kwargs)
+                stream_obj = await litellm.acompletion(**kwargs)
 
-            response = Response(
-                id=FAKE_RESPONSES_ID,
-                created_at=time.time(),
-                model=self.model,
-                object="response",
-                output=[],
-                tool_choice="auto" if tool_choice is None or tool_choice == NOT_GIVEN else cast(Literal["auto", "required", "none"], tool_choice),
-                top_p=model_settings.top_p,
-                temperature=model_settings.temperature,
-                tools=[],
-                parallel_tool_calls=parallel_tool_calls or False,
-            )
-            return response, stream_obj
-        else:
-            # Standard OpenAI handling for non-streaming
-            ret = litellm.completion(**kwargs)
-            return ret
+                response = Response(
+                    id=FAKE_RESPONSES_ID,
+                    created_at=time.time(),
+                    model=self.model,
+                    object="response",
+                    output=[],
+                    tool_choice="auto" if tool_choice is None or tool_choice == NOT_GIVEN
+                        else cast(Literal["auto", "required", "none"], tool_choice),
+                    top_p=model_settings.top_p,
+                    temperature=model_settings.temperature,
+                    tools=[],
+                    parallel_tool_calls=parallel_tool_calls or False,
+                )
+                return response, stream_obj
+            else:
+                # Standard OpenAI handling for non-streaming
+                ret = litellm.completion(**kwargs)
+                return ret
+        except Exception as e:
+            error_msg = str(e)
+            # Handle both OpenAI and Anthropic error messages for tool_call_id
+            if (
+                "string too long" in error_msg
+                or "Invalid 'messages" in error_msg
+                and "tool_call_id" in error_msg
+                and "maximum length" in error_msg
+            ):
+                # Truncate all tool_call ids in all messages to 40 characters
+                messages = kwargs.get("messages", [])
+                for msg in messages:
+                    # Truncate tool_call_id in the message itself if present
+                    if (
+                        "tool_call_id" in msg
+                        and isinstance(msg["tool_call_id"], str)
+                        and len(msg["tool_call_id"]) > 40
+                    ):
+                        msg["tool_call_id"] = msg["tool_call_id"][:40]
+                    # Truncate tool_call ids in tool_calls if present
+                    if "tool_calls" in msg and isinstance(msg["tool_calls"], list):
+                        for tool_call in msg["tool_calls"]:
+                            if (
+                                isinstance(tool_call, dict)
+                                and "id" in tool_call
+                                and isinstance(tool_call["id"], str)
+                                and len(tool_call["id"]) > 40
+                            ):
+                                tool_call["id"] = tool_call["id"][:40]
+                kwargs["messages"] = messages
+                # Retry once, silently
+                if stream:
+                    ret = litellm.completion(**kwargs)
+                    stream_obj = await litellm.acompletion(**kwargs)
+                    response = Response(
+                        id=FAKE_RESPONSES_ID,
+                        created_at=time.time(),
+                        model=self.model,
+                        object="response",
+                        output=[],
+                        tool_choice="auto"
+                        if tool_choice is None or tool_choice == NOT_GIVEN
+                        else cast(
+                            Literal["auto", "required", "none"], tool_choice
+                        ),
+                        top_p=model_settings.top_p,
+                        temperature=model_settings.temperature,
+                        tools=[],
+                        parallel_tool_calls=parallel_tool_calls or False,
+                    )
+                    return response, stream_obj
+                else:
+                    ret = litellm.completion(**kwargs)
+                    return ret
+            else:
+                raise
             
     async def _fetch_response_litellm_ollama(
         self,
@@ -1808,40 +1901,60 @@ class OpenAIChatCompletionsModel(Model):
         parallel_tool_calls: bool,
         provider="ollama"
     ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
+        """
+        Fetches a response from an Ollama or Qwen model using LiteLLM, ensuring
+        that the 'format' parameter is not set to a JSON string, which can cause
+        issues with the Ollama API.
+
+        Args:
+            kwargs (dict): Parameters for the completion request.
+            model_settings (ModelSettings): Model configuration.
+            tool_choice (ChatCompletionToolChoiceOptionParam | NotGiven): Tool choice.
+            stream (bool): Whether to stream the response.
+            parallel_tool_calls (bool): Whether to allow parallel tool calls.
+            provider (str): Provider name, defaults to "ollama".
+
+        Returns:
+            ChatCompletion or tuple[Response, AsyncStream[ChatCompletionChunk]]:
+                The completion response or a tuple for streaming.
+        """
         # Extract only supported parameters for Ollama
         ollama_supported_params = {
             "model": kwargs.get("model", ""),
             "messages": kwargs.get("messages", []),
             "stream": kwargs.get("stream", False)
         }
-        
+
         # Add optional parameters if they exist and are not NOT_GIVEN
         for param in ["temperature", "top_p", "max_tokens"]:
             if param in kwargs and kwargs[param] is not NOT_GIVEN:
                 ollama_supported_params[param] = kwargs[param]
-        
+
         # Add extra headers if available
         if "extra_headers" in kwargs:
             ollama_supported_params["extra_headers"] = kwargs["extra_headers"]
-            
-        # Add tools and tool_choice for compatibility with Qwen
-        if "tools" in kwargs and kwargs.get("tools") and kwargs.get("tools") is not NOT_GIVEN:
-            ollama_supported_params["tools"] = kwargs.get("tools")
-            
-        if "tool_choice" in kwargs and kwargs.get("tool_choice") is not NOT_GIVEN:
-            ollama_supported_params["tool_choice"] = kwargs.get("tool_choice")
 
-        # Remove None values
-        ollama_kwargs = {k: v for k, v in ollama_supported_params.items() if v is not None}
-        
+        # Add tools for compatibility with Qwen
+        if (
+            "tools" in kwargs
+            and kwargs.get("tools")
+            and kwargs.get("tools") is not NOT_GIVEN
+        ):
+            ollama_supported_params["tools"] = kwargs.get("tools")
+
+        # Remove None values and filter out 'response_format'
+        ollama_kwargs = {
+            k: v for k, v in ollama_supported_params.items()
+            if v is not None and k != "response_format"
+        }
+
         # Check if this is a Qwen model
         model_str = str(self.model).lower()
         is_qwen = "qwen" in model_str
-                
         api_base = get_ollama_api_base()
         if "ollama" in provider:
             api_base = api_base.rstrip('/v1')
-        # Create response object for streaming
+
         if stream:
             response = Response(
                 id=FAKE_RESPONSES_ID,
@@ -1849,8 +1962,9 @@ class OpenAIChatCompletionsModel(Model):
                 model=self.model,
                 object="response",
                 output=[],
-                tool_choice="auto" if tool_choice is None or tool_choice == NOT_GIVEN else 
-                    cast(Literal["auto", "required", "none"], tool_choice),
+                tool_choice="auto"
+                if tool_choice is None or tool_choice == NOT_GIVEN
+                else cast(Literal["auto", "required", "none"], tool_choice),
                 top_p=model_settings.top_p,
                 temperature=model_settings.temperature,
                 tools=[],
@@ -1864,8 +1978,6 @@ class OpenAIChatCompletionsModel(Model):
             )
             return response, stream_obj
         else:
-
-        
             # Get completion response
             return litellm.completion(
                 **ollama_kwargs,
@@ -2035,7 +2147,7 @@ class _Converter:
                 items.append(
                     ResponseFunctionToolCall(
                         id=FAKE_RESPONSES_ID,
-                        call_id=tool_call.id,
+                        call_id=tool_call.id[:40],
                         arguments=tool_call.function.arguments,
                         name=tool_call.function.name,
                         type="function_call",
@@ -2254,7 +2366,7 @@ class _Converter:
 
                     tool_calls_param.append(
                         ChatCompletionMessageToolCallParam(
-                            id=tc.get("id", ""),
+                            id=tc.get("id", "")[:40],
                             type=tc.get("type", "function"),
                             function={
                                 "name": function_details.get("name", "unknown_function"),
@@ -2366,7 +2478,7 @@ class _Converter:
                 asst = ensure_assistant_message()
                 tool_calls = list(asst.get("tool_calls", []))
                 new_tool_call = ChatCompletionMessageToolCallParam(
-                    id=file_search["id"],
+                    id=file_search["id"][:40],
                     type="function",
                     function={
                         "name": "file_search_call",
@@ -2409,7 +2521,7 @@ class _Converter:
                     arguments = json.dumps(arguments)
 
                 new_tool_call = ChatCompletionMessageToolCallParam(
-                    id=func_call["call_id"],
+                    id=func_call["call_id"][:40],
                     type="function",
                     function={
                         "name": func_call["name"],

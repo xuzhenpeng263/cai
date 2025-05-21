@@ -22,7 +22,7 @@ class HistoryCommand(Command):
         super().__init__(
             name="/history",
             description="Display the conversation history",
-            aliases=["/h"]
+            aliases=["/his"]
         )
         
     def handle(self, args: Optional[List[str]] = None, 

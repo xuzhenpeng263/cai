@@ -83,3 +83,21 @@ def read_key_findings() -> str:
         return "state.txt file not found. No findings have been recorded."
     except OSError as e:
         return f"Error reading state.txt: {str(e)}"
+
+
+
+@function_tool
+def think(thought: str) -> str:  # pylint: disable=unused-argument
+    """
+    Use the tool to think about something.
+    
+    It will not obtain new information or change the database, but just append
+    the thought to the log. Use it when complex reasoning or some cache memory
+    is needed.
+    
+    Args:
+        thought: A thought to think about.
+    Returns:
+        str: The thought that was processed
+    """
+    return f"{thought}"
