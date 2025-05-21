@@ -705,6 +705,15 @@ class OpenAIChatCompletionsModel(Model):
                 # Get token count estimate before API call for consistent counting
                 estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
                 
+                # Pre-check price limit using estimated input tokens and a conservative estimate for output
+                # This prevents starting a stream that would immediately exceed the price limit
+                if hasattr(COST_TRACKER, "check_price_limit"):
+                    # Use a conservative estimate for output tokens (roughly equal to input)
+                    estimated_cost = calculate_model_cost(str(self.model), 
+                                                          estimated_input_tokens, 
+                                                          estimated_input_tokens)  # Conservative estimate
+                    COST_TRACKER.check_price_limit(estimated_cost)
+                
                 response, stream = await self._fetch_response(
                     system_instructions,
                     input,
@@ -807,18 +816,92 @@ class OpenAIChatCompletionsModel(Model):
                             
                             # Update streaming display if enabled - always do this for text content
                             if streaming_context:
-                                # Create token stats to pass with each update
+                                # Check if this is a local model and should have zero cost
+                                model_str = str(self.model).lower()
+                                is_local_model = (
+                                    "ollama" in model_str or
+                                    "qwen" in model_str or
+                                    "llama" in model_str or
+                                    "mistral" in model_str or
+                                    ":" in model_str or
+                                    self.is_ollama
+                                )
+                                
+                                # Calculate cost for current interaction (will be 0 for local models)
+                                current_cost = calculate_model_cost(str(self.model), estimated_input_tokens, estimated_output_tokens)
+                                
+                                # Check price limit only for non-local models
+                                if not is_local_model and hasattr(COST_TRACKER, "check_price_limit") and estimated_output_tokens % 50 == 0:
+                                    COST_TRACKER.check_price_limit(current_cost)
+                                
+                                # Update session total cost for real-time display
+                                # This is a temporary estimate during streaming that will be properly updated at the end
+                                estimated_session_total = getattr(COST_TRACKER, 'session_total_cost', 0.0)
+                                
+                                # For local models, don't add to the total cost
+                                display_total_cost = estimated_session_total
+                                if not is_local_model:
+                                    display_total_cost += current_cost
+                                
+                                # Create token stats with both current interaction cost and updated total cost
                                 token_stats = {
                                     'input_tokens': estimated_input_tokens,
                                     'output_tokens': estimated_output_tokens,
-                                    'cost': calculate_model_cost(str(self.model), estimated_input_tokens, estimated_output_tokens)
+                                    'cost': current_cost,
+                                    'total_cost': display_total_cost
                                 }
+                                    
                                 update_agent_streaming_content(streaming_context, content, token_stats)
                             
                             # More accurate token counting for text content
                             output_text += content
                             token_count, _ = count_tokens_with_tiktoken(output_text)
                             estimated_output_tokens = token_count
+                            
+                            # Periodically check price limit during streaming 
+                            # This allows early termination if price limit is reached mid-stream
+                            if estimated_output_tokens > 0 and estimated_output_tokens % 50 == 0:  # Check every ~50 tokens
+                                # Check if this is a local model (Ollama, Qwen, etc.) that should have zero cost
+                                model_str = str(self.model).lower()
+                                is_local_model = (
+                                    "ollama" in model_str or
+                                    "qwen" in model_str or
+                                    "llama" in model_str or
+                                    "mistral" in model_str or
+                                    ":" in model_str or
+                                    self.is_ollama
+                                )
+                                
+                                # For local models, cost should always be zero
+                                if is_local_model:
+                                    current_estimated_cost = 0.0
+                                else:
+                                    current_estimated_cost = calculate_model_cost(
+                                        str(self.model), estimated_input_tokens, estimated_output_tokens)
+                                
+                                # Check price limit only for non-local models
+                                if not is_local_model and hasattr(COST_TRACKER, "check_price_limit"):
+                                    COST_TRACKER.check_price_limit(current_estimated_cost)
+                                    
+                                # Update the COST_TRACKER with the running cost for accurate display
+                                if hasattr(COST_TRACKER, "interaction_cost"):
+                                    COST_TRACKER.interaction_cost = current_estimated_cost
+                                
+                                # Also update streaming context if available for live display
+                                if streaming_context:
+                                    # For local models, don't add to the session total
+                                    if is_local_model:
+                                        session_total = getattr(COST_TRACKER, 'session_total_cost', 0.0)
+                                    else:
+                                        session_total = getattr(COST_TRACKER, 'session_total_cost', 0.0) + current_estimated_cost
+                                        
+                                    updated_token_stats = {
+                                        'input_tokens': estimated_input_tokens,
+                                        'output_tokens': estimated_output_tokens,
+                                        'cost': current_estimated_cost,
+                                        'total_cost': session_total
+                                    }
+                                    update_agent_streaming_content(streaming_context, "", updated_token_stats)
                             
                             if not state.text_content_index_and_output:
                                 # Initialize a content tracker for streaming text
@@ -1311,18 +1394,52 @@ class OpenAIChatCompletionsModel(Model):
                 total_input = getattr(self, 'total_input_tokens', 0)
                 total_output = getattr(self, 'total_output_tokens', 0)
                 
-                # Calculate costs using the same token counts - ensure model is a string
+                # Check if this is a local model and should have zero cost
+                model_str = str(self.model).lower()
+                is_local_model = (
+                    "ollama" in model_str or
+                    "qwen" in model_str or
+                    "llama" in model_str or
+                    "mistral" in model_str or
+                    ":" in model_str or
+                    self.is_ollama
+                )
+                
+                # Calculate costs - use zero for local models
                 model_name = str(self.model)
-                interaction_cost = calculate_model_cost(model_name, interaction_input, interaction_output)
-                total_cost = calculate_model_cost(model_name, total_input, total_output)
+                if is_local_model:
+                    # For local models, cost is always zero
+                    interaction_cost = 0.0
+                    total_cost = getattr(COST_TRACKER, 'session_total_cost', 0.0)  # Keep existing total
+                    
+                    # Ensure the cost tracking system knows this is a free model
+                    if hasattr(COST_TRACKER, "reset_cost_for_local_model"):
+                        COST_TRACKER.reset_cost_for_local_model(model_name)
+                else:
+                    # For paid models, calculate as normal
+                    interaction_cost = calculate_model_cost(model_name, interaction_input, interaction_output)
+                    total_cost = calculate_model_cost(model_name, total_input, total_output)
                 
                 # Explicit conversion to float with fallback to ensure they're never None or 0
                 interaction_cost = float(interaction_cost if interaction_cost is not None else 0.0)
                 total_cost = float(total_cost if total_cost is not None else 0.0)
                 
                 # Update the global COST_TRACKER with the cost of this specific interaction
-                if hasattr(COST_TRACKER, "add_interaction_cost") and interaction_cost > 0.0:
-                    COST_TRACKER.add_interaction_cost(interaction_cost)
+                # and check price limit for streaming mode (similar to non-streaming mode)
+                if not is_local_model and interaction_cost > 0.0:
+                    # Check price limit before adding the new cost
+                    if hasattr(COST_TRACKER, "check_price_limit"):
+                        COST_TRACKER.check_price_limit(interaction_cost)
+                    
+                    # Now add the cost to session total
+                    if hasattr(COST_TRACKER, "update_session_cost"):
+                        COST_TRACKER.update_session_cost(interaction_cost)
+                    elif hasattr(COST_TRACKER, "add_interaction_cost"):
+                        COST_TRACKER.add_interaction_cost(interaction_cost)
+                    
+                    # Ensure the total cost includes the session total for display
+                    if hasattr(COST_TRACKER, "session_total_cost"):
+                        total_cost = COST_TRACKER.session_total_cost
                 
                 # Store the total cost for future recording
                 self.total_cost = total_cost

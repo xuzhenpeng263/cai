@@ -252,6 +252,50 @@ class CostTracker:
         old_total = self.session_total_cost
         self.session_total_cost += new_cost
         
+    def add_interaction_cost(self, new_cost: float) -> None:
+        """
+        Add an interaction cost to the session total and check price limit.
+        This is a convenience method that combines check_price_limit and update_session_cost.
+        """
+        # Skip updating costs if the cost is zero (common with local models)
+        if new_cost <= 0:
+            self.last_interaction_cost = 0.0
+            return
+            
+        # Check price limit first
+        self.check_price_limit(new_cost)
+        
+        # Then update the session cost
+        self.session_total_cost += new_cost
+        
+        # Update the last interaction cost for tracking
+        self.last_interaction_cost = new_cost
+        
+    def reset_cost_for_local_model(self, model_name: str) -> bool:
+        """
+        Reset interaction cost tracking when switching to a local model.
+        Returns True if the model was identified as local and cost was reset.
+        """
+        # Check if this is a local/free model
+        model_str = model_name.lower()
+        is_local_model = (
+            "ollama" in model_str or
+            "qwen" in model_str or
+            "llama" in model_str or
+            "mistral" in model_str or
+            ":" in model_str or
+            (os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() != 'false')
+        )
+        
+        if is_local_model:
+            # Reset the current interaction costs but keep total session costs
+            self.interaction_cost = 0.0
+            self.last_interaction_cost = 0.0
+            # Don't reset session_total_cost as that includes previous paid models
+            return True
+            
+        return False
+        
     def log_final_cost(self) -> None:
         """Display final cost information at exit"""
         # Skip displaying cost if already shown in the session summary
@@ -263,7 +307,25 @@ class CostTracker:
         # Use the centralized function to standardize model names
         model_name = get_model_name(model_name)
         
-        # Check cache first
+        # Check if using Ollama or local model
+        model_str = model_name.lower()
+        is_local_model = (
+            "ollama" in model_str or
+            "qwen" in model_str or
+            "llama" in model_str or
+            "mistral" in model_str or
+            ":" in model_str or  # Ollama uses formats like qwen2.5:7b
+            (os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() != 'false')
+        )
+        
+        # For local models, always return zero cost
+        if is_local_model:
+            # Set and cache zero cost for local models
+            free_pricing = (0.0, 0.0)
+            self.model_pricing_cache[model_name] = free_pricing
+            return free_pricing
+        
+        # Check cache for non-local models
         if model_name in self.model_pricing_cache:
             return self.model_pricing_cache[model_name]
 
@@ -316,6 +378,21 @@ class CostTracker:
         """Calculate and cache cost for a given model and token counts"""
         # Standardize model name using the central function
         model_name = get_model_name(model)
+        
+        # Check if this is a local model (always free) first
+        model_str = model_name.lower()
+        is_local_model = (
+            "ollama" in model_str or
+            "qwen" in model_str or
+            "llama" in model_str or
+            "mistral" in model_str or
+            ":" in model_str or
+            (os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() != 'false')
+        )
+        
+        # For local models, always return zero cost
+        if is_local_model:
+            return 0.0
         
         # Generate a cache key
         cache_key = f"{model_name}_{input_tokens}_{output_tokens}"
@@ -1518,15 +1595,25 @@ def update_agent_streaming_content(context, text_delta, token_stats=None):
         return False
         
     try:
-        # Parse the text_delta to get just the content if needed
-        parsed_delta = parse_message_content(text_delta)
-        
-        # Skip empty updates to avoid showing an empty panel
-        if not parsed_delta or parsed_delta.strip() == "":
+        # Only parse and add text if we have actual content to add
+        # Skip when text_delta is empty and we're just updating token stats
+        if text_delta:
+            # Parse the text_delta to get just the content if needed
+            parsed_delta = parse_message_content(text_delta)
+            
+            # Skip empty updates to avoid showing an empty panel
+            if not parsed_delta or parsed_delta.strip() == "":
+                # Update token stats if provided
+                if token_stats:
+                    # Just update the footer, not the content
+                    pass
+            else:
+                # Add the parsed text to the content
+                context["content"].append(parsed_delta)
+        # If no text_delta but we have token_stats, just update stats
+        elif not token_stats:
+            # No text and no stats - nothing to update
             return True
-        
-        # Add the parsed text to the content
-        context["content"].append(parsed_delta)
         
         # Update the footer with token stats if provided
         if token_stats:
@@ -1543,13 +1630,24 @@ def update_agent_streaming_content(context, text_delta, token_stats=None):
             # Add token stats
             input_tokens = token_stats.get('input_tokens', 0)
             output_tokens = token_stats.get('output_tokens', 0)
-            total_cost = token_stats.get('cost', 0.0)
+            interaction_cost = token_stats.get('cost', 0.0)
+            
+            # Get session total cost - either from token_stats or directly from COST_TRACKER
+            session_total_cost = token_stats.get('total_cost', 0.0)
+            if session_total_cost == 0.0 and hasattr(COST_TRACKER, 'session_total_cost'):
+                session_total_cost = COST_TRACKER.session_total_cost
             
             if input_tokens > 0:
                 footer_stats.append(" | ", style="dim")
                 footer_stats.append(f"I:{input_tokens} O:{output_tokens}", style="green")
-                if total_cost > 0:
-                    footer_stats.append(f" (${total_cost:.4f})", style="bold cyan")
+                
+                # Show both interaction cost and total session cost
+                if interaction_cost > 0:
+                    footer_stats.append(f" (${interaction_cost:.4f})", style="bold cyan")
+                
+                # Add the total cost information on the same line
+                footer_stats.append(" | Session: ", style="dim")
+                footer_stats.append(f"${session_total_cost:.4f}", style="bold magenta")
                 
                 # Add context usage indicator
                 model_name = context.get("model", os.environ.get('CAI_MODEL', 'qwen2.5:14b'))
@@ -1679,6 +1777,11 @@ def finish_agent_streaming(context, final_stats=None):
                 compact_tokens.append(" | ", style="dim")
                 compact_tokens.append(f"I:{interaction_input_tokens} O:{interaction_output_tokens} ", style="green")
                 compact_tokens.append(f"(${interaction_cost:.4f}) ", style="bold cyan")
+                
+                # Include the total session cost
+                session_total_cost = COST_TRACKER.session_total_cost if hasattr(COST_TRACKER, 'session_total_cost') else total_cost
+                compact_tokens.append(" | Session: ", style="dim")
+                compact_tokens.append(f"${session_total_cost:.4f}", style="bold magenta")
                 
                 # Añadir un indicador de uso de contexto
                 context_pct = interaction_input_tokens / get_model_input_tokens(model_name) * 100
