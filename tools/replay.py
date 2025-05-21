@@ -154,7 +154,8 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
             time.sleep(replay_delay)
             
         role = message.get("role", "")
-        content = message.get("content", "").strip()
+        content = message.get("content")
+        content = str(content).strip() if content is not None else ""
         sender = message.get("sender", role)
         model = message.get("model", file_model)
         
