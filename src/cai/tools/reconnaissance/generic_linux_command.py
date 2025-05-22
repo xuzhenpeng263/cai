@@ -63,7 +63,10 @@ def generic_linux_command(command: str = "",
 
         if args.startswith("output "):
             session_id = args.split(" ")[1]
-            return get_session_output(session_id)
+            # Call get_session_output with stdout=True to display via cli_print_tool_output
+            # The function will handle the display and return a simple confirmation message
+            get_session_output(session_id, clear=False, stdout=True)
+            return f"Session {session_id} output displayed above"
 
         if args.startswith("kill "):
             session_id = args.split(" ")[1]
@@ -72,12 +75,23 @@ def generic_linux_command(command: str = "",
         return """Unknown session command.
         Available: list, output <id>, kill <id>"""
 
+    # BUGFIX: Detect if arguments are swapped due to framework issue
+    # Sometimes async_mode gets the session_id value and session_id gets boolean values
+    if (isinstance(async_mode, str) and len(async_mode) == 8 and 
+        session_id in [None, True, False]):
+        # Arguments are swapped - fix them
+        actual_session_id = async_mode
+        actual_async_mode = False  # Default to False when session_id is provided
+        session_id = actual_session_id
+        async_mode = actual_async_mode
+
     # Regular command execution
     full_command = f'{command} {args}'.strip()
 
     # Detect if this should be an async command
+    # Only auto-detect async commands when no session_id is provided
     if not async_mode and not session_id:
-        async_commands = ['ssh', 'python -m http.server']
+        async_commands = ['ssh', 'python -m http.server', "ftp"]
         async_mode = any(cmd in full_command for cmd in async_commands)
 
     # For SSH sessions or async commands, use different timeout
@@ -99,6 +113,8 @@ def generic_linux_command(command: str = "",
     if stream and not call_id:
         call_id = str(uuid.uuid4())[:8]
 
+
+    
     # Run the command with the appropriate parameters - pass the actual tool name!
     result = run_command(full_command, ctf=ctf,
                        async_mode=async_mode, session_id=session_id,

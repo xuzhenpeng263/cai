@@ -1875,6 +1875,7 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
             - interaction_cost, total_cost: optional cost values
         streaming: Flag indicating if this is part of a streaming output
     """
+    import time
     # If it's an empty output, don't print anything except for streaming sessions
     if not output and not call_id and not streaming:
         return
@@ -1891,9 +1892,17 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
     if not hasattr(cli_print_tool_output, '_seen_calls'):
         cli_print_tool_output._seen_calls = {}
         
-    # Track all displayed commands to prevent duplicates
+    # Track all displayed commands to prevent duplicates with cleanup
     if not hasattr(cli_print_tool_output, '_displayed_commands'):
         cli_print_tool_output._displayed_commands = set()
+        cli_print_tool_output._last_cleanup = time.time()
+    
+    # Periodic cleanup to prevent memory growth
+    current_time = time.time()
+    if current_time - cli_print_tool_output._last_cleanup > 300:  # Cleanup every 5 minutes
+        # Clear the displayed commands set periodically
+        cli_print_tool_output._displayed_commands.clear()
+        cli_print_tool_output._last_cleanup = current_time
     
     # --- Consistent Command Key Generation ---
     effective_command_args_str = ""
@@ -1915,6 +1924,13 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
             effective_command_args_str = args
     
     command_key = f"{tool_name}:{effective_command_args_str}"
+    
+    # If args contain a call_counter, append it to make the key unique
+    # This allows commands with counters to always display
+    if isinstance(args, dict) and "call_counter" in args:
+        call_counter = args["call_counter"]
+        command_key += f":counter_{call_counter}"
+    
     # --- End of Command Key Generation ---
         
     # Check for duplicate display conditions
@@ -2058,11 +2074,18 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         # Create a console for output
         console = Console(theme=theme)
         
+        # Clean args for display (remove internal counters and flags)
+        display_args = args
+        if isinstance(args, dict):
+            # Remove internal tracking fields that shouldn't be shown to the user
+            display_args = {k: v for k, v in args.items() 
+                          if k not in ["call_counter", "input_to_session"]}
+        
         # Get the panel content - with syntax highlighting
-        header, content = _create_tool_panel_content(tool_name, args, output, execution_info, token_info)
+        header, content = _create_tool_panel_content(tool_name, display_args, output, execution_info, token_info)
         
         # Format args for the title display
-        args_str = _format_tool_args(args, tool_name=tool_name)
+        args_str = _format_tool_args(display_args, tool_name=tool_name)
         
         # Determine border style based on status
         border_style = "blue"  # Default for non-streaming
