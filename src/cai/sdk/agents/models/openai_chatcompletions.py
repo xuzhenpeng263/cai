@@ -1867,7 +1867,7 @@ class OpenAIChatCompletionsModel(Model):
                         provider_kwargs["custom_llm_provider"] = "anthropic"
                         provider_kwargs.pop("store", None)  # Claude doesn't support store parameter
                         provider_kwargs.pop("parallel_tool_calls", None)  # Claude doesn't support parallel tool calls
-                                          elif provider == "gemini":
+                    elif provider == "gemini":
                         provider_kwargs["custom_llm_provider"] = "gemini"
                         provider_kwargs.pop("store", None)  # Gemini doesn't support store parameter
                         provider_kwargs.pop("parallel_tool_calls", None)  # Gemini doesn't support parallel tool calls
