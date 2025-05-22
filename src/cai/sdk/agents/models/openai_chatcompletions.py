@@ -1696,8 +1696,8 @@ class OpenAIChatCompletionsModel(Model):
                 f"Using OLLAMA: {self.is_ollama}\n"
             )
 
-        # Match the behavior of Responses where store is True when not given
-        store = model_settings.store if model_settings.store is not None else True
+        # Use NOT_GIVEN for store if not explicitly set to avoid compatibility issues
+        store = self._non_null_or_not_given(model_settings.store)
 
         # Check if we should use the agent's model instead of self.model
         # This prioritizes the model from Agent when available
@@ -1740,12 +1740,14 @@ class OpenAIChatCompletionsModel(Model):
             if provider == "deepseek":
                 litellm.drop_params = True
                 kwargs.pop("parallel_tool_calls", None)
+                kwargs.pop("store", None)  # DeepSeek doesn't support store parameter
                 # Remove tool_choice if no tools are specified
                 if not converted_tools:
                     kwargs.pop("tool_choice", None)
-            elif provider == "claude":
+            elif provider == "claude" or "claude" in model_str:
                 litellm.drop_params = True
                 kwargs.pop("store", None)
+                kwargs.pop("parallel_tool_calls", None)  # Claude doesn't support parallel tool calls
                 # Remove tool_choice if no tools are specified
                 if not converted_tools:
                     kwargs.pop("tool_choice", None)
@@ -1754,10 +1756,11 @@ class OpenAIChatCompletionsModel(Model):
                 # Add any specific gemini settings if needed
         else:
             # Handle models without provider prefix
-            if "claude" in model_str:
+            if "claude" in model_str or "anthropic" in model_str:
                 litellm.drop_params = True
-                # Remove store parameter which isn't supported by Anthropic
+                # Remove parameters that Anthropic doesn't support
                 kwargs.pop("store", None)
+                kwargs.pop("parallel_tool_calls", None)
                 # Remove tool_choice if no tools are specified
                 if not converted_tools:
                     kwargs.pop("tool_choice", None)
@@ -1768,6 +1771,7 @@ class OpenAIChatCompletionsModel(Model):
                 # These typically need the Ollama provider
                 litellm.drop_params = True
                 kwargs.pop("parallel_tool_calls", None)
+                kwargs.pop("store", None)  # Ollama doesn't support store parameter
                 # These models may not support certain parameters
                 if not converted_tools:
                     kwargs.pop("tool_choice", None)
@@ -1857,10 +1861,16 @@ class OpenAIChatCompletionsModel(Model):
                     provider_kwargs = kwargs.copy()
                     if provider == "deepseek":
                         provider_kwargs["custom_llm_provider"] = "deepseek"
+                        provider_kwargs.pop("store", None)  # DeepSeek doesn't support store parameter
+                        provider_kwargs.pop("parallel_tool_calls", None)  # DeepSeek doesn't support parallel tool calls
                     elif provider == "claude" or "claude" in model_str:
                         provider_kwargs["custom_llm_provider"] = "anthropic"
+                        provider_kwargs.pop("store", None)  # Claude doesn't support store parameter
+                        provider_kwargs.pop("parallel_tool_calls", None)  # Claude doesn't support parallel tool calls
                     elif provider == "gemini":
                         provider_kwargs["custom_llm_provider"] = "gemini"
+                        provider_kwargs.pop("store", None)  # Gemini doesn't support store parameter
+                        provider_kwargs.pop("parallel_tool_calls", None)  # Gemini doesn't support parallel tool calls
                     else:
                         # For unknown providers, try ollama as fallback
                         return await self._fetch_response_litellm_ollama(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
@@ -2122,10 +2132,10 @@ class OpenAIChatCompletionsModel(Model):
         ):
             ollama_supported_params["tools"] = kwargs.get("tools")
 
-        # Remove None values and filter out 'response_format'
+        # Remove None values and filter out unsupported parameters
         ollama_kwargs = {
             k: v for k, v in ollama_supported_params.items()
-            if v is not None and k != "response_format"
+            if v is not None and k not in ["response_format", "store"]
         }
 
         # Check if this is a Qwen model
