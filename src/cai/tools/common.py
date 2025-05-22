@@ -25,6 +25,9 @@ except ImportError:
 # Global dictionary to store active sessions
 ACTIVE_SESSIONS = {}
 
+# Global counter for session output commands to ensure they always display
+SESSION_OUTPUT_COUNTER = {}
+
 def _get_workspace_dir() -> str:
     """Determines the target workspace directory based on env vars for host."""
     base_dir_env = os.getenv("CAI_WORKSPACE_DIR")
@@ -183,8 +186,23 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
                         self.output_buffer.append(output)
                         self.last_activity = time.time()
                     else:
-                        self.is_running = False
-                        break
+                        # os.read() returned empty. This does NOT necessarily mean
+                        # the process itself has exited if self.process.poll() is None.
+                        # It might be idle and waiting for input.
+                        # The self.process.poll() check at the start of the loop iteration
+                        # (or if self.is_process_running() is used in the sleep condition)
+                        # will handle actual termination.
+                        # Thus, we 'pass' here and let the loop continue with its sleep,
+                        # rather than prematurely setting self.is_running = False.
+                        if self.process and self.process.poll() is None:
+                            # Process is alive but PTY read was empty (e.g., idle).
+                            # Do nothing here to change is_running.
+                            pass
+                        else:
+                            # Process is confirmed dead or no process to check,
+                            # and read returned empty. Session is over.
+                            self.is_running = False
+                            break # Exit the while loop
                 except Exception as read_err: 
                      self.output_buffer.append(f"Error reading output buffer: {str(read_err)}")
                      self.is_running = False
@@ -351,13 +369,56 @@ def send_to_session(session_id, input_data):
     return session.send_input(input_data)
 
 
-def get_session_output(session_id, clear=True):
+def get_session_output(session_id, clear=True, stdout=True):
     """Get output from a specific session"""
     if session_id not in ACTIVE_SESSIONS:
         return f"Session {session_id} not found"
 
     session = ACTIVE_SESSIONS[session_id]
-    return session.get_output(clear)
+    output = session.get_output(clear)
+    
+    # If stdout is enabled, display using cli_print_tool_output with counter
+    if stdout:
+        # Generate unique counter for this session output command
+        counter_key = f"session_output_{session_id}"
+        if counter_key not in SESSION_OUTPUT_COUNTER:
+            SESSION_OUTPUT_COUNTER[counter_key] = 0
+        SESSION_OUTPUT_COUNTER[counter_key] += 1
+        
+        # Create args for display
+        session_args = {
+            "command": "session",
+            "args": f"output {session_id}",
+            "session_id": session_id,
+            "call_counter": SESSION_OUTPUT_COUNTER[counter_key]  # This ensures uniqueness
+        }
+        
+        # Determine environment info for display
+        env_type = "Local"
+        if session.container_id:
+            env_type = f"Container({session.container_id[:12]})"
+        elif session.ctf:
+            env_type = "CTF"
+        
+        # Create execution info
+        execution_info = {
+            "status": "completed",
+            "environment": env_type,
+            "host": session.workspace_dir,
+            "session_id": session_id
+        }
+        
+        # Display the session output using cli_print_tool_output
+        from cai.util import cli_print_tool_output
+        cli_print_tool_output(
+            tool_name="generic_linux_command",
+            args=session_args,
+            output=output,
+            execution_info=execution_info,
+            streaming=False
+        )
+    
+    return output
 
 
 def terminate_session(session_id):
@@ -741,14 +802,50 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 return f"Session {session_id} not found"
             session = ACTIVE_SESSIONS[session_id]
             result = session.send_input(command) # Send the raw command string
-            if stdout:
-                output = get_session_output(session_id, clear=False)
-                env_type = "Local"
-                if session.container_id:
-                     env_type = f"Container({session.container_id[:12]})"
-                elif session.ctf:
-                     env_type = "CTF"
-                print(f"\033[32m(Session {session_id} in {env_type}:{session.workspace_dir}) >> {command}\n{output}\033[0m") # noqa E501
+            
+            # Always show the session output after sending input using the counter mechanism
+            # Generate unique counter for this session input command
+            counter_key = f"session_input_{session_id}"
+            if counter_key not in SESSION_OUTPUT_COUNTER:
+                SESSION_OUTPUT_COUNTER[counter_key] = 0
+            SESSION_OUTPUT_COUNTER[counter_key] += 1
+            
+            # Create args for display
+            session_args = {
+                "command": command,
+                "args": "",
+                "session_id": session_id,
+                "call_counter": SESSION_OUTPUT_COUNTER[counter_key],  # This ensures uniqueness
+                "input_to_session": True  # Flag to identify this as session input
+            }
+            
+            # Determine environment info for display
+            env_type = "Local"
+            if session.container_id:
+                env_type = f"Container({session.container_id[:12]})"
+            elif session.ctf:
+                env_type = "CTF"
+            
+            # Get the session output to display
+            output = get_session_output(session_id, clear=False, stdout=False)
+            
+            # Create execution info
+            execution_info = {
+                "status": "completed",
+                "environment": env_type,
+                "host": session.workspace_dir,
+                "session_id": session_id
+            }
+            
+            # Display the session input and its result using cli_print_tool_output
+            from cai.util import cli_print_tool_output
+            cli_print_tool_output(
+                tool_name="generic_linux_command",
+                args=session_args,
+                output=output,
+                execution_info=execution_info,
+                streaming=False
+            )
             
             # For async sessions, we don't switch back to idle mode here
             # since the session continues to run in the background
@@ -770,7 +867,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
             context_msg = f"(docker:{container_id[:12]}:{container_workspace})"
 
             # Handle Async Session Creation in Container
-            if async_mode:
+            # Only create new session if no session_id is provided
+            if async_mode and not session_id:
                 # Create a session specifically for the container environment
                 new_session_id = create_shell_session(command, container_id=container_id) # noqa E501
                 if "Failed" in new_session_id: # Check if session creation failed
@@ -781,7 +879,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 if stdout:
                     # Wait a moment for initial output
                     time.sleep(0.2)
-                    output = get_session_output(new_session_id, clear=False)
+                    output = get_session_output(new_session_id, clear=False, stdout=False)
                     print(f"\033[32m(Started Session {new_session_id} in {context_msg})\n{output}\033[0m") # noqa E501
                 
                 # For async sessions, switch back to idle mode after session creation
@@ -1231,7 +1329,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
         # --- Local Execution (Default Fallback) ---
         # Let _run_local handle determining the host workspace
         # Handle Async Session Creation Locally
-        if async_mode:
+        # Only create new session if no session_id is provided
+        if async_mode and not session_id:
             # create_shell_session uses _get_workspace_dir() when container_id is None
             new_session_id = create_shell_session(command)
             if isinstance(new_session_id, str) and "Failed" in new_session_id:  # Check failure
@@ -1244,7 +1343,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
             actual_workspace = session.workspace_dir if session else "unknown"
             if stdout:
                 time.sleep(0.2)  # Allow session buffer to populate
-                output = get_session_output(new_session_id, clear=False)
+                output = get_session_output(new_session_id, clear=False, stdout=False)
                 print(f"\033[32m(Started Session {new_session_id} in local:{actual_workspace})\n{output}\033[0m")
             
             # For async, switch back to idle mode after session creation
