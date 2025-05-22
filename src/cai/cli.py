@@ -289,7 +289,6 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                 console.print("[yellow]You must increase the limit using the /config command: /config CAI_MAX_TURNS=<new_value>[/yellow]")
                 console.print("[yellow]Only CLI commands (starting with '/') will be processed until the limit is increased.[/yellow]")
             
->>>>>>> src/cai/cli.py
         try:
             # Start measuring user idle time
             start_idle_timer()
@@ -331,7 +330,7 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
            
 
         
-            if not force_until_flag:
+            if not force_until_flag and messages_ctf == "":
                 # Get user input with command completion and history
                 user_input = get_user_input(
                     command_completer,
@@ -341,7 +340,9 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                     current_text
                 ) + messages_ctf 
             else:
-                user_input = messages_ctf 
+                user_input = messages_ctf
+                if os.getenv('CTF_INSIDE', 'True').lower() == 'false':
+                    user_input += ctf_global.get_ip()
             idle_time += time.time() - idle_start_time
 
             # Stop measuring user idle time and start measuring active time
