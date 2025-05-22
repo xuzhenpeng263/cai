@@ -348,6 +348,21 @@ class OpenAIChatCompletionsModel(Model):
             # Get token count estimate before API call for consistent counting
             estimated_input_tokens, _ = count_tokens_with_tiktoken(converted_messages)
             
+            # Pre-check price limit using estimated input tokens and a conservative estimate for output
+            # This prevents starting a request that would immediately exceed the price limit
+            if hasattr(COST_TRACKER, "check_price_limit"):
+                # Use a conservative estimate for output tokens (roughly equal to input)
+                estimated_cost = calculate_model_cost(str(self.model), 
+                                                      estimated_input_tokens, 
+                                                      estimated_input_tokens)  # Conservative estimate
+                try:
+                    COST_TRACKER.check_price_limit(estimated_cost)
+                except Exception as e:
+                    # Stop active timer and start idle timer before re-raising the exception
+                    stop_active_timer()
+                    start_idle_timer()
+                    raise
+            
             try:
                 response = await self._fetch_response(
                     system_instructions,
@@ -712,7 +727,19 @@ class OpenAIChatCompletionsModel(Model):
                     estimated_cost = calculate_model_cost(str(self.model), 
                                                           estimated_input_tokens, 
                                                           estimated_input_tokens)  # Conservative estimate
-                    COST_TRACKER.check_price_limit(estimated_cost)
+                    try:
+                        COST_TRACKER.check_price_limit(estimated_cost)
+                    except Exception as e:
+                        # Ensure streaming context is cleaned up in case of errors
+                        if streaming_context:
+                            try:
+                                finish_agent_streaming(streaming_context, None)
+                            except Exception:
+                                pass
+                        # Stop active timer and start idle timer before re-raising the exception
+                        stop_active_timer()
+                        start_idle_timer()
+                        raise
                 
                 response, stream = await self._fetch_response(
                     system_instructions,
@@ -832,7 +859,19 @@ class OpenAIChatCompletionsModel(Model):
                                 
                                 # Check price limit only for non-local models
                                 if not is_local_model and hasattr(COST_TRACKER, "check_price_limit") and estimated_output_tokens % 50 == 0:
-                                    COST_TRACKER.check_price_limit(current_cost)
+                                    try:
+                                        COST_TRACKER.check_price_limit(current_cost)
+                                    except Exception as e:
+                                        # Ensure streaming context is cleaned up
+                                        if streaming_context:
+                                            try:
+                                                finish_agent_streaming(streaming_context, None)
+                                            except Exception:
+                                                pass
+                                        # Stop timers and re-raise the exception
+                                        stop_active_timer()
+                                        start_idle_timer()
+                                        raise
                                 
                                 # Update session total cost for real-time display
                                 # This is a temporary estimate during streaming that will be properly updated at the end
@@ -881,7 +920,19 @@ class OpenAIChatCompletionsModel(Model):
                                 
                                 # Check price limit only for non-local models
                                 if not is_local_model and hasattr(COST_TRACKER, "check_price_limit"):
-                                    COST_TRACKER.check_price_limit(current_estimated_cost)
+                                    try:
+                                        COST_TRACKER.check_price_limit(current_estimated_cost)
+                                    except Exception as e:
+                                        # Ensure streaming context is cleaned up
+                                        if streaming_context:
+                                            try:
+                                                finish_agent_streaming(streaming_context, None)
+                                            except Exception:
+                                                pass
+                                        # Stop timers and re-raise the exception
+                                        stop_active_timer()
+                                        start_idle_timer()
+                                        raise
                                     
                                 # Update the COST_TRACKER with the running cost for accurate display
                                 if hasattr(COST_TRACKER, "interaction_cost"):
@@ -1429,7 +1480,19 @@ class OpenAIChatCompletionsModel(Model):
                 if not is_local_model and interaction_cost > 0.0:
                     # Check price limit before adding the new cost
                     if hasattr(COST_TRACKER, "check_price_limit"):
-                        COST_TRACKER.check_price_limit(interaction_cost)
+                        try:
+                            COST_TRACKER.check_price_limit(interaction_cost)
+                        except Exception as e:
+                            # Ensure streaming context is cleaned up
+                            if streaming_context:
+                                try:
+                                    finish_agent_streaming(streaming_context, None)
+                                except Exception:
+                                    pass
+                            # Stop timers and re-raise the exception
+                            stop_active_timer()
+                            start_idle_timer()
+                            raise
                     
                     # Now add the cost to session total
                     if hasattr(COST_TRACKER, "update_session_cost"):
