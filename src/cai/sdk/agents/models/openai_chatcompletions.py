@@ -305,6 +305,21 @@ class OpenAIChatCompletionsModel(Model):
                         "role": "system",
                     },
                 )
+            
+            # Add support for prompt caching for claude (not automatically applied)
+            # Gemini supports it too
+            # https://www.anthropic.com/news/token-saving-updates
+            # We need to add only a cache_control to the last message (automatic
+            # use of largest cached prefix)
+            if ((str(self.model).startswith("claude") or 
+                 "gemini" in str(self.model)) and 
+                len(converted_messages) > 0):
+                # Create a copy of the last message and add cache_control to it
+                # It's important to create a copy to avoid modifying the original
+                # message
+                last_msg = converted_messages[-1].copy()
+                last_msg["cache_control"] = {"type": "ephemeral"}
+                converted_messages[-1] = last_msg
             # --- Add to message_history: user, system, and assistant tool call messages ---
             # Add system prompt to message_history
             if system_instructions:
@@ -689,6 +704,21 @@ class OpenAIChatCompletionsModel(Model):
                             "role": "system",
                         },
                     )
+                
+                # Add support for prompt caching for claude (not automatically applied)
+                # Gemini supports it too
+                # https://www.anthropic.com/news/token-saving-updates
+                # We need to add only a cache_control to the last message (automatic
+                # use of largest cached prefix)
+                if ((str(self.model).startswith("claude") or 
+                     "gemini" in str(self.model)) and 
+                    len(converted_messages) > 0):
+                    # Create a copy of the last message and add cache_control to it
+                    # It's important to create a copy to avoid modifying the original
+                    # message
+                    last_msg = converted_messages[-1].copy()
+                    last_msg["cache_control"] = {"type": "ephemeral"}
+                    converted_messages[-1] = last_msg
                # --- Add to message_history: user, system prompts ---
                 if system_instructions:
                     sys_msg = {
@@ -1657,6 +1687,21 @@ class OpenAIChatCompletionsModel(Model):
                     "role": "system",
                 },
             )
+        
+        # Add support for prompt caching for claude (not automatically applied)
+        # Gemini supports it too
+        # https://www.anthropic.com/news/token-saving-updates
+        # We need to add only a cache_control to the last message (automatic
+        # use of largest cached prefix)
+        if ((str(self.model).startswith("claude") or 
+             "gemini" in str(self.model)) and 
+            len(converted_messages) > 0):
+            # Create a copy of the last message and add cache_control to it
+            # It's important to create a copy to avoid modifying the original
+            # message
+            last_msg = converted_messages[-1].copy()
+            last_msg["cache_control"] = {"type": "ephemeral"}
+            converted_messages[-1] = last_msg
         if tracing.include_data():
             span.span_data.input = converted_messages
 
