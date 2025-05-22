@@ -30,7 +30,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
+.devcontainer/qdrant_storage/
 # PyInstaller
 *.manifest
 *.spec

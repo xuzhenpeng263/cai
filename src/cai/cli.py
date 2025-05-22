@@ -134,7 +134,9 @@ from cai.util import (
     start_idle_timer, 
     stop_idle_timer, 
     start_active_timer, 
-    stop_active_timer
+    stop_active_timer,
+    setup_ctf,
+    check_flag,
 )
 
 # CAI REPL imports
@@ -151,6 +153,16 @@ from cai.internal.components.metrics import process_metrics
 
 # Add import for parallel configs at the top of the file
 from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
+from cai import is_pentestperf_available
+ctf_global = None
+messages_ctf = ""
+previous_ctf_name = os.getenv('CTF_NAME', None)
+if is_pentestperf_available() and os.getenv('CTF_NAME', None):
+    ctf, messages_ctf = setup_ctf()
+    ctf_global = ctf
+    if os.getenv('CTF_INSIDE', 'True').lower() == 'false':
+        container_id = ""
+        os.environ['CAI_ACTIVE_CONTAINER'] = container_id 
 
 # Load environment variables from .env file
 load_dotenv()
@@ -187,7 +199,7 @@ agent = Agent(
     )
 )
 
-def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
+def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), force_until_flag=False):
     """
     Run a simple interactive CLI loop for CAI.
 
@@ -247,6 +259,18 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
     turn_limit_reached = False
     
     while True:  
+        # Check if the ctf name has changed and instanciate the ctf
+        global previous_ctf_name
+        global ctf_global
+        global messages_ctf   
+        if previous_ctf_name != os.getenv('CTF_NAME', None):
+            if is_pentestperf_available():
+                if ctf_global:
+                    ctf_global.stop_ctf()
+                ctf, messages_ctf = setup_ctf()
+                ctf_global = ctf
+                previous_ctf_name = os.getenv('CTF_NAME', None)
+
         # Check if CAI_MAX_TURNS has been updated via /config
         current_max_turns = os.getenv('CAI_MAX_TURNS', 'inf')
         if current_max_turns != str(prev_max_turns):
@@ -303,15 +327,22 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
                             agent.model.set_agent_name(get_agent_short_name(agent))
                 except Exception as e:
                     console.print(f"[red]Error switching agent: {str(e)}[/red]")
+           
 
-            # Get user input with command completion and history
-            user_input = get_user_input(
-                command_completer,
-                kb,
-                history_file,
-                get_toolbar_with_refresh,
-                current_text
-            )
+        
+            if not force_until_flag and messages_ctf == "":
+                # Get user input with command completion and history
+                user_input = get_user_input(
+                    command_completer,
+                    kb,
+                    history_file,
+                    get_toolbar_with_refresh,
+                    current_text
+                ) + messages_ctf 
+            else:
+                user_input = messages_ctf
+                if os.getenv('CTF_INSIDE', 'True').lower() == 'false':
+                    user_input += ctf_global.get_ip()
             idle_time += time.time() - idle_start_time
 
             # Stop measuring user idle time and start measuring active time
@@ -474,6 +505,9 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf')):
 
                 # Prevent duplicate cost display from the COST_TRACKER exit handler
                 os.environ["CAI_COST_DISPLAYED"] = "true"
+
+                if (is_pentestperf_available() and os.getenv('CTF_NAME', None)):
+                    ctf.stop_ctf()
 
             except Exception:
                 pass

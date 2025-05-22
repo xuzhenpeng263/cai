@@ -375,7 +375,7 @@ def terminate_session(session_id):
 def _run_ctf(ctf, command, stdout=False, timeout=100, workspace_dir=None):
     """Runs command in CTF env, changing to workspace_dir first."""
     target_dir = workspace_dir or _get_workspace_dir()
-    full_command = f"cd '{target_dir}' && {command}"
+    full_command = f"{command}"
     original_cmd_for_msg = command # For logging
     context_msg = f"(ctf:{target_dir})"
     try:
@@ -713,6 +713,9 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
     # Use the active timer during tool execution
     stop_idle_timer()
     start_active_timer()
+ 
+    from cai.cli import ctf_global
+    ctf = ctf_global
     
     # Parse command into standard parts to ensure consistent naming
     parts = command.strip().split(' ', 1)
@@ -761,7 +764,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
         is_ssh_env = all(os.getenv(var) for var in ['SSH_USER', 'SSH_HOST'])
 
         # --- Docker Container Execution ---
-        if active_container and not ctf and not is_ssh_env:
+        if active_container and not is_ssh_env:
             container_id = active_container
             container_workspace = _get_container_workspace_path()
             context_msg = f"(docker:{container_id[:12]}:{container_workspace})"
@@ -1016,7 +1019,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir(), args) # noqa E501
 
         # --- CTF Execution ---
-        if ctf:
+        
+        if ctf and os.getenv('CTF_INSIDE', "True").lower() == "true":
             # If streaming is enabled and we have a call_id, show streaming UI for CTF too
             if stream:
                 # Import the streaming utilities from util
@@ -1039,8 +1043,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 call_id = start_tool_streaming(tool_name, tool_args, call_id)
                 
                 target_dir = _get_workspace_dir()
-                full_command = f"cd '{target_dir}' && {command}"
-                
+                #full_command = f"cd '{target_dir}' && {command}"
+                full_command = command
                 # Update with "executing" status
                 update_tool_streaming(
                     tool_name, 
