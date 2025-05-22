@@ -44,6 +44,11 @@ _timing_lock = threading.Lock()
 # Set up a global tracker for live streaming panels
 _LIVE_STREAMING_PANELS = {}
 
+# ======================== CLAUDE THINKING STREAMING FUNCTIONS ========================
+
+# Global tracker for Claude thinking streaming panels
+_CLAUDE_THINKING_PANELS = {}
+
 def start_active_timer():
     """
     Start measuring active time (when LLM is processing or tool is executing).
@@ -3020,3 +3025,277 @@ def setup_ctf():
                     bg="blue"))
 
     return ctf, messages
+
+def create_claude_thinking_context(agent_name, counter, model):
+    """
+    Create a streaming context for Claude thinking/reasoning display.
+    This creates a dedicated panel that shows Claude's internal reasoning process.
+    
+    Args:
+        agent_name: The name of the agent
+        counter: The interaction counter
+        model: The model name
+        
+    Returns:
+        A dictionary with the streaming context for thinking display
+    """
+    import uuid
+    from rich.live import Live
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich.box import ROUNDED
+    from rich.console import Group
+    import shutil
+    
+    # Generate unique thinking context ID
+    thinking_id = f"thinking_{agent_name}_{counter}_{str(uuid.uuid4())[:8]}"
+    
+    # Check if we already have an active thinking panel
+    if thinking_id in _CLAUDE_THINKING_PANELS:
+        return _CLAUDE_THINKING_PANELS[thinking_id]
+    
+    try:
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        
+        # Terminal size for better display
+        terminal_width, _ = shutil.get_terminal_size((100, 24))
+        panel_width = min(terminal_width - 4, 120)
+        
+        # Create the thinking panel header
+        header = Text()
+        header.append("🧠 ", style="bold yellow")
+        header.append(f"Claude Reasoning [{counter}]", style="bold yellow")
+        header.append(f" | {agent_name}", style="bold cyan")
+        header.append(f" | {timestamp}", style="dim")
+        
+        # Initial thinking content
+        thinking_content = Text("Thinking...", style="italic dim")
+        
+        # Create the panel for thinking
+        panel = Panel(
+            Group(header, Text("\n"), thinking_content),
+            title="[bold yellow]🧠 Thinking Process[/bold yellow]",
+            border_style="yellow",
+            box=ROUNDED,
+            padding=(1, 2),
+            width=panel_width,
+            expand=True
+        )
+        
+        # Create Live display object
+        live = Live(panel, refresh_per_second=8, console=console, auto_refresh=True)
+        
+        context = {
+            "thinking_id": thinking_id,
+            "live": live,
+            "panel": panel,
+            "header": header,
+            "thinking_content": thinking_content,
+            "timestamp": timestamp,
+            "model": model,
+            "agent_name": agent_name,
+            "panel_width": panel_width,
+            "is_started": False,
+            "accumulated_thinking": "",
+        }
+        
+        # Store in global tracker
+        _CLAUDE_THINKING_PANELS[thinking_id] = context
+        
+        return context
+        
+    except Exception as e:
+        print(f"Error creating Claude thinking context: {e}")
+        return None
+
+def update_claude_thinking_content(context, thinking_delta):
+    """
+    Update the Claude thinking content with new reasoning text.
+    
+    Args:
+        context: The thinking context created by create_claude_thinking_context
+        thinking_delta: The new thinking text to add
+    """
+    if not context:
+        return False
+        
+    try:
+        # Accumulate the thinking text
+        context["accumulated_thinking"] += thinking_delta
+        
+        # Create syntax highlighted thinking content
+        from rich.syntax import Syntax
+        from rich.text import Text
+        from rich.console import Group
+        
+        # Try to format as markdown-like reasoning
+        thinking_text = context["accumulated_thinking"]
+        
+        # Create formatted thinking display
+        if len(thinking_text) > 500:
+            # For long thinking, use syntax highlighting
+            thinking_display = Syntax(
+                thinking_text,
+                "markdown",
+                theme="monokai",
+                background_color="#2E2E2E",
+                word_wrap=True,
+                line_numbers=False
+            )
+        else:
+            # For short thinking, use regular text with styling
+            thinking_display = Text(thinking_text, style="white")
+        
+        # Update the panel content
+        updated_panel = Panel(
+            Group(
+                context["header"], 
+                Text("\n"), 
+                thinking_display
+            ),
+            title="[bold yellow]🧠 Thinking Process[/bold yellow]",
+            border_style="yellow",
+            box=ROUNDED,
+            padding=(1, 2),
+            width=context.get("panel_width", 100),
+            expand=True
+        )
+        
+        # Start the display if not already started
+        if not context.get("is_started", False):
+            try:
+                context["live"].start()
+                context["is_started"] = True
+            except Exception as e:
+                print(f"Error starting Claude thinking display: {e}")
+                return False
+        
+        # Update the live display
+        context["live"].update(updated_panel)
+        context["panel"] = updated_panel
+        context["live"].refresh()
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error updating Claude thinking content: {e}")
+        return False
+
+def finish_claude_thinking_display(context):
+    """
+    Finish the Claude thinking display session.
+    
+    Args:
+        context: The thinking context to finish
+    """
+    if not context:
+        return False
+        
+    # Clean up from global tracker
+    thinking_id = context.get("thinking_id")
+    if thinking_id and thinking_id in _CLAUDE_THINKING_PANELS:
+        del _CLAUDE_THINKING_PANELS[thinking_id]
+    
+    try:
+        # Import required classes
+        from rich.text import Text
+        from rich.syntax import Syntax
+        from rich.console import Group
+        
+        # Add final formatting to show completion
+        final_header = Text()
+        final_header.append("🧠 ", style="bold green")
+        final_header.append(f"Claude Reasoning Complete", style="bold green")
+        final_header.append(f" | {context['agent_name']}", style="bold cyan")
+        final_header.append(f" | {context['timestamp']}", style="dim")
+        
+        thinking_text = context["accumulated_thinking"]
+        
+        if thinking_text.strip():
+            # Create final formatted display
+            final_thinking_display = Syntax(
+                thinking_text,
+                "markdown",
+                theme="monokai",
+                background_color="#2E2E2E",
+                word_wrap=True,
+                line_numbers=False
+            )
+        else:
+            final_thinking_display = Text("No reasoning captured", style="dim italic")
+        
+        # Create final panel
+        final_panel = Panel(
+            Group(
+                final_header,
+                Text("\n"),
+                final_thinking_display
+            ),
+            title="[bold green]🧠 Thinking Complete[/bold green]",
+            border_style="green",
+            box=ROUNDED,
+            padding=(1, 2),
+            width=context.get("panel_width", 100),
+            expand=True
+        )
+        
+        # Update one last time
+        if context.get("is_started", False):
+            context["live"].update(final_panel)
+            
+            # Give a moment for the final panel to be seen
+            import time
+            time.sleep(0.3)
+            
+            # Stop the live display
+            context["live"].stop()
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error finishing Claude thinking display: {e}")
+        return False
+
+def detect_claude_thinking_in_stream(model_name):
+    """
+    Detect if a model should show thinking/reasoning display.
+    Only applies to Claude models with reasoning capability.
+    
+    Args:
+        model_name: The model name to check
+        
+    Returns:
+        bool: True if thinking display should be shown
+    """
+    if not model_name:
+        return False
+        
+    model_str = str(model_name).lower()
+    
+    # Check for Claude models with reasoning capability
+    # According to LiteLLM docs, Claude 3.7, Claude 4 and models with "thinking" support reasoning
+    has_reasoning = (
+        "claude" in model_str and (
+            "3.7" in model_str or 
+            "4" in model_str or
+            "thinking" in model_str
+        )
+    )
+    
+    return has_reasoning
+
+def start_claude_thinking_if_applicable(model_name, agent_name, counter):
+    """
+    Start Claude thinking display if the model supports it.
+    
+    Args:
+        model_name: The model name
+        agent_name: The agent name
+        counter: The interaction counter
+        
+    Returns:
+        The thinking context if created, None otherwise
+    """
+    if detect_claude_thinking_in_stream(model_name):
+        return create_claude_thinking_context(agent_name, counter, model_name)
+    return None

@@ -164,6 +164,54 @@ class _StreamingState:
 
 
 # Add a new function for consistent token counting using tiktoken
+def _check_reasoning_compatibility(messages):
+    """
+    Check if message history is compatible with Claude reasoning/thinking.
+    
+    According to Claude 4 docs, when reasoning is enabled, the final assistant 
+    message must start with a thinking block. If there are assistant messages
+    with regular text content, reasoning should be disabled.
+    
+    Args:
+        messages: List of message dictionaries
+        
+    Returns:
+        bool: True if compatible with reasoning, False otherwise
+    """
+    if not messages:
+        return True  # Empty messages are compatible
+    
+    # Find the last assistant message
+    last_assistant_msg = None
+    for msg in reversed(messages):
+        if msg.get("role") == "assistant":
+            last_assistant_msg = msg
+            break
+    
+    if not last_assistant_msg:
+        return True  # No assistant messages, compatible
+    
+    # Check if the last assistant message has regular text content
+    content = last_assistant_msg.get("content")
+    if content:
+        # If it's a string with text content, not compatible
+        if isinstance(content, str) and content.strip():
+            return False
+        # If it's a list, check for text content blocks
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get("type") == "text" and block.get("text", "").strip():
+                        return False
+    
+    # Check if message has tool_calls (these are compatible)
+    if last_assistant_msg.get("tool_calls"):
+        return True
+    
+    # If no content or only thinking blocks, it's compatible
+    return True
+
+
 def count_tokens_with_tiktoken(text_or_messages):
     """
     Count tokens consistently using tiktoken library.
@@ -309,17 +357,56 @@ class OpenAIChatCompletionsModel(Model):
             # Add support for prompt caching for claude (not automatically applied)
             # Gemini supports it too
             # https://www.anthropic.com/news/token-saving-updates
-            # We need to add only a cache_control to the last message (automatic
-            # use of largest cached prefix)
+            # Maximize cache efficiency by using up to 4 cache_control blocks
             if ((str(self.model).startswith("claude") or 
                  "gemini" in str(self.model)) and 
                 len(converted_messages) > 0):
-                # Create a copy of the last message and add cache_control to it
-                # It's important to create a copy to avoid modifying the original
-                # message
-                last_msg = converted_messages[-1].copy()
-                last_msg["cache_control"] = {"type": "ephemeral"}
-                converted_messages[-1] = last_msg
+                
+                # Strategy: Cache the most valuable messages for maximum savings
+                # 1. System message (always first priority)
+                # 2. Long user messages (high token count)
+                # 3. Assistant messages with tool calls (complex context)
+                # 4. Recent context (last message)
+                
+                cache_candidates = []
+                
+                # Always cache system message if present
+                for i, msg in enumerate(converted_messages):
+                    if msg.get("role") == "system":
+                        cache_candidates.append((i, len(str(msg.get("content", ""))), "system"))
+                        break
+                
+                # Find long user messages and assistant messages with tool calls
+                for i, msg in enumerate(converted_messages):
+                    content_len = len(str(msg.get("content", "")))
+                    role = msg.get("role")
+                    
+                    if role == "user" and content_len > 500:  # Long user messages
+                        cache_candidates.append((i, content_len, "user"))
+                    elif role == "assistant" and msg.get("tool_calls"):  # Tool calls
+                        cache_candidates.append((i, content_len + 200, "assistant_tools"))  # Bonus for tool calls
+                
+                # Always consider the last message for recent context
+                if len(converted_messages) > 1:
+                    last_idx = len(converted_messages) - 1
+                    last_msg = converted_messages[last_idx]
+                    last_content_len = len(str(last_msg.get("content", "")))
+                    cache_candidates.append((last_idx, last_content_len, "recent"))
+                
+                # Sort by value (content length) and select top 4 unique indices
+                cache_candidates.sort(key=lambda x: x[1], reverse=True)
+                selected_indices = []
+                for idx, _, msg_type in cache_candidates:
+                    if idx not in selected_indices:
+                        selected_indices.append(idx)
+                        if len(selected_indices) >= 4:  # Max 4 cache blocks
+                            break
+                
+                # Apply cache_control to selected messages
+                for idx in selected_indices:
+                    msg_copy = converted_messages[idx].copy()
+                    msg_copy["cache_control"] = {"type": "ephemeral"}
+                    converted_messages[idx] = msg_copy
             # --- Add to message_history: user, system, and assistant tool call messages ---
             # Add system prompt to message_history
             if system_instructions:
@@ -708,17 +795,56 @@ class OpenAIChatCompletionsModel(Model):
                 # Add support for prompt caching for claude (not automatically applied)
                 # Gemini supports it too
                 # https://www.anthropic.com/news/token-saving-updates
-                # We need to add only a cache_control to the last message (automatic
-                # use of largest cached prefix)
+                # Maximize cache efficiency by using up to 4 cache_control blocks
                 if ((str(self.model).startswith("claude") or 
                      "gemini" in str(self.model)) and 
                     len(converted_messages) > 0):
-                    # Create a copy of the last message and add cache_control to it
-                    # It's important to create a copy to avoid modifying the original
-                    # message
-                    last_msg = converted_messages[-1].copy()
-                    last_msg["cache_control"] = {"type": "ephemeral"}
-                    converted_messages[-1] = last_msg
+                    
+                    # Strategy: Cache the most valuable messages for maximum savings
+                    # 1. System message (always first priority)
+                    # 2. Long user messages (high token count)
+                    # 3. Assistant messages with tool calls (complex context)
+                    # 4. Recent context (last message)
+                    
+                    cache_candidates = []
+                    
+                    # Always cache system message if present
+                    for i, msg in enumerate(converted_messages):
+                        if msg.get("role") == "system":
+                            cache_candidates.append((i, len(str(msg.get("content", ""))), "system"))
+                            break
+                    
+                    # Find long user messages and assistant messages with tool calls
+                    for i, msg in enumerate(converted_messages):
+                        content_len = len(str(msg.get("content", "")))
+                        role = msg.get("role")
+                        
+                        if role == "user" and content_len > 500:  # Long user messages
+                            cache_candidates.append((i, content_len, "user"))
+                        elif role == "assistant" and msg.get("tool_calls"):  # Tool calls
+                            cache_candidates.append((i, content_len + 200, "assistant_tools"))  # Bonus for tool calls
+                    
+                    # Always consider the last message for recent context
+                    if len(converted_messages) > 1:
+                        last_idx = len(converted_messages) - 1
+                        last_msg = converted_messages[last_idx]
+                        last_content_len = len(str(last_msg.get("content", "")))
+                        cache_candidates.append((last_idx, last_content_len, "recent"))
+                    
+                    # Sort by value (content length) and select top 4 unique indices
+                    cache_candidates.sort(key=lambda x: x[1], reverse=True)
+                    selected_indices = []
+                    for idx, _, msg_type in cache_candidates:
+                        if idx not in selected_indices:
+                            selected_indices.append(idx)
+                            if len(selected_indices) >= 4:  # Max 4 cache blocks
+                                break
+                    
+                    # Apply cache_control to selected messages
+                    for idx in selected_indices:
+                        msg_copy = converted_messages[idx].copy()
+                        msg_copy["cache_control"] = {"type": "ephemeral"}
+                        converted_messages[idx] = msg_copy
                # --- Add to message_history: user, system prompts ---
                 if system_instructions:
                     sys_msg = {
@@ -795,6 +921,16 @@ class OpenAIChatCompletionsModel(Model):
                 # For tool call streaming, accumulate tool_calls to add to message_history at the end
                 streamed_tool_calls = []
                 
+                # Initialize Claude thinking display if applicable
+                thinking_context = None
+                from cai.util import start_claude_thinking_if_applicable
+                if should_show_rich_stream:  # Only show thinking in rich streaming mode
+                    thinking_context = start_claude_thinking_if_applicable(
+                        str(self.model), 
+                        self.agent_name, 
+                        self.interaction_counter
+                    )
+                
                 # Ollama specific: accumulate full content to check for function calls at the end
                 # Some Ollama models output the function call as JSON in the text content
                 ollama_full_content = ""
@@ -855,6 +991,34 @@ class OpenAIChatCompletionsModel(Model):
                         
                         if not delta:
                             continue
+
+                        # Handle Claude reasoning content first (before regular content)
+                        reasoning_content = None
+                        if hasattr(delta, 'reasoning_content') and delta.reasoning_content is not None:
+                            reasoning_content = delta.reasoning_content
+                        elif isinstance(delta, dict) and 'reasoning_content' in delta and delta['reasoning_content'] is not None:
+                            reasoning_content = delta['reasoning_content']
+                        
+                        # Also check for thinking_blocks structure
+                        thinking_blocks = None
+                        if hasattr(delta, 'thinking_blocks') and delta.thinking_blocks is not None:
+                            thinking_blocks = delta.thinking_blocks
+                        elif isinstance(delta, dict) and 'thinking_blocks' in delta and delta['thinking_blocks'] is not None:
+                            thinking_blocks = delta['thinking_blocks']
+                        
+                        # Extract reasoning content from thinking blocks if available
+                        if thinking_blocks and not reasoning_content:
+                            for block in thinking_blocks:
+                                if isinstance(block, dict) and block.get('type') == 'thinking':
+                                    reasoning_content = block.get('thinking', '')
+                                    break
+                        
+                        if reasoning_content and thinking_context:
+                            # Update the thinking display
+                            from cai.util import update_claude_thinking_content
+                            update_claude_thinking_content(thinking_context, reasoning_content)
+                        
+
 
                         # Handle text
                         content = None
@@ -1209,6 +1373,14 @@ class OpenAIChatCompletionsModel(Model):
                     if streaming_context:
                         try:
                             finish_agent_streaming(streaming_context, None)
+                        except Exception:
+                            pass
+                    
+                    # Ensure thinking context is cleaned up in case of errors
+                    if thinking_context:
+                        try:
+                            from cai.util import finish_claude_thinking_display
+                            finish_claude_thinking_display(thinking_context)
                         except Exception:
                             pass
                     raise e
@@ -1567,6 +1739,11 @@ class OpenAIChatCompletionsModel(Model):
                     # Removed extra newline after streaming completes to avoid blank lines
                     pass
 
+                # Finish Claude thinking display if it was active
+                if thinking_context:
+                    from cai.util import finish_claude_thinking_display
+                    finish_claude_thinking_display(thinking_context)
+
                 if tracing.include_data():
                     span_generation.span_data.output = [final_response.model_dump()]
 
@@ -1624,6 +1801,14 @@ class OpenAIChatCompletionsModel(Model):
             if streaming_context:
                 try:
                     finish_agent_streaming(streaming_context, None)
+                except Exception:
+                    pass
+                    
+            # Ensure thinking context is cleaned up in case of errors
+            if 'thinking_context' in locals() and thinking_context:
+                try:
+                    from cai.util import finish_claude_thinking_display
+                    finish_claude_thinking_display(thinking_context)
                 except Exception:
                     pass
                     
@@ -1691,17 +1876,56 @@ class OpenAIChatCompletionsModel(Model):
         # Add support for prompt caching for claude (not automatically applied)
         # Gemini supports it too
         # https://www.anthropic.com/news/token-saving-updates
-        # We need to add only a cache_control to the last message (automatic
-        # use of largest cached prefix)
+        # Maximize cache efficiency by using up to 4 cache_control blocks
         if ((str(self.model).startswith("claude") or 
              "gemini" in str(self.model)) and 
             len(converted_messages) > 0):
-            # Create a copy of the last message and add cache_control to it
-            # It's important to create a copy to avoid modifying the original
-            # message
-            last_msg = converted_messages[-1].copy()
-            last_msg["cache_control"] = {"type": "ephemeral"}
-            converted_messages[-1] = last_msg
+            
+            # Strategy: Cache the most valuable messages for maximum savings
+            # 1. System message (always first priority)
+            # 2. Long user messages (high token count)
+            # 3. Assistant messages with tool calls (complex context)
+            # 4. Recent context (last message)
+            
+            cache_candidates = []
+            
+            # Always cache system message if present
+            for i, msg in enumerate(converted_messages):
+                if msg.get("role") == "system":
+                    cache_candidates.append((i, len(str(msg.get("content", ""))), "system"))
+                    break
+            
+            # Find long user messages and assistant messages with tool calls
+            for i, msg in enumerate(converted_messages):
+                content_len = len(str(msg.get("content", "")))
+                role = msg.get("role")
+                
+                if role == "user" and content_len > 500:  # Long user messages
+                    cache_candidates.append((i, content_len, "user"))
+                elif role == "assistant" and msg.get("tool_calls"):  # Tool calls
+                    cache_candidates.append((i, content_len + 200, "assistant_tools"))  # Bonus for tool calls
+            
+            # Always consider the last message for recent context
+            if len(converted_messages) > 1:
+                last_idx = len(converted_messages) - 1
+                last_msg = converted_messages[last_idx]
+                last_content_len = len(str(last_msg.get("content", "")))
+                cache_candidates.append((last_idx, last_content_len, "recent"))
+            
+            # Sort by value (content length) and select top 4 unique indices
+            cache_candidates.sort(key=lambda x: x[1], reverse=True)
+            selected_indices = []
+            for idx, _, msg_type in cache_candidates:
+                if idx not in selected_indices:
+                    selected_indices.append(idx)
+                    if len(selected_indices) >= 4:  # Max 4 cache blocks
+                        break
+            
+            # Apply cache_control to selected messages
+            for idx in selected_indices:
+                msg_copy = converted_messages[idx].copy()
+                msg_copy["cache_control"] = {"type": "ephemeral"}
+                converted_messages[idx] = msg_copy
         if tracing.include_data():
             span.span_data.input = converted_messages
 
@@ -1796,6 +2020,27 @@ class OpenAIChatCompletionsModel(Model):
                 # Remove tool_choice if no tools are specified
                 if not converted_tools:
                     kwargs.pop("tool_choice", None)
+                
+                # Add extended reasoning support for Claude models
+                # Supports Claude 3.7, Claude 4, and any model with "thinking" in the name
+                has_reasoning_capability = ("3.7" in model_str or "4" in model_str or "thinking" in model_str)
+                
+                if has_reasoning_capability:
+                    # Clean the model name by removing "thinking" before sending to API
+                    clean_model = kwargs["model"]
+                    if isinstance(clean_model, str) and "thinking" in clean_model.lower():
+                        # Remove "thinking" and clean up any extra spaces/separators
+                        clean_model = re.sub(r'[_-]?thinking[_-]?', '', clean_model, flags=re.IGNORECASE)
+                        clean_model = re.sub(r'[-_]{2,}', '-', clean_model)  # Clean up multiple separators
+                        clean_model = clean_model.strip('-_')  # Clean up leading/trailing separators
+                        kwargs["model"] = clean_model
+                    
+                    # Check if message history is compatible with reasoning
+                    messages = kwargs.get("messages", [])
+                    is_compatible = _check_reasoning_compatibility(messages)
+                    
+                    if is_compatible:
+                        kwargs["reasoning_effort"] = "low"  # Use reasoning_effort instead of thinking
             elif provider == "gemini":
                 kwargs.pop("parallel_tool_calls", None)
                 # Add any specific gemini settings if needed
@@ -1809,6 +2054,27 @@ class OpenAIChatCompletionsModel(Model):
                 # Remove tool_choice if no tools are specified
                 if not converted_tools:
                     kwargs.pop("tool_choice", None)
+                
+                # Add extended reasoning support for Claude models
+                # Supports Claude 3.7, Claude 4, and any model with "thinking" in the name
+                has_reasoning_capability = ("3.7" in model_str or "4" in model_str or "thinking" in model_str)
+                
+                if has_reasoning_capability:
+                    # Clean the model name by removing "thinking" before sending to API
+                    clean_model = kwargs["model"]
+                    if isinstance(clean_model, str) and "thinking" in clean_model.lower():
+                        # Remove "thinking" and clean up any extra spaces/separators
+                        clean_model = re.sub(r'[_-]?thinking[_-]?', '', clean_model, flags=re.IGNORECASE)
+                        clean_model = re.sub(r'[-_]{2,}', '-', clean_model)  # Clean up multiple separators
+                        clean_model = clean_model.strip('-_')  # Clean up leading/trailing separators
+                        kwargs["model"] = clean_model
+                    
+                    # Check if message history is compatible with reasoning
+                    messages = kwargs.get("messages", [])
+                    is_compatible = _check_reasoning_compatibility(messages)
+                    
+                    if is_compatible:
+                        kwargs["reasoning_effort"] = "low"  # Use reasoning_effort instead of thinking
             elif "gemini" in model_str:
                 kwargs.pop("parallel_tool_calls", None)
             elif "qwen" in model_str or ":" in model_str:
@@ -1847,6 +2113,41 @@ class OpenAIChatCompletionsModel(Model):
                 return await self._fetch_response_litellm_openai(kwargs, model_settings, tool_choice, stream, parallel_tool_calls)
                 
         except litellm.exceptions.BadRequestError as e:
+            error_msg = str(e)
+            
+            # Handle Claude reasoning/thinking compatibility errors
+            if ("Expected `thinking` or `redacted_thinking`, but found `text`" in error_msg or
+                "When `thinking` is enabled, a final `assistant` message must start with a thinking block" in error_msg):
+                print(f"Claude 4 thinking error: {e}")
+                print("Disabling reasoning_effort due to incompatible message history")
+                
+                # Retry without reasoning_effort
+                retry_kwargs = kwargs.copy()
+                retry_kwargs.pop("reasoning_effort", None)
+                
+                try:
+                    if stream:
+                        response = Response(
+                            id=FAKE_RESPONSES_ID,
+                            created_at=time.time(),
+                            model=self.model,
+                            object="response",
+                            output=[],
+                            tool_choice="auto" if tool_choice is None or tool_choice == NOT_GIVEN else cast(Literal["auto", "required", "none"], tool_choice),
+                            top_p=model_settings.top_p,
+                            temperature=model_settings.temperature,
+                            tools=[],
+                            parallel_tool_calls=parallel_tool_calls or False,
+                        )
+                        stream_obj = await litellm.acompletion(**retry_kwargs)
+                        return response, stream_obj
+                    else:
+                        ret = litellm.completion(**retry_kwargs)
+                        return ret
+                except Exception as retry_e:
+                    # If retry also fails, raise the original error
+                    raise e
+            
             #print(color("BadRequestError encountered: " + str(e), fg="yellow"))
             if "LLM Provider NOT provided" in str(e):
                 model_str = str(self.model).lower()
@@ -1912,6 +2213,25 @@ class OpenAIChatCompletionsModel(Model):
                         provider_kwargs["custom_llm_provider"] = "anthropic"
                         provider_kwargs.pop("store", None)  # Claude doesn't support store parameter
                         provider_kwargs.pop("parallel_tool_calls", None)  # Claude doesn't support parallel tool calls
+                        
+                        # Add extended reasoning support for Claude models
+                        # Supports Claude 3.7, Claude 4, and any model with "thinking" in the name
+                        if ("3.7" in model_str or "4" in model_str or "thinking" in model_str):
+                            # Clean the model name by removing "thinking" before sending to API
+                            clean_model = provider_kwargs["model"]
+                            if isinstance(clean_model, str) and "thinking" in clean_model.lower():
+                                # Remove "thinking" and clean up any extra spaces/separators
+                                clean_model = re.sub(r'[_-]?thinking[_-]?', '', clean_model, flags=re.IGNORECASE)
+                                clean_model = re.sub(r'[-_]{2,}', '-', clean_model)  # Clean up multiple separators
+                                clean_model = clean_model.strip('-_')  # Clean up leading/trailing separators
+                                provider_kwargs["model"] = clean_model
+                            
+                            # Check if message history is compatible with reasoning
+                            messages = provider_kwargs.get("messages", [])
+                            is_compatible = _check_reasoning_compatibility(messages)
+                            
+                            if is_compatible:
+                                provider_kwargs["reasoning_effort"] = "low"  # Use reasoning_effort instead of thinking
                     elif provider == "gemini":
                         provider_kwargs["custom_llm_provider"] = "gemini"
                         provider_kwargs.pop("store", None)  # Gemini doesn't support store parameter
