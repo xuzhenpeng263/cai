@@ -50,6 +50,10 @@ instructions = """You are a Cybersecurity expert Leader facing a CTF
 
                 """
 
+# Create OpenAI client with fallback API key to prevent initialization errors
+# The actual API key should be set in environment variables or .env file
+api_key = os.getenv('OPENAI_API_KEY', 'sk-placeholder-key-for-local-models')
+
 one_tool_agent = Agent(
     name="CTF agent",
     description="""Agent focused on conquering security challenges using generic linux commands
@@ -60,7 +64,7 @@ one_tool_agent = Agent(
     ],
     model=OpenAIChatCompletionsModel(
         model=model_name,
-        openai_client=AsyncOpenAI(),
+        openai_client=AsyncOpenAI(api_key=api_key),
     )
 )
 

@@ -107,10 +107,13 @@ Usage Examples:
         CAI_MODEL="gpt-4o" CAI_PARALLEL="3" cai
 """
 
+# Load environment variables from .env file FIRST, before any imports
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
 import time
 import asyncio
-from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 
@@ -164,9 +167,6 @@ if is_pentestperf_available() and os.getenv('CTF_NAME', None):
         container_id = ""
         os.environ['CAI_ACTIVE_CONTAINER'] = container_id 
 
-# Load environment variables from .env file
-load_dotenv()
-
 # NOTE: This is needed when using LiteLLM Proxy Server
 #
 # external_client = AsyncOpenAI(
@@ -189,12 +189,16 @@ llm_model=os.getenv('LLM_MODEL', 'qwen2.5:14b')
 # For Qwen models, we need to skip system instructions as they're not supported
 instructions = None if "qwen" in llm_model.lower() else "You are a helpful assistant"
 
+# Create OpenAI client with fallback API key to prevent initialization errors
+# The actual API key should be set in environment variables or .env file
+api_key = os.getenv('OPENAI_API_KEY', 'sk-placeholder-key-for-local-models')
+
 agent = Agent(
     name="Assistant", 
     instructions=instructions,
     model=OpenAIChatCompletionsModel(
         model=llm_model,
-        openai_client=AsyncOpenAI()  # original OpenAI servers
+        openai_client=AsyncOpenAI(api_key=api_key)  # original OpenAI servers
         # openai_client = external_client  # LiteLLM Proxy Server
     )
 )
