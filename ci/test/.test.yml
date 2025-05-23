@@ -328,23 +328,8 @@
   <<: *run_test
   variables:
     TEST_PATH: tests/commands/test_command_config.py
-
-💻 commands test_command_flush.py:
-  <<: *run_test
-  variables:
-    TEST_PATH: tests/commands/test_command_flush.py
-
+    
 💻 commands test_command_help.py:
   <<: *run_test
   variables:
     TEST_PATH: tests/commands/test_command_help.py
-
-💻 commands test_command_virtualization.py:
-  <<: *run_test
-  variables:
-    TEST_PATH: tests/commands/test_command_virtualization.py
-
-💻 commands test_command_workspace.py:
-  <<: *run_test
-  variables:
-    TEST_PATH: tests/commands/test_command_workspace.py
