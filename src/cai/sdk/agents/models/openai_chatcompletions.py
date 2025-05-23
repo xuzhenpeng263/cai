@@ -407,14 +407,15 @@ class OpenAIChatCompletionsModel(Model):
                     msg_copy = converted_messages[idx].copy()
                     msg_copy["cache_control"] = {"type": "ephemeral"}
                     converted_messages[idx] = msg_copy
-            # --- Add to message_history: user, system, and assistant tool call messages ---
-            # Add system prompt to message_history
-            if system_instructions:
-                sys_msg = {
-                    "role": "system",
-                    "content": system_instructions
-                }
-                add_to_message_history(sys_msg)
+            
+            # # --- Add to message_history: user, system, and assistant tool call messages ---
+            # # Add system prompt to message_history
+            # if system_instructions:
+            #     sys_msg = {
+            #         "role": "system",
+            #         "content": system_instructions
+            #     }
+            #     add_to_message_history(sys_msg)
                 
             # Add user prompt(s) to message_history
             if isinstance(input, str):
@@ -845,13 +846,14 @@ class OpenAIChatCompletionsModel(Model):
                         msg_copy = converted_messages[idx].copy()
                         msg_copy["cache_control"] = {"type": "ephemeral"}
                         converted_messages[idx] = msg_copy
-               # --- Add to message_history: user, system prompts ---
-                if system_instructions:
-                    sys_msg = {
-                        "role": "system",
-                        "content": system_instructions
-                    }
-                    add_to_message_history(sys_msg)
+               
+            #    # --- Add to message_history: user, system prompts ---
+            #     if system_instructions:
+            #         sys_msg = {
+            #             "role": "system",
+            #             "content": system_instructions
+            #         }
+            #         add_to_message_history(sys_msg)
                     
                 if isinstance(input, str):
                     user_msg = {
