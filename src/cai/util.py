@@ -312,6 +312,7 @@ class CostTracker:
         if os.environ.get("CAI_COST_DISPLAYED", "").lower() == "true":
             return
         print(f"\nTotal CAI Session Cost: ${self.session_total_cost:.6f}")
+
     def get_model_pricing(self, model_name: str) -> tuple:
         """Get and cache pricing information for a model"""
         # Use the centralized function to standardize model names
@@ -320,6 +321,7 @@ class CostTracker:
         # Check if using Ollama or local model
         model_str = model_name.lower()
         is_local_model = (
+            "alias" not in model_str and
             "ollama" in model_str or
             "qwen" in model_str or
             "llama" in model_str or

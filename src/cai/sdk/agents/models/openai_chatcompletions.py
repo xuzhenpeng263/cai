@@ -1042,6 +1042,7 @@ class OpenAIChatCompletionsModel(Model):
                                 # Check if this is a local model and should have zero cost
                                 model_str = str(self.model).lower()
                                 is_local_model = (
+                                    "alias" not in model_str and
                                     "ollama" in model_str or
                                     "qwen" in model_str or
                                     "llama" in model_str or
@@ -1099,6 +1100,7 @@ class OpenAIChatCompletionsModel(Model):
                                 # Check if this is a local model (Ollama, Qwen, etc.) that should have zero cost
                                 model_str = str(self.model).lower()
                                 is_local_model = (
+                                    "alias" not in model_str and
                                     "ollama" in model_str or
                                     "qwen" in model_str or
                                     "llama" in model_str or
@@ -1652,6 +1654,7 @@ class OpenAIChatCompletionsModel(Model):
                 # Check if this is a local model and should have zero cost
                 model_str = str(self.model).lower()
                 is_local_model = (
+                    "alias" not in model_str and
                     "ollama" in model_str or
                     "qwen" in model_str or
                     "llama" in model_str or
