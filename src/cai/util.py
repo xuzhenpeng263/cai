@@ -84,7 +84,6 @@ def stop_active_timer():
         # Start idle timer if not already running
         if _idle_timer_start is None:
             _idle_timer_start = time.time()
-
 def start_idle_timer():
     """
     Start measuring idle time (when waiting for user input).
@@ -285,19 +284,11 @@ class CostTracker:
         Reset interaction cost tracking when switching to a local model.
         Returns True if the model was identified as local and cost was reset.
         """
-        # Check if this is a local/free model
-        model_str = model_name.lower()
-        is_local_model = (
-            "alias" not in model_str and
-            "ollama" in model_str or
-            "qwen" in model_str or
-            "llama" in model_str or
-            "mistral" in model_str or
-            ":" in model_str or
-            (os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() != 'false')
-        )
+        # Check if this is a local/free model by getting its pricing
+        input_cost, output_cost = self.get_model_pricing(model_name)
         
-        if is_local_model:
+        # If both costs are zero, it's a free/local model
+        if input_cost == 0.0 and output_cost == 0.0:
             # Reset the current interaction costs but keep total session costs
             self.interaction_cost = 0.0
             self.last_interaction_cost = 0.0
@@ -318,44 +309,30 @@ class CostTracker:
         # Use the centralized function to standardize model names
         model_name = get_model_name(model_name)
         
-        # Check if using Ollama or local model
-        model_str = model_name.lower()
-        is_local_model = (
-            "alias" not in model_str and
-            "ollama" in model_str or
-            "qwen" in model_str or
-            "llama" in model_str or
-            "mistral" in model_str or
-            ":" in model_str or  # Ollama uses formats like qwen2.5:7b
-            (os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() != 'false')
-        )
-        
-        # For local models, always return zero cost
-        if is_local_model:
-            # Set and cache zero cost for local models
-            free_pricing = (0.0, 0.0)
-            self.model_pricing_cache[model_name] = free_pricing
-            return free_pricing
-        
-        # Check cache for non-local models
+        # Check cache first
         if model_name in self.model_pricing_cache:
             return self.model_pricing_cache[model_name]
+            
         # Try to load pricing from local pricing.json first
+        # Only use if the specific model name exists in the file
         try:
             pricing_path = pathlib.Path("pricing.json")
             if pricing_path.exists():
                 with open(pricing_path, "r", encoding="utf-8") as f:
                     local_pricing = json.load(f)
-                    pricing_info = local_pricing.get("alias0", {})
-                    input_cost = pricing_info.get("input_cost_per_token", 0)
-                    output_cost = pricing_info.get("output_cost_per_token", 0)
-                    
-                    # Cache and return local pricing
-                    self.model_pricing_cache[model_name] = (input_cost, output_cost)
-                    return input_cost, output_cost
+                    # Only use pricing if the exact model name exists in the file
+                    if model_name in local_pricing:
+                        pricing_info = local_pricing[model_name]
+                        input_cost = pricing_info.get("input_cost_per_token", 0)
+                        output_cost = pricing_info.get("output_cost_per_token", 0)
+                        
+                        # Cache and return local pricing
+                        self.model_pricing_cache[model_name] = (input_cost, output_cost)
+                        return input_cost, output_cost
         except Exception as e:
             print(f"  WARNING: Error loading local pricing.json: {str(e)}")
-        # Fallback to LiteLLM API if both remote and local pricing not found
+            
+        # Fallback to LiteLLM API if local pricing not found
         LITELLM_URL = (
             "https://raw.githubusercontent.com/BerriAI/litellm/main/"
             "model_prices_and_context_window.json"
@@ -378,8 +355,8 @@ class CostTracker:
         except Exception as e:
             print(f"  WARNING: Error fetching model pricing: {str(e)}")
         
-        # Default values if no pricing found
-        default_pricing = (0, 0)
+        # Default to zero cost if no pricing found (local/free models)
+        default_pricing = (0.0, 0.0)
         self.model_pricing_cache[model_name] = default_pricing
         return default_pricing
     
@@ -388,22 +365,6 @@ class CostTracker:
         """Calculate and cache cost for a given model and token counts"""
         # Standardize model name using the central function
         model_name = get_model_name(model)
-        
-        # Check if this is a local model (always free) first
-        model_str = model_name.lower()
-        is_local_model = (
-           "alias" not in model_str and
-            "ollama" in model_str or
-            "qwen" in model_str or
-            "llama" in model_str or
-            "mistral" in model_str or
-            ":" in model_str or
-            (os.getenv('OLLAMA') is not None and os.getenv('OLLAMA').lower() != 'false')
-        )
-        
-        # For local models, always return zero cost
-        if is_local_model:
-            return 0.0
         
         # Generate a cache key
         cache_key = f"{model_name}_{input_tokens}_{output_tokens}"

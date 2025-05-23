@@ -1066,23 +1066,11 @@ class OpenAIChatCompletionsModel(Model):
                             # Update streaming display if enabled - ALWAYS respect CAI_STREAM setting
                             # Both thinking and regular content should stream if streaming is enabled
                             if streaming_context:
-                                # Check if this is a local model and should have zero cost
-                                model_str = str(self.model).lower()
-                                is_local_model = (
-                                    "alias" not in model_str and
-                                    "ollama" in model_str or
-                                    "qwen" in model_str or
-                                    "llama" in model_str or
-                                    "mistral" in model_str or
-                                    ":" in model_str or
-                                    self.is_ollama
-                                )
-                                
-                                # Calculate cost for current interaction (will be 0 for local models)
+                                # Calculate cost for current interaction
                                 current_cost = calculate_model_cost(str(self.model), estimated_input_tokens, estimated_output_tokens)
                                 
-                                # Check price limit only for non-local models
-                                if not is_local_model and hasattr(COST_TRACKER, "check_price_limit") and estimated_output_tokens % 50 == 0:
+                                # Check price limit only for paid models
+                                if current_cost > 0 and hasattr(COST_TRACKER, "check_price_limit") and estimated_output_tokens % 50 == 0:
                                     try:
                                         COST_TRACKER.check_price_limit(current_cost)
                                     except Exception as e:
@@ -1101,9 +1089,9 @@ class OpenAIChatCompletionsModel(Model):
                                 # This is a temporary estimate during streaming that will be properly updated at the end
                                 estimated_session_total = getattr(COST_TRACKER, 'session_total_cost', 0.0)
                                 
-                                # For local models, don't add to the total cost
+                                # For free models, don't add to the total cost
                                 display_total_cost = estimated_session_total
-                                if not is_local_model:
+                                if current_cost > 0:
                                     display_total_cost += current_cost
                                 
                                 # Create token stats with both current interaction cost and updated total cost
@@ -1124,27 +1112,12 @@ class OpenAIChatCompletionsModel(Model):
                             # Periodically check price limit during streaming 
                             # This allows early termination if price limit is reached mid-stream
                             if estimated_output_tokens > 0 and estimated_output_tokens % 50 == 0:  # Check every ~50 tokens
-                                # Check if this is a local model (Ollama, Qwen, etc.) that should have zero cost
-                                model_str = str(self.model).lower()
-                                is_local_model = (
-                                    "alias" not in model_str and
-                                    "ollama" in model_str or
-                                    "qwen" in model_str or
-                                    "llama" in model_str or
-                                    "mistral" in model_str or
-                                    ":" in model_str or
-                                    self.is_ollama
-                                )
+                                # Calculate current estimated cost
+                                current_estimated_cost = calculate_model_cost(
+                                    str(self.model), estimated_input_tokens, estimated_output_tokens)
                                 
-                                # For local models, cost should always be zero
-                                if is_local_model:
-                                    current_estimated_cost = 0.0
-                                else:
-                                    current_estimated_cost = calculate_model_cost(
-                                        str(self.model), estimated_input_tokens, estimated_output_tokens)
-                                
-                                # Check price limit only for non-local models
-                                if not is_local_model and hasattr(COST_TRACKER, "check_price_limit"):
+                                # Check price limit only for paid models
+                                if current_estimated_cost > 0 and hasattr(COST_TRACKER, "check_price_limit"):
                                     try:
                                         COST_TRACKER.check_price_limit(current_estimated_cost)
                                     except Exception as e:
@@ -1165,8 +1138,8 @@ class OpenAIChatCompletionsModel(Model):
                                 
                                 # Also update streaming context if available for live display
                                 if streaming_context:
-                                    # For local models, don't add to the session total
-                                    if is_local_model:
+                                    # For free models, don't add to the session total
+                                    if current_estimated_cost == 0:
                                         session_total = getattr(COST_TRACKER, 'session_total_cost', 0.0)
                                     else:
                                         session_total = getattr(COST_TRACKER, 'session_total_cost', 0.0) + current_estimated_cost
@@ -1678,32 +1651,17 @@ class OpenAIChatCompletionsModel(Model):
                 total_input = getattr(self, 'total_input_tokens', 0)
                 total_output = getattr(self, 'total_output_tokens', 0)
                 
-                # Check if this is a local model and should have zero cost
-                model_str = str(self.model).lower()
-                is_local_model = (
-                    "alias" not in model_str and
-                    "ollama" in model_str or
-                    "qwen" in model_str or
-                    "llama" in model_str or
-                    "mistral" in model_str or
-                    ":" in model_str or
-                    self.is_ollama
-                )
-                
-                # Calculate costs - use zero for local models
+                # Calculate costs for this model
                 model_name = str(self.model)
-                if is_local_model:
-                    # For local models, cost is always zero
-                    interaction_cost = 0.0
-                    total_cost = getattr(COST_TRACKER, 'session_total_cost', 0.0)  # Keep existing total
-                    
-                    # Ensure the cost tracking system knows this is a free model
+                interaction_cost = calculate_model_cost(model_name, interaction_input, interaction_output)
+                total_cost = calculate_model_cost(model_name, total_input, total_output)
+                
+                # If interaction cost is zero, this is a free model
+                if interaction_cost == 0:
+                    # For free models, keep existing total and ensure cost tracking system knows it's free
+                    total_cost = getattr(COST_TRACKER, 'session_total_cost', 0.0)
                     if hasattr(COST_TRACKER, "reset_cost_for_local_model"):
                         COST_TRACKER.reset_cost_for_local_model(model_name)
-                else:
-                    # For paid models, calculate as normal
-                    interaction_cost = calculate_model_cost(model_name, interaction_input, interaction_output)
-                    total_cost = calculate_model_cost(model_name, total_input, total_output)
                 
                 # Explicit conversion to float with fallback to ensure they're never None or 0
                 interaction_cost = float(interaction_cost if interaction_cost is not None else 0.0)
@@ -1711,7 +1669,7 @@ class OpenAIChatCompletionsModel(Model):
                 
                 # Update the global COST_TRACKER with the cost of this specific interaction
                 # and check price limit for streaming mode (similar to non-streaming mode)
-                if not is_local_model and interaction_cost > 0.0:
+                if interaction_cost > 0.0:
                     # Check price limit before adding the new cost
                     if hasattr(COST_TRACKER, "check_price_limit"):
                         try:

@@ -245,6 +245,10 @@
   variables:
     TEST_PATH: tests/others/test_computer_action.py   
 
+▪️ others test_pricing:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/test_pricing.py
 ▪️ others test_pretty_print.py:
   <<: *run_test
   variables:
