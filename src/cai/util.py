@@ -288,7 +288,7 @@ class CostTracker:
         # Check if this is a local/free model
         model_str = model_name.lower()
         is_local_model = (
-           "alias" not in model_str and
+            "alias" not in model_str and
             "ollama" in model_str or
             "qwen" in model_str or
             "llama" in model_str or
