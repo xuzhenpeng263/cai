@@ -1,6 +1,6 @@
 # macOS Files
 .DS_Store
-
+cai_env/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 **/__pycache__/
