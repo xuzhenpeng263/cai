@@ -994,12 +994,14 @@ class OpenAIChatCompletionsModel(Model):
 
                         # Handle Claude reasoning content first (before regular content)
                         reasoning_content = None
+                        
+                        # Check for Claude reasoning in different possible formats
                         if hasattr(delta, 'reasoning_content') and delta.reasoning_content is not None:
                             reasoning_content = delta.reasoning_content
                         elif isinstance(delta, dict) and 'reasoning_content' in delta and delta['reasoning_content'] is not None:
                             reasoning_content = delta['reasoning_content']
                         
-                        # Also check for thinking_blocks structure
+                        # Also check for thinking_blocks structure (Claude 4 format)
                         thinking_blocks = None
                         if hasattr(delta, 'thinking_blocks') and delta.thinking_blocks is not None:
                             thinking_blocks = delta.thinking_blocks
@@ -1012,11 +1014,29 @@ class OpenAIChatCompletionsModel(Model):
                                 if isinstance(block, dict) and block.get('type') == 'thinking':
                                     reasoning_content = block.get('thinking', '')
                                     break
+                                elif isinstance(block, dict) and block.get('type') == 'text' and 'thinking' in str(block):
+                                    # Sometimes thinking content comes as text blocks
+                                    reasoning_content = block.get('text', '')
+                                    break
                         
-                        if reasoning_content and thinking_context:
-                            # Update the thinking display
-                            from cai.util import update_claude_thinking_content
-                            update_claude_thinking_content(thinking_context, reasoning_content)
+                        # Check for direct thinking field (some Claude models)
+                        if not reasoning_content:
+                            if hasattr(delta, 'thinking') and delta.thinking is not None:
+                                reasoning_content = delta.thinking
+                            elif isinstance(delta, dict) and 'thinking' in delta and delta['thinking'] is not None:
+                                reasoning_content = delta['thinking']
+                        
+                        # Update thinking display if we have reasoning content
+                        if reasoning_content:
+                            if thinking_context:
+                                # Streaming mode: Update the rich thinking display
+                                from cai.util import update_claude_thinking_content
+                                update_claude_thinking_content(thinking_context, reasoning_content)
+                            else:
+                                # Non-streaming mode: Use simple text output
+                                from cai.util import print_claude_reasoning_simple, detect_claude_thinking_in_stream
+                                if detect_claude_thinking_in_stream(str(self.model)):
+                                    print_claude_reasoning_simple(reasoning_content, self.agent_name, str(self.model))
                         
 
 
@@ -1028,6 +1048,14 @@ class OpenAIChatCompletionsModel(Model):
                             content = delta['content']
                         
                         if content:
+                            # IMPORTANT: If we have content and thinking_context is active, 
+                            # it means thinking is complete and normal content is starting
+                            # Close the thinking display automatically
+                            if thinking_context:
+                                from cai.util import finish_claude_thinking_display
+                                finish_claude_thinking_display(thinking_context)
+                                thinking_context = None  # Clear the context
+                            
                             # For Ollama, we need to accumulate the full content to check for function calls
                             if is_ollama:
                                 ollama_full_content += content
@@ -1035,10 +1063,9 @@ class OpenAIChatCompletionsModel(Model):
                             # Add to the streaming text buffer
                             streaming_text_buffer += content
                             
-                            # Update streaming display if enabled - always do this for text content
-                            # BUT: if thinking context is active, don't show text content during streaming
-                            # Instead, it will be shown after thinking completes
-                            if streaming_context and not thinking_context:
+                            # Update streaming display if enabled - ALWAYS respect CAI_STREAM setting
+                            # Both thinking and regular content should stream if streaming is enabled
+                            if streaming_context:
                                 # Check if this is a local model and should have zero cost
                                 model_str = str(self.model).lower()
                                 is_local_model = (
@@ -1749,41 +1776,7 @@ class OpenAIChatCompletionsModel(Model):
                     from cai.util import finish_claude_thinking_display
                     finish_claude_thinking_display(thinking_context)
                     
-                    # After thinking completes, display the text content if it exists
-                    # This ensures that Claude thinking models show their final response
-                    if (state.text_content_index_and_output and 
-                        state.text_content_index_and_output[1].text and 
-                        not streamed_tool_calls):  # Only show if there were no tool calls
-                        
-                        # Create a message-like object for displaying the text response
-                        text_msg = type('TextResponse', (), {
-                            'content': state.text_content_index_and_output[1].text,
-                            'tool_calls': None
-                        })
-                        
-                        # Display the text response using the CLI utility
-                        cli_print_agent_messages(
-                            agent_name=getattr(self, 'agent_name', 'Agent'),
-                            message=text_msg,
-                            counter=getattr(self, 'interaction_counter', 0),
-                            model=str(self.model),
-                            debug=False,
-                            interaction_input_tokens=interaction_input,
-                            interaction_output_tokens=interaction_output,
-                            interaction_reasoning_tokens=int(
-                                final_response.usage.output_tokens_details.reasoning_tokens 
-                                if final_response.usage and final_response.usage.output_tokens_details
-                                and hasattr(final_response.usage.output_tokens_details, 'reasoning_tokens')
-                                else 0
-                            ),
-                            total_input_tokens=total_input,
-                            total_output_tokens=total_output,
-                            total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
-                            interaction_cost=interaction_cost,
-                            total_cost=total_cost,
-                            tool_output=None,
-                            suppress_empty=True
-                        )
+                    # Note: Content is now displayed during streaming, no need to show it again here
 
                 if tracing.include_data():
                     span_generation.span_data.output = [final_response.model_dump()]
@@ -2065,7 +2058,15 @@ class OpenAIChatCompletionsModel(Model):
                 
                 # Add extended reasoning support for Claude models
                 # Supports Claude 3.7, Claude 4, and any model with "thinking" in the name
-                has_reasoning_capability = "thinking" in model_str
+                has_reasoning_capability = (
+                    "thinking" in model_str or
+                    # Claude 4 models support reasoning
+                    "-4-" in model_str or
+                    "sonnet-4" in model_str or
+                    "haiku-4" in model_str or
+                    "opus-4" in model_str or
+                    "3.7" in model_str
+                )
                 
                 if has_reasoning_capability:
                     # Clean the model name by removing "thinking" before sending to API
