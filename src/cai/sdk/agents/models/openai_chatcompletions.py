@@ -1036,7 +1036,9 @@ class OpenAIChatCompletionsModel(Model):
                             streaming_text_buffer += content
                             
                             # Update streaming display if enabled - always do this for text content
-                            if streaming_context:
+                            # BUT: if thinking context is active, don't show text content during streaming
+                            # Instead, it will be shown after thinking completes
+                            if streaming_context and not thinking_context:
                                 # Check if this is a local model and should have zero cost
                                 model_str = str(self.model).lower()
                                 is_local_model = (
@@ -1743,6 +1745,42 @@ class OpenAIChatCompletionsModel(Model):
                 if thinking_context:
                     from cai.util import finish_claude_thinking_display
                     finish_claude_thinking_display(thinking_context)
+                    
+                    # After thinking completes, display the text content if it exists
+                    # This ensures that Claude thinking models show their final response
+                    if (state.text_content_index_and_output and 
+                        state.text_content_index_and_output[1].text and 
+                        not streamed_tool_calls):  # Only show if there were no tool calls
+                        
+                        # Create a message-like object for displaying the text response
+                        text_msg = type('TextResponse', (), {
+                            'content': state.text_content_index_and_output[1].text,
+                            'tool_calls': None
+                        })
+                        
+                        # Display the text response using the CLI utility
+                        cli_print_agent_messages(
+                            agent_name=getattr(self, 'agent_name', 'Agent'),
+                            message=text_msg,
+                            counter=getattr(self, 'interaction_counter', 0),
+                            model=str(self.model),
+                            debug=False,
+                            interaction_input_tokens=interaction_input,
+                            interaction_output_tokens=interaction_output,
+                            interaction_reasoning_tokens=int(
+                                final_response.usage.output_tokens_details.reasoning_tokens 
+                                if final_response.usage and final_response.usage.output_tokens_details
+                                and hasattr(final_response.usage.output_tokens_details, 'reasoning_tokens')
+                                else 0
+                            ),
+                            total_input_tokens=total_input,
+                            total_output_tokens=total_output,
+                            total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
+                            interaction_cost=interaction_cost,
+                            total_cost=total_cost,
+                            tool_output=None,
+                            suppress_empty=True
+                        )
 
                 if tracing.include_data():
                     span_generation.span_data.output = [final_response.model_dump()]
@@ -1764,9 +1802,9 @@ class OpenAIChatCompletionsModel(Model):
                             tool_calls_list.append(tool_call)
                     self.logger.log_assistant_message(None, tool_calls_list)
                     
-                # If we've already shown the tool calls directly during streaming,
-                # don't log the text message to avoid duplication
-                elif (not self.suppress_final_output) and state.text_content_index_and_output and state.text_content_index_and_output[1].text:
+                # Always log text content if it exists, regardless of suppress_final_output
+                # The suppress_final_output flag is only for preventing duplicate tool call display
+                if state.text_content_index_and_output and state.text_content_index_and_output[1].text:
                     asst_msg = {
                         "role": "assistant",
                         "content": state.text_content_index_and_output[1].text
@@ -1774,7 +1812,8 @@ class OpenAIChatCompletionsModel(Model):
                     add_to_message_history(asst_msg)
                     # Log the assistant message
                     self.logger.log_assistant_message(state.text_content_index_and_output[1].text)
-                
+                    
+
                 # Reset the suppress flag for future requests
                 self.suppress_final_output = False
                 
@@ -2023,7 +2062,7 @@ class OpenAIChatCompletionsModel(Model):
                 
                 # Add extended reasoning support for Claude models
                 # Supports Claude 3.7, Claude 4, and any model with "thinking" in the name
-                has_reasoning_capability = ("3.7" in model_str or "4" in model_str or "thinking" in model_str)
+                has_reasoning_capability = "thinking" in model_str
                 
                 if has_reasoning_capability:
                     # Clean the model name by removing "thinking" before sending to API
@@ -2057,7 +2096,7 @@ class OpenAIChatCompletionsModel(Model):
                 
                 # Add extended reasoning support for Claude models
                 # Supports Claude 3.7, Claude 4, and any model with "thinking" in the name
-                has_reasoning_capability = ("3.7" in model_str or "4" in model_str or "thinking" in model_str)
+                has_reasoning_capability = "thinking" in model_str
                 
                 if has_reasoning_capability:
                     # Clean the model name by removing "thinking" before sending to API
@@ -2118,8 +2157,6 @@ class OpenAIChatCompletionsModel(Model):
             # Handle Claude reasoning/thinking compatibility errors
             if ("Expected `thinking` or `redacted_thinking`, but found `text`" in error_msg or
                 "When `thinking` is enabled, a final `assistant` message must start with a thinking block" in error_msg):
-                print(f"Claude 4 thinking error: {e}")
-                print("Disabling reasoning_effort due to incompatible message history")
                 
                 # Retry without reasoning_effort
                 retry_kwargs = kwargs.copy()
@@ -2215,8 +2252,7 @@ class OpenAIChatCompletionsModel(Model):
                         provider_kwargs.pop("parallel_tool_calls", None)  # Claude doesn't support parallel tool calls
                         
                         # Add extended reasoning support for Claude models
-                        # Supports Claude 3.7, Claude 4, and any model with "thinking" in the name
-                        if ("3.7" in model_str or "4" in model_str or "thinking" in model_str):
+                        if "thinking" in model_str:
                             # Clean the model name by removing "thinking" before sending to API
                             clean_model = provider_kwargs["model"]
                             if isinstance(clean_model, str) and "thinking" in clean_model.lower():
