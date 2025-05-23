@@ -76,16 +76,16 @@ Usage Examples:
     # Run against a CTF
     CTF_NAME="kiddoctf" CTF_CHALLENGE="02 linux ii" \
         CAI_AGENT_TYPE="one_tool_agent" CAI_MODEL="qwen2.5:14b" \
-        CAI_TRACING="false" python3 cai/cli.py
+        CAI_TRACING="false" cai
 
     # Run a harder CTF
     CTF_NAME="hackableii" CAI_AGENT_TYPE="redteam_agent" \
         CTF_INSIDE="False" CAI_MODEL="deepseek/deepseek-chat" \
-        CAI_TRACING="false" python3 cai/cli.py
+        CAI_TRACING="false" cai
 
     # Run without a target in human-in-the-loop mode, generating a report
     CAI_TRACING=False CAI_REPORT=pentesting CAI_MODEL="gpt-4o" \
-        python3 cai/cli.py
+        cai
 
     # Run with online episodic memory
     #   registers memory every 5 turns:
@@ -93,18 +93,18 @@ Usage Examples:
     CTF_NAME="hackableII" CAI_MEMORY="episodic" \
         CAI_MODEL="o3-mini" CAI_MEMORY_ONLINE="True" \
         CTF_INSIDE="False" CTF_HINTS="False"  \
-        CAI_PRICE_LIMIT="5" python3 cai/cli.py
+        CAI_PRICE_LIMIT="5" cai
 
     # Run with custom long_term_memory interval
     # Executes memory long_term_memory every 3 turns:
     CTF_NAME="hackableII" CAI_MEMORY="episodic" \
         CAI_MODEL="o3-mini" CAI_MEMORY_ONLINE_INTERVAL="3" \
         CAI_MEMORY_ONLINE="False" CTF_INSIDE="False" \
-        CTF_HINTS="False" python3 cai/cli.py
+        CTF_HINTS="False" cai
         
     # Run with parallel agents (3 instances)
     CTF_NAME="hackableII" CAI_AGENT_TYPE="redteam_agent" \
-        CAI_MODEL="gpt-4o" CAI_PARALLEL="3" python3 cai/cli.py
+        CAI_MODEL="gpt-4o" CAI_PARALLEL="3" cai
 """
 
 import os
@@ -326,11 +326,9 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                         if hasattr(agent.model, 'set_agent_name'):
                             agent.model.set_agent_name(get_agent_short_name(agent))
                 except Exception as e:
-                    console.print(f"[red]Error switching agent: {str(e)}[/red]")
-           
-
+                    console.print(f"[red]Error switching agent: {str(e)}[/red]")           
         
-            if not force_until_flag and messages_ctf == "":
+            if not force_until_flag:
                 # Get user input with command completion and history
                 user_input = get_user_input(
                     command_completer,

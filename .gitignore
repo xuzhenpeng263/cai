@@ -153,3 +153,6 @@ workspaces/
 
 # benchmarks
 benchmarks/outputs
+
+# other
+nohup.out
