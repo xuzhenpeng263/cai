@@ -340,7 +340,21 @@ class CostTracker:
         # Check cache for non-local models
         if model_name in self.model_pricing_cache:
             return self.model_pricing_cache[model_name]
-
+        # Try to load pricing from local pricing.json first
+        try:
+            pricing_path = pathlib.Path("pricing.json")
+            if pricing_path.exists():
+                with open(pricing_path, "r", encoding="utf-8") as f:
+                    local_pricing = json.load(f)
+                    pricing_info = local_pricing.get("alias0", {})
+                    input_cost = pricing_info.get("input_cost_per_token", 0)
+                    output_cost = pricing_info.get("output_cost_per_token", 0)
+                    
+                    # Cache and return local pricing
+                    self.model_pricing_cache[model_name] = (input_cost, output_cost)
+                    return input_cost, output_cost
+        except Exception as e:
+            print(f"  WARNING: Error loading local pricing.json: {str(e)}")
         # Fallback to LiteLLM API if both remote and local pricing not found
         LITELLM_URL = (
             "https://raw.githubusercontent.com/BerriAI/litellm/main/"
