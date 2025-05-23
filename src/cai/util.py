@@ -340,7 +340,6 @@ class CostTracker:
         # Check cache for non-local models
         if model_name in self.model_pricing_cache:
             return self.model_pricing_cache[model_name]
-
         # Try to load pricing from local pricing.json first
         try:
             pricing_path = pathlib.Path("pricing.json")
@@ -356,8 +355,7 @@ class CostTracker:
                     return input_cost, output_cost
         except Exception as e:
             print(f"  WARNING: Error loading local pricing.json: {str(e)}")
-        
-        # Fallback to LiteLLM API if local pricing not found
+        # Fallback to LiteLLM API if both remote and local pricing not found
         LITELLM_URL = (
             "https://raw.githubusercontent.com/BerriAI/litellm/main/"
             "model_prices_and_context_window.json"
@@ -3275,20 +3273,46 @@ def detect_claude_thinking_in_stream(model_name):
     model_str = str(model_name).lower()
     
     # Check for Claude models with reasoning capability
-    # According to LiteLLM docs, Claude 3.7, Claude 4 and models with "thinking" support reasoning
+    # Claude 4 models (like claude-sonnet-4-20250514) support reasoning
+    # Also check for explicit "thinking" in model name
     has_reasoning = (
         "claude" in model_str and (
+            # Claude 4 models (sonnet-4, haiku-4, opus-4)
+            "-4-" in model_str or
+            "sonnet-4" in model_str or
+            "haiku-4" in model_str or
+            "opus-4" in model_str or
+            # Legacy support for 3.7 and explicit thinking models
             "3.7" in model_str or 
-            "4" in model_str or
             "thinking" in model_str
         )
     )
     
     return has_reasoning
 
+def print_claude_reasoning_simple(reasoning_content, agent_name, model_name):
+    """
+    Print Claude reasoning content in simple mode (no Rich panels).
+    Used when CAI_STREAM=False.
+    
+    Args:
+        reasoning_content: The reasoning/thinking text
+        agent_name: The agent name
+        model_name: The model name
+    """
+    if not reasoning_content or not reasoning_content.strip():
+        return
+        
+    # Simple text output without Rich formatting
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    print(f"\n🧠 Reasoning | {agent_name} | {model_name} | {timestamp}")
+    print("=" * 60)
+    print(reasoning_content)
+    print("=" * 60 + "\n")
+
 def start_claude_thinking_if_applicable(model_name, agent_name, counter):
     """
-    Start Claude thinking display if the model supports it.
+    Start Claude thinking display if the model supports it AND streaming is enabled.
     
     Args:
         model_name: The model name
@@ -3298,6 +3322,9 @@ def start_claude_thinking_if_applicable(model_name, agent_name, counter):
     Returns:
         The thinking context if created, None otherwise
     """
-    if detect_claude_thinking_in_stream(model_name):
+    # Only show thinking in streaming mode
+    streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+    
+    if streaming_enabled and detect_claude_thinking_in_stream(model_name):
         return create_claude_thinking_context(agent_name, counter, model_name)
     return None
