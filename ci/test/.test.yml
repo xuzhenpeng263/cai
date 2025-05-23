@@ -293,3 +293,58 @@
   <<: *run_test
   variables:
     TEST_PATH: tests/others/test_function_schema.py    
+
+💻 cli test_cli_streaming.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/cli/test_cli_streaming.py
+
+💻 commands test_command_base.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/commands/test_command_base.py
+
+💻 commands test_command_parallel.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/commands/test_command_parallel.py
+
+💻 commands test_command_agent.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/commands/test_command_agent.py
+
+💻 commands test_command_model.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/commands/test_command_model.py
+
+💻 commands test_command_history.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/commands/test_command_history.py
+
+💻 commands test_command_config.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/commands/test_command_config.py
+
+💻 commands test_command_flush.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/commands/test_command_flush.py
+
+💻 commands test_command_help.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/commands/test_command_help.py
+
+💻 commands test_command_virtualization.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/commands/test_command_virtualization.py
+
+💻 commands test_command_workspace.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/commands/test_command_workspace.py

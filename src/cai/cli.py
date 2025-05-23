@@ -413,9 +413,13 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                             pending_calls.append(call_info.get('name', 'unknown'))
                 
                 # Apply message list fixes
+                # NOTE: Commenting this to avoid creating duplicate synthetic tool calls
+                # The synthetic tool calls we just created are already in the correct format
+                # if pending_calls:
+                #     from cai.util import fix_message_list
+                #     message_history[:] = fix_message_list(message_history)
+                #     print(f"\033[93mCleaned up {len(pending_calls)} pending tool calls before exit\033[0m")
                 if pending_calls:
-                    from cai.util import fix_message_list
-                    message_history[:] = fix_message_list(message_history)
                     print(f"\033[93mCleaned up {len(pending_calls)} pending tool calls before exit\033[0m")
             except Exception:
                 pass
@@ -830,8 +834,11 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                             add_to_message_history(tool_msg)
                                                         
                     # Apply message list fixes
-                    from cai.util import fix_message_list
-                    message_history[:] = fix_message_list(message_history)
+                    # NOTE: Commenting this to avoid creating duplicate synthetic tool calls
+                    # The synthetic tool calls we just created are already in the correct format
+                    # from cai.util import fix_message_list
+                    # message_history[:] = fix_message_list(message_history)
+                    pass
             except Exception as cleanup_error:
                 print(f"\033[91mError cleaning up interrupted tools: {str(cleanup_error)}\033[0m")
             

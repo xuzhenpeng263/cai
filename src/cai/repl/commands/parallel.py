@@ -153,9 +153,8 @@ class ParallelCommand(Command):
         Returns:
             True if successful
         """
-        global PARALLEL_CONFIGS
         count = len(PARALLEL_CONFIGS)
-        PARALLEL_CONFIGS = []
+        PARALLEL_CONFIGS.clear()
         
         console.print(f"[green]Cleared {count} parallel configurations[/green]")
         return True
