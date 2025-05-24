@@ -377,47 +377,6 @@ def get_session_output(session_id, clear=True, stdout=True):
     session = ACTIVE_SESSIONS[session_id]
     output = session.get_output(clear)
     
-    # If stdout is enabled, display using cli_print_tool_output with counter
-    if stdout:
-        # Generate unique counter for this session output command
-        counter_key = f"session_output_{session_id}"
-        if counter_key not in SESSION_OUTPUT_COUNTER:
-            SESSION_OUTPUT_COUNTER[counter_key] = 0
-        SESSION_OUTPUT_COUNTER[counter_key] += 1
-        
-        # Create args for display
-        session_args = {
-            "command": "session",
-            "args": f"output {session_id}",
-            "session_id": session_id,
-            "call_counter": SESSION_OUTPUT_COUNTER[counter_key]  # This ensures uniqueness
-        }
-        
-        # Determine environment info for display
-        env_type = "Local"
-        if session.container_id:
-            env_type = f"Container({session.container_id[:12]})"
-        elif session.ctf:
-            env_type = "CTF"
-        
-        # Create execution info
-        execution_info = {
-            "status": "completed",
-            "environment": env_type,
-            "host": session.workspace_dir,
-            "session_id": session_id
-        }
-        
-        # Display the session output using cli_print_tool_output
-        from cai.util import cli_print_tool_output
-        cli_print_tool_output(
-            tool_name="generic_linux_command",
-            args=session_args,
-            output=output,
-            execution_info=execution_info,
-            streaming=False
-        )
-    
     return output
 
 

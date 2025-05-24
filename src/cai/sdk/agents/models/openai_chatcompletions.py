@@ -656,6 +656,29 @@ class OpenAIChatCompletionsModel(Model):
                 # Log the assistant message
                 self.logger.log_assistant_message(assistant_msg.content)
             
+            # En no-streaming, también necesitamos añadir cualquier tool output al message_history
+            # Esto se hace procesando los items de output del ModelResponse
+            items = _Converter.message_to_output_items(response.choices[0].message)
+            
+            # Además, necesitamos añadir los tool outputs que se hayan generado
+            # durante la ejecución de las herramientas
+            if hasattr(_Converter, 'tool_outputs'):
+                for call_id, output_content in _Converter.tool_outputs.items():
+                    # Verificar si ya existe un mensaje tool con este call_id en message_history
+                    tool_msg_exists = any(
+                        msg.get("role") == "tool" and msg.get("tool_call_id") == call_id
+                        for msg in message_history
+                    )
+                    
+                    if not tool_msg_exists:
+                        # Añadir el mensaje tool al message_history
+                        tool_msg = {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "content": output_content
+                        }
+                        add_to_message_history(tool_msg)
+            
             # Log the complete response for the session
             self.logger.rec_training_data(
                 {
