@@ -65,8 +65,8 @@ def generic_linux_command(command: str = "",
             session_id = args.split(" ")[1]
             # Call get_session_output with stdout=True to display via cli_print_tool_output
             # The function will handle the display and return a simple confirmation message
-            get_session_output(session_id, clear=False, stdout=True)
-            return f"Session {session_id} output displayed above"
+            output = get_session_output(session_id, clear=False, stdout=True)
+            return output
 
         if args.startswith("kill "):
             session_id = args.split(" ")[1]
