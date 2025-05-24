@@ -75,36 +75,36 @@ Usage Examples:
 
     # Run against a CTF
     CTF_NAME="kiddoctf" CTF_CHALLENGE="02 linux ii" \
-        CAI_AGENT_TYPE="one_tool_agent" CAI_MODEL="qwen2.5:14b" \
+        CAI_AGENT_TYPE="one_tool_agent" CAI_MODEL="alias0" \
         CAI_TRACING="false" cai
 
     # Run a harder CTF
     CTF_NAME="hackableii" CAI_AGENT_TYPE="redteam_agent" \
-        CTF_INSIDE="False" CAI_MODEL="deepseek/deepseek-chat" \
+        CTF_INSIDE="False" CAI_MODEL="alias0" \
         CAI_TRACING="false" cai
 
     # Run without a target in human-in-the-loop mode, generating a report
-    CAI_TRACING=False CAI_REPORT=pentesting CAI_MODEL="gpt-4o" \
+    CAI_TRACING=False CAI_REPORT=pentesting CAI_MODEL="alias0" \
         cai
 
     # Run with online episodic memory
     #   registers memory every 5 turns:
     #   limits the cost to 5 dollars
     CTF_NAME="hackableII" CAI_MEMORY="episodic" \
-        CAI_MODEL="o3-mini" CAI_MEMORY_ONLINE="True" \
+        CAI_MODEL="alias0" CAI_MEMORY_ONLINE="True" \
         CTF_INSIDE="False" CTF_HINTS="False"  \
         CAI_PRICE_LIMIT="5" cai
 
     # Run with custom long_term_memory interval
     # Executes memory long_term_memory every 3 turns:
     CTF_NAME="hackableII" CAI_MEMORY="episodic" \
-        CAI_MODEL="o3-mini" CAI_MEMORY_ONLINE_INTERVAL="3" \
+        CAI_MODEL="alias0" CAI_MEMORY_ONLINE_INTERVAL="3" \
         CAI_MEMORY_ONLINE="False" CTF_INSIDE="False" \
         CTF_HINTS="False" cai
         
     # Run with parallel agents (3 instances)
     CTF_NAME="hackableII" CAI_AGENT_TYPE="redteam_agent" \
-        CAI_MODEL="gpt-4o" CAI_PARALLEL="3" cai
+        CAI_MODEL="alias0" CAI_PARALLEL="3" cai
 """
 
 # Load environment variables from .env file FIRST, before any imports
