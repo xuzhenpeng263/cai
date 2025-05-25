@@ -804,8 +804,19 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 "session_id": session_id,
                 "call_counter": SESSION_OUTPUT_COUNTER[counter_key],  # This ensures uniqueness
                 "input_to_session": True,  # Flag to identify this as session input
-                "auto_output": True  # Flag to indicate this is automatic output display
             }
+            
+            # Only add auto_output if not already present (prevents duplication)
+            if args and isinstance(args, dict):
+                # If args were passed and contain auto_output, use that value
+                if "auto_output" in args:
+                    session_args["auto_output"] = args["auto_output"]
+                else:
+                    # Otherwise, force it to True for session commands
+                    session_args["auto_output"] = True
+            else:
+                # No args provided, force auto_output
+                session_args["auto_output"] = True
             
             # Determine environment info for display
             env_type = "Local"

@@ -594,9 +594,8 @@ class OpenAIChatCompletionsModel(Model):
                                     if time_since_execution < 2.0:
                                         should_display_message = False
                                         tool_output = None
-                        # For async session inputs with auto_output, suppress the agent message
-                        elif is_async_session_input and has_auto_output:
-                            should_display_message = True  # Don't suppress async session messages
+                        elif is_async_session_input:
+                            should_display_message = True
                             tool_output = None
                         # For async session inputs without auto_output, always show the agent message
                         elif is_async_session_input and not has_auto_output:

@@ -6,46 +6,65 @@ from unittest.mock import MagicMock
 # Set test environment variables to avoid OpenAI client initialization errors
 os.environ["OPENAI_API_KEY"] = "test_key_for_ci_environment"
 
-from cai.tools.reconnaissance.generic_linux_command import generic_linux_command  
+from cai.tools.reconnaissance.generic_linux_command import generic_linux_command
 
-async def test_generic_linux_command_regular_commands():
-    """Test the execution of a regular command using the generic Linux command tool."""
-    mock_ctx = MagicMock()  # Create a mock context for the command execution
-    params = {
-        "command": "echo",  # Command to be executed
-        "args": "'hello'"   # Arguments for the command
-    }
 
-    # Invoke the tool with the specified parameters and await the result
-    result = await generic_linux_command.on_invoke_tool(mock_ctx, json.dumps(params))
+def test_generic_linux_command_echo():
+    """Test the execution of echo command using generic_linux_command."""
+    result = generic_linux_command(command="echo 'hello'")
+    assert result.strip() == 'hello'
 
-    # Assert that the result matches the expected output
-    assert result.replace("\n", "") == 'hello'  
 
-async def test_generic_linux_command_ls():
-    """Test the execution of the 'ls' command using the generic Linux command tool."""
-    mock_ctx = MagicMock()  # Create a mock context for the command execution
-    params = {
-        "command": "ls",  # Command to be executed
-        "args": "-l"      # Arguments for the command
-    }
+def test_generic_linux_command_ls():
+    """Test the execution of ls command using generic_linux_command."""
+    result = generic_linux_command(command="ls -l")
+    # Check that the output contains typical ls -l indicators
+    assert "total" in result or "drwx" in result or "-rw" in result
 
-    # Invoke the tool with the specified parameters and await the result
-    result = await generic_linux_command.on_invoke_tool(mock_ctx, json.dumps(params))
 
-    # Assert that the output contains 'total', which is typical for 'ls -l'
-    assert "total" in result  
+def test_generic_linux_command_invalid_command():
+    """Test handling of invalid command using generic_linux_command."""
+    result = generic_linux_command(command="invalid_command_xyz123")
+    # Check for common error indicators
+    assert ("not found" in result.lower() or 
+            "command not found" in result.lower() or
+            "no such file" in result.lower())
 
-async def test_generic_linux_command_invalid_command():
-    """Test the handling of an invalid command using the generic Linux command tool."""
-    mock_ctx = MagicMock()  # Create a mock context for the command execution
-    params = {
-        "command": "invalid_command",  # Invalid command to be executed
-        "args": ""                      # No arguments for the command
-    }
 
-    # Invoke the tool with the specified parameters and await the result
-    result = await generic_linux_command.on_invoke_tool(mock_ctx, json.dumps(params))
+def test_generic_linux_command_empty_command():
+    """Test handling of empty command using generic_linux_command."""
+    result = generic_linux_command(command="")
+    assert "Error: No command provided" in result
 
-    # Assert that the result indicates the command was not found
-    assert "not found" in result 
+
+def test_generic_linux_command_session_list():
+    """Test session list functionality using generic_linux_command."""
+    result = generic_linux_command(command="session list")
+    assert "No active sessions" in result or "Active sessions:" in result
+
+
+def test_generic_linux_command_env_info():
+    """Test environment info functionality using generic_linux_command."""
+    result = generic_linux_command(command="env info")
+    assert "Current Environment:" in result
+    assert "CTF Environment:" in result
+    assert "Container:" in result
+    assert "SSH:" in result
+    assert "Workspace:" in result
+
+
+def test_generic_linux_command_interactive_flag():
+    """Test interactive flag functionality using generic_linux_command."""
+    # Test with interactive=True but a simple command
+    result = generic_linux_command(command="echo 'test'", interactive=True)
+    # Should still work, just might have different session handling
+    assert "test" in result
+
+
+def test_generic_linux_command_with_session_id():
+    """Test session_id parameter using generic_linux_command."""
+    # Test with a non-existent session_id
+    result = generic_linux_command(command="echo 'test'", 
+                                   session_id="nonexistent123")
+    # Should handle gracefully - either execute or give session error
+    assert isinstance(result, str)

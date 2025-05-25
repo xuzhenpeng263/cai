@@ -1891,6 +1891,8 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         if "command" in args and args.get("session_id"):
             # For async session commands, include the full command to differentiate
             effective_command_args_str = f"{args.get('command', '')}:{effective_command_args_str}"
+            # Also include session_id to make it unique per session
+            effective_command_args_str += f":session_{args.get('session_id', '')}"
     elif isinstance(args, str):
         # If args is a string, it might be a JSON representation or a plain string.
         try:
@@ -1901,6 +1903,8 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
                 # For session commands, also include the actual command
                 if "command" in parsed_json_args and parsed_json_args.get("session_id"):
                     effective_command_args_str = f"{parsed_json_args.get('command', '')}:{effective_command_args_str}"
+                    # Also include session_id to make it unique per session
+                    effective_command_args_str += f":session_{parsed_json_args.get('session_id', '')}"
             else:
                 # Parsed as JSON, but not a dict (e.g., a JSON string literal).
                 effective_command_args_str = parsed_json_args if isinstance(parsed_json_args, str) else args
@@ -1922,6 +1926,12 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         # Add a timestamp component to make each session input unique
         import time
         command_key += f":ts_{int(time.time() * 1000)}"
+        
+    # Special handling for auto_output commands - they should always display
+    # even if a similar command was shown before
+    if isinstance(args, dict) and args.get("auto_output"):
+        # Add auto_output flag to the key to differentiate from manual commands
+        command_key += ":auto_output"
     
     # --- End of Command Key Generation ---
         
