@@ -174,42 +174,67 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
     def _read_output(self):
         """Read output from the process"""
         try:
+            # Buffer for incomplete lines
+            partial_line = ""
+            
             while self.is_running and self.master is not None:
                 try:
                     # Check if process has exited before reading
                     if self.process and self.process.poll() is not None:
                         self.is_running = False
                         break
-                    # Read the output
-                    output = os.read(self.master, 1024).decode()
+                    
+                    # Read the output - increased buffer size to avoid cutting commands
+                    output = os.read(self.master, 4096).decode('utf-8', errors='replace')
+                    
                     if output:
-                        self.output_buffer.append(output)
+                        # Combine with any partial line from previous read
+                        full_output = partial_line + output
+                        
+                        # Split into lines but keep the last partial line if it doesn't end with newline
+                        lines = full_output.split('\n')
+                        
+                        # If output doesn't end with newline, the last item is a partial line
+                        if not output.endswith('\n'):
+                            partial_line = lines[-1]
+                            lines = lines[:-1]
+                        else:
+                            partial_line = ""
+                        
+                        # Add complete lines to buffer
+                        for line in lines:
+                            if line:  # Don't add empty lines
+                                self.output_buffer.append(line)
+                        
                         self.last_activity = time.time()
                     else:
                         # os.read() returned empty. This does NOT necessarily mean
                         # the process itself has exited if self.process.poll() is None.
                         # It might be idle and waiting for input.
-                        # The self.process.poll() check at the start of the loop iteration
-                        # (or if self.is_process_running() is used in the sleep condition)
-                        # will handle actual termination.
-                        # Thus, we 'pass' here and let the loop continue with its sleep,
-                        # rather than prematurely setting self.is_running = False.
                         if self.process and self.process.poll() is None:
                             # Process is alive but PTY read was empty (e.g., idle).
-                            # Do nothing here to change is_running.
                             pass
                         else:
                             # Process is confirmed dead or no process to check,
                             # and read returned empty. Session is over.
+                            if partial_line:
+                                # Add any remaining partial line
+                                self.output_buffer.append(partial_line)
                             self.is_running = False
-                            break # Exit the while loop
+                            break
+                except UnicodeDecodeError as e:
+                    # Handle unicode decode errors gracefully
+                    self.output_buffer.append(f"[Session {self.session_id}] Unicode decode error in output")
+                    continue
                 except Exception as read_err: 
-                     self.output_buffer.append(f"Error reading output buffer: {str(read_err)}")
-                     self.is_running = False
-                     break
+                    self.output_buffer.append(f"Error reading output buffer: {str(read_err)}")
+                    self.is_running = False
+                    break
+                    
                 # Add a small sleep to prevent busy-waiting if no output
                 if self.is_process_running():
-                     time.sleep(0.05)
+                    time.sleep(0.05)
+                    
         except Exception as e:
             self.output_buffer.append(f"Error in read_output loop: {str(e)}")
             self.is_running = False
@@ -855,8 +880,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     "command": command,
                     "args": "",
                     "session_id": new_session_id,
-                    "async_mode": True,
-                    "creating_session": True  # Flag to identify this as session creation
+                    "async_mode": True
                 }
                 
                 # Create execution info
@@ -1359,8 +1383,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 "command": command,
                 "args": "",
                 "session_id": new_session_id,
-                "async_mode": True,
-                "creating_session": True  # Flag to identify this as session creation
+                "async_mode": True
             }
             
             # Create execution info
