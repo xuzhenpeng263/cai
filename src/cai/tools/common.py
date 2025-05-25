@@ -261,6 +261,21 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
         if clear:
             self.output_buffer = []
         return output
+    
+    def get_new_output(self, mark_position=True):
+        """Get only new output since last marked position"""
+        if not hasattr(self, '_last_output_position'):
+            self._last_output_position = 0
+        
+        # Get new output since last position
+        new_output_lines = self.output_buffer[self._last_output_position:]
+        new_output = "\n".join(new_output_lines)
+        
+        # Update position marker if requested
+        if mark_position:
+            self._last_output_position = len(self.output_buffer)
+        
+        return new_output
 
     def terminate(self):
         """Terminate the session"""
@@ -392,7 +407,7 @@ def terminate_session(session_id):
     return result
 
 
-def _run_ctf(ctf, command, stdout=False, timeout=100, workspace_dir=None):
+def _run_ctf(ctf, command, stdout=False, timeout=100, workspace_dir=None, stream=False):
     """Runs command in CTF env, changing to workspace_dir first."""
     target_dir = workspace_dir or _get_workspace_dir()
     full_command = f"{command}"
@@ -400,7 +415,9 @@ def _run_ctf(ctf, command, stdout=False, timeout=100, workspace_dir=None):
     context_msg = f"(ctf:{target_dir})"
     try:
         output = ctf.get_shell(full_command, timeout=timeout)
-        if stdout:
+        # In streaming mode, don't print to stdout to avoid duplication
+        # The streaming system will handle the display
+        if stdout and not stream:
             print(f"\033[32m{context_msg} $ {original_cmd_for_msg}\n{output}\033[0m") # noqa E501
         return output
     except Exception as e:  # pylint: disable=broad-except
@@ -408,7 +425,7 @@ def _run_ctf(ctf, command, stdout=False, timeout=100, workspace_dir=None):
         print(color(error_msg, fg="red"))
         return error_msg
 
-def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None):
+def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None, stream=False):
     """Runs command via SSH. Assumes SSH agent or passwordless setup unless sshpass is used externally.""" # noqa E501
     ssh_user = os.environ.get('SSH_USER')
     ssh_host = os.environ.get('SSH_HOST')
@@ -434,14 +451,16 @@ def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None):
             timeout=timeout
         )
         output = result.stdout if result.stdout else result.stderr
-        if stdout:
+        # In streaming mode, don't print to stdout to avoid duplication
+        # The streaming system will handle the display
+        if stdout and not stream:
             print(f"\033[32m{context_msg} $ {original_cmd_for_msg}\n{output}\033[0m") # noqa E501
         # Return combined output, potentially including errors
         return output.strip()
     except subprocess.TimeoutExpired as e:
         error_output = e.stdout if e.stdout else str(e)
         timeout_msg = f"Timeout executing SSH command: {error_output}"
-        if stdout:
+        if stdout and not stream:
             print(f"\033[33m{context_msg} $ {original_cmd_for_msg}\nTIMEOUT\n{error_output}\033[0m") # noqa E501
         return timeout_msg
     except FileNotFoundError:
@@ -586,55 +605,9 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             )
             output = result.stdout if result.stdout else result.stderr
             
-            # If this is the same command that was recently streamed, don't display it again
-            # We'll create a similar tool_args structure to what streaming would use
-            parts = command.strip().split(' ', 1)
-            cmd_var = parts[0] if parts else ""
-            args_param_val = parts[1] if len(parts) > 1 else ""
-            
-            # Generate a standard tool name for consistency with streaming
-            standard_tool_name = tool_name or (f"{cmd_var}_command" if cmd_var else "command")
-            
-            # Calculate a consistent command key - must match the format used in cli_print_tool_output
-            command_key = f"{standard_tool_name}:{args_param_val}"
-            
-            if hasattr(cli_print_tool_output, '_displayed_commands') and command_key in cli_print_tool_output._displayed_commands:
-                # Skip stdout display if already shown through streaming
-                return output.strip()
-                
-            if stdout:
-                # Create a tool_args dictionary for non-streaming display 
-                # that matches the format used in streaming
-                tool_display_args = {
-                    "command": cmd_var,
-                    "args": args_param_val,
-                    "full_command": command,
-                    "workspace": os.path.basename(target_dir)
-                }
-                
-                # If custom args were provided, merge them with the default args
-                if custom_args is not None and isinstance(custom_args, dict):
-                    for key, value in custom_args.items():
-                        tool_display_args[key] = value
-                
-                # Calculate execution info
-                tool_execution_time = time.time() - process_start_time
-                exec_info = {
-                    "status": "completed" if result.returncode == 0 else "error",
-                    "return_code": result.returncode,
-                    "environment": "Local",
-                    "host": os.path.basename(target_dir),
-                    "tool_time": tool_execution_time
-                }
-                
-                # Display the command output with rich formatting
-                cli_print_tool_output(
-                    tool_name=standard_tool_name,
-                    args=tool_display_args,
-                    output=output,
-                    execution_info=exec_info
-                )
-                
+            # In non-streaming mode, we should NOT display the output via cli_print_tool_output
+            # to avoid duplication. The output will be handled by the calling function.
+            # Only return the raw output for the calling function to handle.
             return output.strip()
     except subprocess.TimeoutExpired as e:
         error_output = e.stdout if hasattr(e, 'stdout') and e.stdout else str(e)
@@ -762,6 +735,36 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
             session = ACTIVE_SESSIONS[session_id]
             result = session.send_input(command) # Send the raw command string
             
+            # Wait for the command to execute and capture output
+            # This provides automatic output display for async sessions
+            wait_time = 3.0  # Wait 3 seconds for command to execute
+            
+            # Mark the current position in the output buffer before sending input
+            session.get_new_output(mark_position=True)  # Reset position marker
+            
+            # Smart waiting: check for new output every 0.5 seconds, up to max wait time
+            max_wait = wait_time
+            check_interval = 0.5
+            elapsed = 0.0
+            new_output_detected = False
+            
+            while elapsed < max_wait:
+                time.sleep(check_interval)
+                elapsed += check_interval
+                
+                # Check if new output is available
+                current_new_output = session.get_new_output(mark_position=False)
+                
+                # If we detect new output, wait a bit more for it to complete, then break
+                if current_new_output.strip():
+                    if not new_output_detected:
+                        new_output_detected = True
+                        # Give it a bit more time to complete the output
+                        time.sleep(0.5)
+                    else:
+                        # We already detected new output and waited, now break
+                        break
+            
             # Always show the session output after sending input using the counter mechanism
             # Generate unique counter for this session input command
             counter_key = f"session_input_{session_id}"
@@ -775,7 +778,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 "args": "",
                 "session_id": session_id,
                 "call_counter": SESSION_OUTPUT_COUNTER[counter_key],  # This ensures uniqueness
-                "input_to_session": True  # Flag to identify this as session input
+                "input_to_session": True,  # Flag to identify this as session input
+                "auto_output": True  # Flag to indicate this is automatic output display
             }
             
             # Determine environment info for display
@@ -785,15 +789,17 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
             elif session.ctf:
                 env_type = "CTF"
             
-            # Get the session output to display
-            output = get_session_output(session_id, clear=False, stdout=False)
+            # Get only the NEW output to display (not the entire buffer)
+            output = session.get_new_output(mark_position=True)
             
             # Create execution info
             execution_info = {
                 "status": "completed",
                 "environment": env_type,
                 "host": session.workspace_dir,
-                "session_id": session_id
+                "session_id": session_id,
+                "wait_time": elapsed,
+                "new_output_detected": new_output_detected
             }
             
             # Display the session input and its result using cli_print_tool_output
@@ -813,7 +819,12 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 stop_active_timer()
                 start_idle_timer()
                 
-            return result # Return the result of sending input ("Input sent..." or error)
+            # Return the actual output from the session
+            # The output has already been displayed via cli_print_tool_output
+            if output and output.strip():
+                return output
+            else:
+                return f"Command sent to session {session_id}. No output captured."
 
         # 2. Determine Execution Environment (Container > CTF > SSH > Local)
         active_container = os.getenv("CAI_ACTIVE_CONTAINER", "")
@@ -835,11 +846,47 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     stop_active_timer()
                     start_idle_timer()
                     return new_session_id
-                if stdout:
-                    # Wait a moment for initial output
-                    time.sleep(0.2)
-                    output = get_session_output(new_session_id, clear=False, stdout=False)
-                    print(f"\033[32m(Started Session {new_session_id} in {context_msg})\n{output}\033[0m") # noqa E501
+                
+                # Display the command that creates the async session
+                from cai.util import cli_print_tool_output
+                
+                # Create args for display
+                session_creation_args = {
+                    "command": command,
+                    "args": "",
+                    "session_id": new_session_id,
+                    "async_mode": True,
+                    "creating_session": True  # Flag to identify this as session creation
+                }
+                
+                # Create execution info
+                execution_info = {
+                    "status": "session_created",
+                    "environment": f"Container({container_id[:12]})",
+                    "host": container_workspace,
+                    "session_id": new_session_id
+                }
+                
+                # Get initial output if any
+                session = ACTIVE_SESSIONS.get(new_session_id)
+                initial_output = ""
+                if session:
+                    time.sleep(0.2)  # Wait a moment for initial output
+                    initial_output = session.get_new_output(mark_position=True)
+                
+                # Format the output message
+                output_msg = f"Started async session {new_session_id} in container {container_id[:12]}. Use this ID to interact."
+                if initial_output:
+                    output_msg += f"\n\n{initial_output}"
+                
+                # Display the session creation command and initial output
+                cli_print_tool_output(
+                    tool_name="generic_linux_command",
+                    args=session_creation_args,
+                    output=output_msg,
+                    execution_info=execution_info,
+                    streaming=False
+                )
                 
                 # For async sessions, switch back to idle mode after session creation
                 stop_active_timer()
@@ -1038,7 +1085,9 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 output = result.stdout if result.stdout else result.stderr
                 output = output.strip() # Clean trailing newline
 
-                if stdout:
+                # In streaming mode, don't print to stdout to avoid duplication
+                # The streaming system will handle the display
+                if stdout and not stream:
                     print(f"\033[32m{context_msg} $ {command}\n{output}\033[0m") # noqa E501
 
                 # Check if command failed specifically because container isn't running
@@ -1149,7 +1198,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     return error_msg
             else:
                 # Standard non-streaming CTF execution
-                result = _run_ctf(ctf, command, stdout, timeout)  # Pass None for workspace_dir
+                result = _run_ctf(ctf, command, stdout, timeout, _get_workspace_dir(), stream)
             
                 # Switch back to idle mode after CTF command completes
                 stop_active_timer()
@@ -1278,7 +1327,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     return error_msg
             else:
                 # Standard non-streaming SSH execution
-                result = _run_ssh(command, stdout, timeout)  # Workspace dir less relevant here
+                result = _run_ssh(command, stdout, timeout, _get_workspace_dir(), stream)
             
                 # Switch back to idle mode after SSH command completes
                 stop_active_timer()
@@ -1297,13 +1346,50 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 stop_active_timer()
                 start_idle_timer()
                 return new_session_id
+            
+            # Display the command that creates the async session
+            from cai.util import cli_print_tool_output
+            
             # Retrieve the actual workspace dir the session is using
             session = ACTIVE_SESSIONS.get(new_session_id)
             actual_workspace = session.workspace_dir if session else "unknown"
-            if stdout:
+            
+            # Create args for display
+            session_creation_args = {
+                "command": command,
+                "args": "",
+                "session_id": new_session_id,
+                "async_mode": True,
+                "creating_session": True  # Flag to identify this as session creation
+            }
+            
+            # Create execution info
+            execution_info = {
+                "status": "session_created",
+                "environment": "Local",
+                "host": os.path.basename(actual_workspace),
+                "session_id": new_session_id
+            }
+            
+            # Get initial output if any
+            initial_output = ""
+            if session:
                 time.sleep(0.2)  # Allow session buffer to populate
-                output = get_session_output(new_session_id, clear=False, stdout=False)
-                print(f"\033[32m(Started Session {new_session_id} in local:{actual_workspace})\n{output}\033[0m")
+                initial_output = session.get_new_output(mark_position=True)
+            
+            # Format the output message
+            output_msg = f"Started async session {new_session_id} locally. Use this ID to interact."
+            if initial_output:
+                output_msg += f"\n\n{initial_output}"
+            
+            # Display the session creation command and initial output
+            cli_print_tool_output(
+                tool_name="generic_linux_command",
+                args=session_creation_args,
+                output=output_msg,
+                execution_info=execution_info,
+                streaming=False
+            )
             
             # For async, switch back to idle mode after session creation
             stop_active_timer()
