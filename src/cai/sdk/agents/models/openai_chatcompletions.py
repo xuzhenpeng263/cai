@@ -2547,7 +2547,6 @@ class OpenAIChatCompletionsModel(Model):
         tool_choice: ChatCompletionToolChoiceOptionParam | NotGiven,
         stream: bool,
         parallel_tool_calls: bool,
-        provider="ollama"
     ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
         """
         Fetches a response from an Ollama or Qwen model using LiteLLM, ensuring
@@ -2560,7 +2559,6 @@ class OpenAIChatCompletionsModel(Model):
             tool_choice (ChatCompletionToolChoiceOptionParam | NotGiven): Tool choice.
             stream (bool): Whether to stream the response.
             parallel_tool_calls (bool): Whether to allow parallel tool calls.
-            provider (str): Provider name, defaults to "ollama".
 
         Returns:
             ChatCompletion or tuple[Response, AsyncStream[ChatCompletionChunk]]:
@@ -2600,8 +2598,6 @@ class OpenAIChatCompletionsModel(Model):
         model_str = str(self.model).lower()
         is_qwen = "qwen" in model_str
         api_base = get_ollama_api_base()
-        if "ollama" in provider:
-            api_base = api_base.rstrip('/v1')
 
         if stream:
             response = Response(
@@ -2622,7 +2618,7 @@ class OpenAIChatCompletionsModel(Model):
             stream_obj = await litellm.acompletion(
                 **ollama_kwargs,
                 api_base=api_base,
-                custom_llm_provider=provider,
+                custom_llm_provider="openai"
             )
             return response, stream_obj
         else:
@@ -2630,7 +2626,7 @@ class OpenAIChatCompletionsModel(Model):
             return litellm.completion(
                 **ollama_kwargs,
                 api_base=api_base,
-                custom_llm_provider=provider,
+                custom_llm_provider="openai",
             )
 
     def _intermediate_logs(self):
