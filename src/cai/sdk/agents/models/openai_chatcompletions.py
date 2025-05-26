@@ -3273,9 +3273,10 @@ class _Converter:
                     # This indicates it was likely shown during streaming
                     if 'start_time' in tool_call_info:
                         time_since_execution = time.time() - tool_call_info['start_time']
-                        # For regular commands executed recently in streaming mode, skip display
+                        # For generic_linux_command executed recently in streaming mode, skip display
                         # But always display for async session commands (they have session_id in args)
-                        if time_since_execution < 5.0:
+                        # and always display for non-generic_linux_command tools
+                        if time_since_execution < 5.0 and '_command' in tool_name.lower():
                             # Parse arguments to check if this is an async session command
                             try:
                                 import json
@@ -3284,7 +3285,6 @@ class _Converter:
                                 if not (isinstance(args_dict, dict) and args_dict.get("session_id")):
                                     should_display = False
                             except:
-                                # If we can't parse args, assume it's a regular command
                                 should_display = False
                 
                 # Only display if it hasn't been shown during streaming
