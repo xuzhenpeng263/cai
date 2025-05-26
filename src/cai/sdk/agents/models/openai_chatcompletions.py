@@ -506,6 +506,7 @@ class OpenAIChatCompletionsModel(Model):
             if _debug.DONT_LOG_MODEL_DATA:
                 logger.debug("Received model response")
             else:
+                import json
                 logger.debug(
                     f"LLM resp:\n{json.dumps(response.choices[0].message.model_dump(), indent=2)}\n"
                 )
@@ -552,16 +553,85 @@ class OpenAIChatCompletionsModel(Model):
                 for tool_call in response.choices[0].message.tool_calls:
                     call_id = tool_call.id
                     
-                    # If we're using direct tool output display with cli_print_tool_output,
-                    # and we've already displayed this tool call output, we can skip displaying
-                    # the assistant message to avoid duplication
-                    if (hasattr(_Converter, 'tool_outputs') and call_id in _Converter.tool_outputs and
-                        hasattr(_Converter, 'recent_tool_calls') and call_id in _Converter.recent_tool_calls):
-                        # We've already displayed this tool and its output directly
-                        should_display_message = False
+                    # Check if this tool call has already been displayed
+                    if (hasattr(_Converter, 'tool_outputs') and call_id in _Converter.tool_outputs):
+                        tool_output_content = _Converter.tool_outputs[call_id]
+                        
+                        # Check if this is a command sent to an existing async session
+                        is_async_session_input = False
+                        has_auto_output = False
+                        is_regular_command = False
+                        try:
+                            import json
+                            args = json.loads(tool_call.function.arguments)
+                            # Check if this is a regular command (not a session command)
+                            if (isinstance(args, dict) and 
+                                args.get("command") and 
+                                not args.get("session_id") and
+                                not args.get("async_mode")):
+                                is_regular_command = True
+                            # Only consider it an async session input if it has session_id AND it's not creating a new session
+                            elif (isinstance(args, dict) and 
+                                args.get("session_id") and 
+                                not args.get("async_mode") and  # Not creating a new session
+                                not args.get("creating_session")):  # Not marked as session creation
+                                is_async_session_input = True
+                                # Check if this has auto_output flag
+                                has_auto_output = args.get("auto_output", False)
+                        except:
+                            pass
+                        
+                        # For regular commands that were already shown via streaming, suppress the agent message
+                        if is_regular_command and tool_call.function.name == "generic_linux_command":
+                            # Check if this was executed very recently (likely shown via streaming)
+                            if (hasattr(_Converter, 'recent_tool_calls') and 
+                                call_id in _Converter.recent_tool_calls):
+                                tool_call_info = _Converter.recent_tool_calls[call_id]
+                                if 'start_time' in tool_call_info:
+                                    import time
+                                    time_since_execution = time.time() - tool_call_info['start_time']
+                                    # If executed within last 2 seconds, it was likely shown via streaming
+                                    if time_since_execution < 2.0:
+                                        should_display_message = False
+                                        tool_output = None
+                        elif is_async_session_input:
+                            should_display_message = True
+                            tool_output = None
+                        # For async session inputs without auto_output, always show the agent message
+                        elif is_async_session_input and not has_auto_output:
+                            should_display_message = True
+                            tool_output = None
+                        # For session creation messages, also show them
+                        elif ("Started async session" in tool_output_content or 
+                              "session" in tool_output_content.lower() and "async" in tool_output_content.lower()):
+                            should_display_message = True
+                            tool_output = None
+                        else:
+                            # For other tool calls, check if we should suppress based on timing
+                            # Only suppress if this tool was JUST executed (within last 2 seconds)
+                            if (hasattr(_Converter, 'recent_tool_calls') and 
+                                call_id in _Converter.recent_tool_calls):
+                                tool_call_info = _Converter.recent_tool_calls[call_id]
+                                if 'start_time' in tool_call_info:
+                                    import time
+                                    time_since_execution = time.time() - tool_call_info['start_time']
+                                    # Only suppress if this was executed very recently
+                                    if time_since_execution < 2.0:
+                                        should_display_message = False
+                                    else:
+                                        # For older tool calls, show the message
+                                        should_display_message = True
                         break
+            
+            # Additional check: Always show messages that have text content
+            # This ensures agent explanations are not suppressed
+            if (hasattr(response.choices[0].message, 'content') and 
+                response.choices[0].message.content and 
+                str(response.choices[0].message.content).strip()):
+                # If the message has actual text content, always show it
+                should_display_message = True
 
-            # Only display the agent message if we haven't already shown the tool output
+            # Display the agent message (this will show the command for async sessions)
             if should_display_message:
                 # Ensure we're in non-streaming mode for proper markdown parsing
                 previous_stream_setting = os.environ.get('CAI_STREAM', 'false')
@@ -588,8 +658,8 @@ class OpenAIChatCompletionsModel(Model):
                     total_reasoning_tokens=getattr(self, 'total_reasoning_tokens', 0),
                     interaction_cost=None,
                     total_cost=None,
-                    tool_output=None,  # Don't pass tool output here, we're using direct display
-                    suppress_empty=True  # Suppress empty panels
+                    tool_output=tool_output,  # Pass tool_output only when needed
+                    suppress_empty=True  # Keep suppress_empty=True as requested
                 )
                 
                 # Restore previous streaming setting
@@ -3192,15 +3262,41 @@ class _Converter:
                 # Check if we're in streaming mode
                 is_streaming_enabled = os.environ.get('CAI_STREAM', 'false').lower() == 'true'
                 
-                # Always display tool output regardless of streaming mode
-                cli_print_tool_output(
-                    tool_name=tool_name, 
-                    args=tool_args, 
-                    output=output_content, 
-                    call_id=call_id,
-                    execution_info=execution_info,
-                    token_info=token_info
-                )
+                # Check if this output was already displayed during streaming
+                # For async sessions, we always display since they don't have real streaming
+                should_display = True
+                
+                # If streaming is enabled, check if this was already shown
+                if is_streaming_enabled and hasattr(cls, 'recent_tool_calls') and call_id in cls.recent_tool_calls:
+                    tool_call_info = cls.recent_tool_calls[call_id]
+                    # Check if this tool was executed very recently (within last 5 seconds)
+                    # This indicates it was likely shown during streaming
+                    if 'start_time' in tool_call_info:
+                        time_since_execution = time.time() - tool_call_info['start_time']
+                        # For regular commands executed recently in streaming mode, skip display
+                        # But always display for async session commands (they have session_id in args)
+                        if time_since_execution < 5.0:
+                            # Parse arguments to check if this is an async session command
+                            try:
+                                import json
+                                args_dict = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
+                                # If it has session_id, it's an async command - always show
+                                if not (isinstance(args_dict, dict) and args_dict.get("session_id")):
+                                    should_display = False
+                            except:
+                                # If we can't parse args, assume it's a regular command
+                                should_display = False
+                
+                # Only display if it hasn't been shown during streaming
+                if should_display:
+                    cli_print_tool_output(
+                        tool_name=tool_name, 
+                        args=tool_args, 
+                        output=output_content, 
+                        call_id=call_id,
+                        execution_info=execution_info,
+                        token_info=token_info
+                    )
                 
                 # Continue with normal processing
                 flush_assistant_message()

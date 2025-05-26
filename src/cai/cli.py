@@ -247,12 +247,12 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
         return "Agent"
     
     # Prevent the model from using its own rich streaming to avoid conflicts
-    # and suppress final output message to avoid duplicates
+    # but allow final output message to ensure all agent responses are shown
     if hasattr(agent, 'model'):
         if hasattr(agent.model, 'disable_rich_streaming'):
             agent.model.disable_rich_streaming = False  # Now True as the model handles streaming
         if hasattr(agent.model, 'suppress_final_output'):
-            agent.model.suppress_final_output = True
+            agent.model.suppress_final_output = False  # Changed to False to show all agent messages
 
         # Set the agent name in the model for proper display in streaming panel
         if hasattr(agent.model, 'set_agent_name'):
@@ -320,7 +320,7 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                         if hasattr(agent.model, 'disable_rich_streaming'):
                             agent.model.disable_rich_streaming = False  # Now False to let model handle streaming
                         if hasattr(agent.model, 'suppress_final_output'):
-                            agent.model.suppress_final_output = True
+                            agent.model.suppress_final_output = False  # Changed to False to show all agent messages
 
                         # Apply current model to the new agent
                         if hasattr(agent.model, 'model'):
@@ -873,9 +873,9 @@ def main():
         # Disable rich streaming in the model to avoid conflicts
         if hasattr(agent.model, 'disable_rich_streaming'):
             agent.model.disable_rich_streaming = True
-        # Suppress final output to avoid duplicates
+        # Allow final output to ensure all agent messages are shown
         if hasattr(agent.model, 'suppress_final_output'):
-            agent.model.suppress_final_output = True
+            agent.model.suppress_final_output = False  # Changed to False to show all agent messages
 
     # Run the CLI with the selected agent
     run_cai_cli(agent)

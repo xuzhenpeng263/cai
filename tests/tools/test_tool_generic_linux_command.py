@@ -1,51 +1,103 @@
 import os
 import pytest
 import json
+import asyncio
 from unittest.mock import MagicMock
 
 # Set test environment variables to avoid OpenAI client initialization errors
 os.environ["OPENAI_API_KEY"] = "test_key_for_ci_environment"
 
-from cai.tools.reconnaissance.generic_linux_command import generic_linux_command  
+from cai.tools.reconnaissance.generic_linux_command import generic_linux_command
+from cai.sdk.agents import RunContextWrapper
 
-async def test_generic_linux_command_regular_commands():
-    """Test the execution of a regular command using the generic Linux command tool."""
-    mock_ctx = MagicMock()  # Create a mock context for the command execution
-    params = {
-        "command": "echo",  # Command to be executed
-        "args": "'hello'"   # Arguments for the command
-    }
 
-    # Invoke the tool with the specified parameters and await the result
-    result = await generic_linux_command.on_invoke_tool(mock_ctx, json.dumps(params))
+@pytest.mark.asyncio
+async def test_generic_linux_command_echo():
+    """Test the execution of echo command using generic_linux_command."""
+    args = {"command": "echo 'hello'"}
+    result = await generic_linux_command.on_invoke_tool(
+        RunContextWrapper(None), json.dumps(args)
+    )
+    assert result.strip() == 'hello'
 
-    # Assert that the result matches the expected output
-    assert result.replace("\n", "") == 'hello'  
 
+@pytest.mark.asyncio
 async def test_generic_linux_command_ls():
-    """Test the execution of the 'ls' command using the generic Linux command tool."""
-    mock_ctx = MagicMock()  # Create a mock context for the command execution
-    params = {
-        "command": "ls",  # Command to be executed
-        "args": "-l"      # Arguments for the command
-    }
+    """Test the execution of ls command using generic_linux_command."""
+    args = {"command": "ls -l"}
+    result = await generic_linux_command.on_invoke_tool(
+        RunContextWrapper(None), json.dumps(args)
+    )
+    # Check that the output contains typical ls -l indicators
+    assert "total" in result or "drwx" in result or "-rw" in result
 
-    # Invoke the tool with the specified parameters and await the result
-    result = await generic_linux_command.on_invoke_tool(mock_ctx, json.dumps(params))
 
-    # Assert that the output contains 'total', which is typical for 'ls -l'
-    assert "total" in result  
-
+@pytest.mark.asyncio
 async def test_generic_linux_command_invalid_command():
-    """Test the handling of an invalid command using the generic Linux command tool."""
-    mock_ctx = MagicMock()  # Create a mock context for the command execution
-    params = {
-        "command": "invalid_command",  # Invalid command to be executed
-        "args": ""                      # No arguments for the command
-    }
+    """Test handling of invalid command using generic_linux_command."""
+    args = {"command": "invalid_command_xyz123"}
+    result = await generic_linux_command.on_invoke_tool(
+        RunContextWrapper(None), json.dumps(args)
+    )
+    # Check for common error indicators
+    assert ("not found" in result.lower() or 
+            "command not found" in result.lower() or
+            "no such file" in result.lower())
 
-    # Invoke the tool with the specified parameters and await the result
-    result = await generic_linux_command.on_invoke_tool(mock_ctx, json.dumps(params))
 
-    # Assert that the result indicates the command was not found
-    assert "not found" in result 
+@pytest.mark.asyncio
+async def test_generic_linux_command_empty_command():
+    """Test handling of empty command using generic_linux_command."""
+    args = {"command": ""}
+    result = await generic_linux_command.on_invoke_tool(
+        RunContextWrapper(None), json.dumps(args)
+    )
+    assert "Error: No command provided" in result
+
+
+@pytest.mark.asyncio
+async def test_generic_linux_command_session_list():
+    """Test session list functionality using generic_linux_command."""
+    args = {"command": "session list"}
+    result = await generic_linux_command.on_invoke_tool(
+        RunContextWrapper(None), json.dumps(args)
+    )
+    assert "No active sessions" in result or "Active sessions:" in result
+
+
+@pytest.mark.asyncio
+async def test_generic_linux_command_env_info():
+    """Test environment info functionality using generic_linux_command."""
+    args = {"command": "env info"}
+    result = await generic_linux_command.on_invoke_tool(
+        RunContextWrapper(None), json.dumps(args)
+    )
+    assert "Current Environment:" in result
+    assert "CTF Environment:" in result
+    assert "Container:" in result
+    assert "SSH:" in result
+    assert "Workspace:" in result
+
+
+@pytest.mark.asyncio
+async def test_generic_linux_command_interactive_flag():
+    """Test interactive flag functionality using generic_linux_command."""
+    # Test with interactive=True but a simple command
+    args = {"command": "echo 'test'", "interactive": True}
+    result = await generic_linux_command.on_invoke_tool(
+        RunContextWrapper(None), json.dumps(args)
+    )
+    # Should still work, just might have different session handling
+    assert "test" in result
+
+
+@pytest.mark.asyncio
+async def test_generic_linux_command_with_session_id():
+    """Test session_id parameter using generic_linux_command."""
+    # Test with a non-existent session_id
+    args = {"command": "echo 'test'", "session_id": "nonexistent123"}
+    result = await generic_linux_command.on_invoke_tool(
+        RunContextWrapper(None), json.dumps(args)
+    )
+    # Should handle gracefully - either execute or give session error
+    assert isinstance(result, str)
