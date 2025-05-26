@@ -2335,6 +2335,7 @@ class OpenAIChatCompletionsModel(Model):
                         
             elif ("An assistant message with 'tool_calls'" in str(e) or
                 "`tool_use` blocks must be followed by a user message with `tool_result`" in str(e) or  # noqa: E501 # pylint: disable=C0301
+                "`tool_use` ids were found without `tool_result` blocks immediately after" in str(e) or  # noqa: E501 # pylint: disable=C0301
                 "An assistant message with 'tool_calls' must be followed by tool messages" in str(e) or
                 "messages with role 'tool' must be a response to a preceeding message with 'tool_calls'" in str(e)):
                 print(f"Error: {str(e)}")

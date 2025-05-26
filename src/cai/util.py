@@ -854,12 +854,18 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     
     # Ensure messages have non-null content (required by some providers)
     for msg in sanitized_messages:
-        if msg.get("role") != "tool" and msg.get("content") is None and not msg.get("tool_calls"):
+        # For assistant messages with tool_calls, content can be None
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            # Assistant messages with tool calls can have None content - this is valid
+            pass
+        elif msg.get("role") != "tool" and msg.get("content") is None and not msg.get("tool_calls"):
+            # For non-tool messages without tool_calls, ensure content is not None
             msg["content"] = ""
             
-        # For tool messages, ensure content is never null
-        if msg.get("role") == "tool" and msg.get("content") is None:
-            msg["content"] = f"Tool response for {msg.get('tool_call_id', 'unknown')}"
+        # For tool messages, ensure content is never null or empty
+        if msg.get("role") == "tool":
+            if msg.get("content") is None or msg.get("content") == "":
+                msg["content"] = f"Tool response for {msg.get('tool_call_id', 'unknown')}"
     
     # Special case for Claude: ensure strict alternating pattern between assistant tool_calls and tool results
     # If multiple consecutive assistant messages with tool_calls exist, interleave them with tool responses

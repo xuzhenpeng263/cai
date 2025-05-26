@@ -358,6 +358,7 @@ def load_history_from_jsonl(file_path):
     """
     messages = []
     last_assistant_message = None
+    tool_outputs = {}  # Map tool_call_id to output content
     
     try:
         with open(file_path, encoding='utf-8') as f:
@@ -371,17 +372,15 @@ def load_history_from_jsonl(file_path):
                     print(f"Error loading line: {line}")
                     continue
 
+                # Collect tool outputs from tool_message events
+                if record.get("event") == "tool_message":
+                    tool_call_id = record.get("tool_call_id", "")
+                    content = record.get("content", "")
+                    if tool_call_id and content:
+                        tool_outputs[tool_call_id] = content
+
                 # process assistant messages and keep the last one
                 # for additing it manually at the end
-                #
-                # NOTE: it might be the case that if the last message is of type "tool_message"
-                # we might be missing it. For that purpose, leaving here the corresponding code
-                # in case of need:
-                    # if entry.get("event") == "tool_message":
-                    #     tool_call_id = entry.get("tool_call_id", "")
-                    #     content = entry.get("content", "")
-                    #     if tool_call_id and content:
-                    #         tool_outputs[tool_call_id] = content
                 if record.get("event") == "assistant_message":
                     last_assistant_message = record.get("content")
 
@@ -396,7 +395,8 @@ def load_history_from_jsonl(file_path):
 
                             # Add this message if we haven't seen it already
                             if not any(m.get("role") == msg.get("role") and 
-                                       m.get("content") == msg.get("content") for m in messages):
+                                       m.get("content") == msg.get("content") and
+                                       m.get("tool_call_id") == msg.get("tool_call_id") for m in messages):
                                 messages.append(msg)
 
                 # Extract assistant messages and tool responses from model record choices
@@ -405,23 +405,9 @@ def load_history_from_jsonl(file_path):
                     if "message" in choice and "role" in choice["message"]:
                         msg = choice["message"]
                         if not any(m.get("role") == msg.get("role") and 
-                                  m.get("content") == msg.get("content") for m in messages):
+                                  m.get("content") == msg.get("content") and
+                                  m.get("tool_call_id") == msg.get("tool_call_id") for m in messages):
                             messages.append(msg)
-                            
-                            # Check for tool_calls in the message
-                            if msg.get("tool_calls"):
-                                for tool_call in msg.get("tool_calls", []):
-                                    if tool_call.get("id") and "function" in tool_call:
-                                        name = tool_call["function"].get("name", "")
-                                        arguments = tool_call["function"].get("arguments", "")
-                                        if name and arguments:
-                                            # Add a placeholder tool message - will be filled later
-                                            tool_message = {
-                                                "role": "tool",
-                                                "tool_call_id": tool_call.get("id"),
-                                                "content": ""
-                                            }
-                                            messages.append(tool_message)
     except Exception as e:  # pylint: disable=broad-except
         print(f"Error loading history from {file_path}: {e}")
 
@@ -430,18 +416,42 @@ def load_history_from_jsonl(file_path):
     for msg in messages:
         if not any(m.get("role") == msg.get("role") and 
                   m.get("content") == msg.get("content") and
-                  m.get("tool_call_id", "") == msg.get("tool_call_id", "") for m in unique_messages):
+                  m.get("tool_call_id", "") == msg.get("tool_call_id", "") and
+                  m.get("tool_calls") == msg.get("tool_calls") for m in unique_messages):
             unique_messages.append(msg)
 
-    # Add last message to the end of the list
+    # Now add tool result messages for any tool calls that have outputs
+    final_messages = []
+    for msg in unique_messages:
+        final_messages.append(msg)
+        
+        # If this is an assistant message with tool_calls, add corresponding tool results
+        if (msg.get("role") == "assistant" and 
+            msg.get("tool_calls") and 
+            isinstance(msg.get("tool_calls"), list)):
+            
+            for tool_call in msg.get("tool_calls", []):
+                tool_call_id = tool_call.get("id")
+                if tool_call_id and tool_call_id in tool_outputs:
+                    # Add the tool result message immediately after the assistant message
+                    tool_result_msg = {
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": tool_outputs[tool_call_id]
+                    }
+                    final_messages.append(tool_result_msg)
+
+    # Add last message to the end of the list if it exists and isn't already there
     if last_assistant_message:
-        unique_messages.append(
-            {
+        # Check if this message is already in the list
+        if not any(m.get("role") == "assistant" and 
+                  m.get("content") == last_assistant_message for m in final_messages):
+            final_messages.append({
                 "role": "assistant",
                 "content": last_assistant_message
-             }
-        )
-    return unique_messages
+            })
+    
+    return final_messages
 
 
 def get_token_stats(file_path):
