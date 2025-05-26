@@ -16,40 +16,53 @@ from wasabi import color  # pylint: disable=import-error
 
 @function_tool
 def generic_linux_command(command: str = "",
-                          args: str = "", ctf=None,
-                          async_mode: bool = False,
+                          interactive: bool = False,
                           session_id: str = None) -> str:
     """
-    Execute Linux commands with support for interactive sessions.
+    Execute commands with session management.
 
-    Two modes:
-    1. Regular command execution:
-       - For normal Linux commands
-       - Example: generic_linux_command("ls", "-la")
-
-    2. Session management:
-       - For interactive commands(ssh)
-       - Workflow:
-         - Start: generic_linux_command("ssh", "user@host")
-           → Returns session ID
-         - List: generic_linux_command("session", "list")
-         - Get output: generic_linux_command("session", "output <id>")
-         - Send input: Use session_id parameter
-         - End: generic_linux_command("session", "kill <id>")
+    Use this tool to run any command. The system automatically detects and handles:
+    - Regular commands (ls, cat, grep, etc.)
+    - Interactive commands that need persistent sessions (ssh, nc, python, etc.)
+    - Session management and output capture
+    - CTF environments (automatically detected and used when available)
+    - Container environments (automatically detected and used when available)
+    - SSH environments (automatically detected and used when available)
 
     Args:
-        command: Command name
-        args: Command arguments
-        ctf: CTF environment object
-        async_mode: Force async session
-        session_id: Existing session ID
+        command: The complete command to execute (e.g., "ls -la", "ssh user@host", "cat file.txt")
+        interactive: Set to True for commands that need persistent sessions (ssh, nc, python, ftp etc.)
+                    Leave False for regular commands
+        session_id: Use existing session ID to send commands to running interactive sessions.
+                   Get session IDs from previous interactive command outputs.
+
+    Examples:
+        - Regular command: generic_linux_command("ls -la")
+        - Interactive command: generic_linux_command("ssh user@host", interactive=True)
+        - Send to session: generic_linux_command("pwd", session_id="abc12345")
+        - List sessions: generic_linux_command("session list")
+        - Kill session: generic_linux_command("session kill abc12345")
+        - Environment info: generic_linux_command("env info")
+
+    Environment Detection:
+        The system automatically detects and uses the appropriate execution environment:
+        - CTF: Commands run in the CTF challenge environment when available
+        - Container: Commands run in Docker containers when CAI_ACTIVE_CONTAINER is set
+        - SSH: Commands run via SSH when SSH_USER and SSH_HOST are configured
+        - Local: Commands run on the local system as fallback
 
     Returns:
-        Command output, session ID, or status message
+        Command output, session ID for interactive commands, or status message
     """
-    # Special commands for session management
-    if command == "session":
-        if args == "list":
+    # Handle special session management commands
+    if command.startswith("session "):
+        parts = command.split(" ", 2)
+        if len(parts) < 2:
+            return "Usage: session list|output|kill [session_id]"
+        
+        action = parts[1]
+        
+        if action == "list":
             sessions = list_shell_sessions()
             if not sessions:
                 return "No active sessions"
@@ -61,66 +74,75 @@ def generic_linux_command(command: str = "",
                            f"Last activity: {session['last_activity']}\n")
             return result
 
-        if args.startswith("output "):
-            session_id = args.split(" ")[1]
-            # Call get_session_output with stdout=True to display via cli_print_tool_output
-            # The function will handle the display and return a simple confirmation message
-            output = get_session_output(session_id, clear=False, stdout=True)
+        elif action == "output" and len(parts) >= 3:
+            target_session_id = parts[2]
+            output = get_session_output(target_session_id, clear=False, stdout=True)
             return output
 
-        if args.startswith("kill "):
-            session_id = args.split(" ")[1]
-            return terminate_session(session_id)
+        elif action == "kill" and len(parts) >= 3:
+            target_session_id = parts[2]
+            return terminate_session(target_session_id)
 
-        return """Unknown session command.
-        Available: list, output <id>, kill <id>"""
+        return "Usage: session list|output <id>|kill <id>"
 
-    # BUGFIX: Detect if arguments are swapped due to framework issue
-    # Sometimes async_mode gets the session_id value and session_id gets boolean values
-    if (isinstance(async_mode, str) and len(async_mode) == 8 and 
-        session_id in [None, True, False]):
-        # Arguments are swapped - fix them
-        actual_session_id = async_mode
-        actual_async_mode = False  # Default to False when session_id is provided
-        session_id = actual_session_id
-        async_mode = actual_async_mode
+    # Handle environment information command
+    if command.strip() == "env info" or command.strip() == "environment info":
+        env_info = []
+        
+        # Check CTF environment
+        try:
+            from cai.cli import ctf_global
+            if ctf_global and hasattr(ctf_global, 'get_shell'):
+                env_info.append("🎯 CTF Environment: Active")
+            else:
+                env_info.append("🎯 CTF Environment: Not available")
+        except:
+            env_info.append("🎯 CTF Environment: Not available")
+        
+        # Check Container environment
+        active_container = os.getenv("CAI_ACTIVE_CONTAINER", "")
+        if active_container:
+            env_info.append(f"🐳 Container: {active_container[:12]}")
+        else:
+            env_info.append("🐳 Container: Not active")
+        
+        # Check SSH environment
+        ssh_user = os.getenv('SSH_USER')
+        ssh_host = os.getenv('SSH_HOST')
+        if ssh_user and ssh_host:
+            env_info.append(f"🔗 SSH: {ssh_user}@{ssh_host}")
+        else:
+            env_info.append("🔗 SSH: Not configured")
+        
+        # Check workspace
+        try:
+            from cai.tools.common import _get_workspace_dir
+            workspace = _get_workspace_dir()
+            env_info.append(f"📁 Workspace: {workspace}")
+        except:
+            env_info.append("📁 Workspace: Unknown")
+        
+        return "Current Environment:\n" + "\n".join(env_info)
 
-    # Regular command execution
-    full_command = f'{command} {args}'.strip()
+    if not command.strip():
+        return "Error: No command provided"
 
-    # Detect if this should be an async command
-    # Only auto-detect async commands when no session_id is provided
-    if not async_mode and not session_id:
-        async_commands = ['ssh', 'python -m http.server', "ftp"]
-        async_mode = any(cmd in full_command for cmd in async_commands)
-
-    # For SSH sessions or async commands, use different timeout
+    # For SSH sessions or interactive commands, use different timeout
     if session_id:
         timeout = 10
     else:
         timeout = 100
         
-    # Check if streaming should be enabled
-    stream = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+    # Command streaming should be independent of LLM streaming
+    stream = True  # Always enable streaming for commands
     
-    # Generate a call_id for streaming if needed
-    # Only use call_id for streaming mode to prevent duplicate panels
-    # When CAI_STREAM=true, we want the Tool Execution panel but not the Tool Output panel
-    call_id = str(uuid.uuid4())[:8] if stream else None
-    
-    # In streaming mode, prevent displaying both panels by forcing a call_id
-    # This tricks cli_print_tool_output into thinking it's being called for a streaming update
-    if stream and not call_id:
-        call_id = str(uuid.uuid4())[:8]
+    # Generate a call_id for streaming
+    call_id = str(uuid.uuid4())[:8]
 
-
-    
-    # Run the command with the appropriate parameters - pass the actual tool name!
-    result = run_command(full_command, ctf=ctf,
-                       async_mode=async_mode, session_id=session_id,
+    # Run the command with the appropriate parameters
+    result = run_command(command, ctf=None,
+                       async_mode=interactive, session_id=session_id,
                        timeout=timeout, stream=stream, call_id=call_id,
                        tool_name="generic_linux_command")
     
-    # For better output formatting, if we're in streaming mode, we can modify the output
-    # to include any additional information needed while still preventing the duplicate panel
     return result

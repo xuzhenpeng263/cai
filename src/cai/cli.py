@@ -159,13 +159,12 @@ from cai.repl.commands.parallel import PARALLEL_CONFIGS, ParallelConfig
 from cai import is_pentestperf_available
 ctf_global = None
 messages_ctf = ""
+ctf_init=1
 previous_ctf_name = os.getenv('CTF_NAME', None)
 if is_pentestperf_available() and os.getenv('CTF_NAME', None):
     ctf, messages_ctf = setup_ctf()
     ctf_global = ctf
-    if os.getenv('CTF_INSIDE', 'True').lower() == 'false':
-        container_id = ""
-        os.environ['CAI_ACTIVE_CONTAINER'] = container_id 
+    ctf_init=0
 
 # NOTE: This is needed when using LiteLLM Proxy Server
 #
@@ -248,12 +247,12 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
         return "Agent"
     
     # Prevent the model from using its own rich streaming to avoid conflicts
-    # and suppress final output message to avoid duplicates
+    # but allow final output message to ensure all agent responses are shown
     if hasattr(agent, 'model'):
         if hasattr(agent.model, 'disable_rich_streaming'):
             agent.model.disable_rich_streaming = False  # Now True as the model handles streaming
         if hasattr(agent.model, 'suppress_final_output'):
-            agent.model.suppress_final_output = True
+            agent.model.suppress_final_output = False  # Changed to False to show all agent messages
 
         # Set the agent name in the model for proper display in streaming panel
         if hasattr(agent.model, 'set_agent_name'):
@@ -267,6 +266,7 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
         global previous_ctf_name
         global ctf_global
         global messages_ctf   
+        global ctf_init
         if previous_ctf_name != os.getenv('CTF_NAME', None):
             if is_pentestperf_available():
                 if ctf_global:
@@ -274,7 +274,7 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                 ctf, messages_ctf = setup_ctf()
                 ctf_global = ctf
                 previous_ctf_name = os.getenv('CTF_NAME', None)
-
+                ctf_init=0
         # Check if CAI_MAX_TURNS has been updated via /config
         current_max_turns = os.getenv('CAI_MAX_TURNS', 'inf')
         if current_max_turns != str(prev_max_turns):
@@ -320,7 +320,7 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                         if hasattr(agent.model, 'disable_rich_streaming'):
                             agent.model.disable_rich_streaming = False  # Now False to let model handle streaming
                         if hasattr(agent.model, 'suppress_final_output'):
-                            agent.model.suppress_final_output = True
+                            agent.model.suppress_final_output = False  # Changed to False to show all agent messages
 
                         # Apply current model to the new agent
                         if hasattr(agent.model, 'model'):
@@ -332,7 +332,7 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                 except Exception as e:
                     console.print(f"[red]Error switching agent: {str(e)}[/red]")           
         
-            if not force_until_flag:
+            if not force_until_flag and ctf_init!=0:
                 # Get user input with command completion and history
                 user_input = get_user_input(
                     command_completer,
@@ -340,11 +340,11 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                     history_file,
                     get_toolbar_with_refresh,
                     current_text
-                ) + messages_ctf 
+                ) 
+                
             else:
                 user_input = messages_ctf
-                if os.getenv('CTF_INSIDE', 'True').lower() == 'false':
-                    user_input += ctf_global.get_ip()
+                ctf_init=1
             idle_time += time.time() - idle_start_time
 
             # Stop measuring user idle time and start measuring active time
@@ -651,7 +651,7 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                 history_context.append({"role": "user", "content": user_input})
                 conversation_input = history_context
             else:
-                conversation_input = user_input
+                conversation_input = messages_ctf + user_input 
 
             # Process the conversation with the agent - with parallel execution if enabled
             if parallel_count > 1:
@@ -873,9 +873,9 @@ def main():
         # Disable rich streaming in the model to avoid conflicts
         if hasattr(agent.model, 'disable_rich_streaming'):
             agent.model.disable_rich_streaming = True
-        # Suppress final output to avoid duplicates
+        # Allow final output to ensure all agent messages are shown
         if hasattr(agent.model, 'suppress_final_output'):
-            agent.model.suppress_final_output = True
+            agent.model.suppress_final_output = False  # Changed to False to show all agent messages
 
     # Run the CLI with the selected agent
     run_cai_cli(agent)
