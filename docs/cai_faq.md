@@ -61,7 +61,7 @@
 
     ![cai-004-first-message](media/cai-004-first-message.png)
     
-    The starting user prompt in this case is: `Target IP: 192.168.2.10, perform a full network scan`.
+    The starting user prompt in this case is: `Target IP: 192.168.3.10, perform a full network scan`.
     
     The agent started performing a nmap scan. You could either interact with the agent and give it more instructions, or let it run to see what it explores next.
 

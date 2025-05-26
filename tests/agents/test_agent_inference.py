@@ -46,7 +46,7 @@ async def test_one_tool_agent_inference():
     """
     Non-streaming inference test for the one_tool_agent.
     """
-    prompt = "use nmap to scan 192.168.2.0/24"
+    prompt = "use nmap to scan 192.168.3.0/24"
     result = await Runner.run(get_agent_by_name("one_tool_agent"), prompt)
     final_output = result.final_output or ""
     assert final_output, "Expected non-empty final output"

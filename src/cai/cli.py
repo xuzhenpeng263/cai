@@ -13,9 +13,9 @@ Environment Variables
         CTF_CHALLENGE: Specific challenge name
             within the CTF to test
         CTF_SUBNET: Network subnet for the CTF
-            container (default: "192.168.2.0/24")
+            container (default: "192.168.3.0/24")
         CTF_IP: IP address for the CTF
-            container (default: "192.168.2.100")
+            container (default: "192.168.3.100")
         CTF_INSIDE: Whether to conquer the CTF from
             within container (default: "true")
 

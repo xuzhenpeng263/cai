@@ -2933,9 +2933,9 @@ def setup_ctf():
 
     ctf = ptt.ctf(  # pylint: disable=I1101  # noqa
         ctf_name,
-        subnet=os.getenv('CTF_SUBNET', "192.168.2.0/24"),
+        subnet=os.getenv('CTF_SUBNET', "192.168.3.0/24"),
         container_name="ctf_target",
-        ip_address=os.getenv('CTF_IP', "192.168.2.100"),
+        ip_address=os.getenv('CTF_IP', "192.168.3.100"),
     )
     ctf.start_ctf()
 

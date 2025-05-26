@@ -18,7 +18,7 @@ services:
     command: /bin/sh -c "while sleep 10; do :; done"
     networks:
       cainet:
-        ipv4_address: 192.168.2.5
+        ipv4_address: 192.168.3.5
     cap_add:
       - NET_ADMIN
       - SYS_ADMIN
@@ -40,7 +40,7 @@ services:
   #     "
   #   networks:
   #     cainet:
-  #       ipv4_address: 192.168.2.11
+  #       ipv4_address: 192.168.3.11
   #   mac_address: 08:00:27:85:55:86
 
   # # Vulnhub vulnerable machine (Bob) SUGGESTION: Comment this and use PentestPerf
@@ -52,20 +52,20 @@ services:
   #     - "8080:80"
   #   networks:
   #     cainet:
-  #       ipv4_address: 192.168.2.12
+  #       ipv4_address: 192.168.3.12
   #   mac_address: 08:00:27:cb:07:d4
 
-  # Qdrant vector database
-  qdrant:
-    image: qdrant/qdrant
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - ./qdrant_storage:/qdrant/storage:z
-    networks:
-      cainet:
-        ipv4_address: 192.168.2.13
+  # # Qdrant vector database
+  # qdrant:
+  #   image: qdrant/qdrant
+  #   ports:
+  #     - "6333:6333"
+  #     - "6334:6334"
+  #   volumes:
+  #     - ./qdrant_storage:/qdrant/storage:z
+  #   networks:
+  #     cainet:
+  #       ipv4_address: 192.168.3.13
 
 #################
 # NETWORKS
@@ -75,4 +75,4 @@ networks:
     ipam:
       driver: default
       config:
-        - subnet: 192.168.2.0/24
+        - subnet: 192.168.3.0/24

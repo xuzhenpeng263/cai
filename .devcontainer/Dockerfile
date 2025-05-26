@@ -78,7 +78,7 @@ RUN wget https://raw.githubusercontent.com/adfoster-r7/metasploit-info/master/in
 
 # NOTE: align dev env in Linux
 # work
-# RUN echo "192.168.2.1 host.docker.internal" >> /etc/hosts
+# RUN echo "192.168.3.1 host.docker.internal" >> /etc/hosts
 # Update and upgrade packages
 # Preconfigure console-setup and install kali-linux-headless fixers
 RUN apt-get update && \

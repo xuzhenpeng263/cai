@@ -30,12 +30,12 @@ ENV_VARS = {
     3: {
         "name": "CTF_SUBNET",
         "description": "Network subnet for the CTF container",
-        "default": "192.168.2.0/24"
+        "default": "192.168.3.0/24"
     },
     4: {
         "name": "CTF_IP",
         "description": "IP address for the CTF container",
-        "default": "192.168.2.100"
+        "default": "192.168.3.100"
     },
     5: {
         "name": "CTF_INSIDE",
