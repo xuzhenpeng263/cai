@@ -202,6 +202,57 @@ agent = Agent(
     )
 )
 
+def update_agent_models_recursively(agent, new_model, visited=None):
+    """
+    Recursively update the model for an agent and all agents in its handoffs.
+    
+    Args:
+        agent: The agent to update
+        new_model: The new model string to set
+        visited: Set of agent names already visited to prevent infinite loops
+    """
+    if visited is None:
+        visited = set()
+    
+    # Avoid infinite loops by tracking visited agents
+    if agent.name in visited:
+        return
+    visited.add(agent.name)
+    
+    # Update the main agent's model
+    if hasattr(agent, 'model') and hasattr(agent.model, 'model'):
+        agent.model.model = new_model
+    
+    # Update models for all handoff agents
+    if hasattr(agent, 'handoffs'):
+        for handoff_item in agent.handoffs:
+            # Handle both direct Agent references and Handoff objects
+            if hasattr(handoff_item, 'on_invoke_handoff'):
+                # This is a Handoff object
+                # For handoffs created with the handoff() function, the agent is stored
+                # in the closure of the on_invoke_handoff function
+                # We can try to extract it from the function's closure
+                try:
+                    # Get the closure variables of the handoff function
+                    if hasattr(handoff_item.on_invoke_handoff, '__closure__') and handoff_item.on_invoke_handoff.__closure__:
+                        for cell in handoff_item.on_invoke_handoff.__closure__:
+                            if hasattr(cell.cell_contents, 'model') and hasattr(cell.cell_contents, 'name'):
+                                # This looks like an agent
+                                handoff_agent = cell.cell_contents
+                                update_agent_models_recursively(
+                                    handoff_agent, new_model, visited
+                                )
+                                break
+                except Exception:
+                    # If we can't extract the agent from closure, skip it
+                    pass
+            elif hasattr(handoff_item, 'model'):
+                # This is a direct Agent reference
+                update_agent_models_recursively(
+                    handoff_item, new_model, visited
+                )
+
+
 def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), force_until_flag=False):
     """
     Run a simple interactive CLI loop for CAI.
@@ -302,10 +353,9 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
             # Check if model has changed and update if needed
             current_model = os.getenv('CAI_MODEL', 'qwen2.5:14b')
             if current_model != last_model and hasattr(agent, 'model'):
-                # Update the model in the agent
-                if hasattr(agent.model, 'model'):
-                    agent.model.model = current_model
-                    last_model = current_model
+                # Update the model recursively for the agent and all handoff agents
+                update_agent_models_recursively(agent, current_model)
+                last_model = current_model
 
             # Check if agent type has changed and recreate agent if needed
             current_agent_type = os.getenv('CAI_AGENT_TYPE', 'one_tool_agent')
@@ -322,9 +372,8 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                         if hasattr(agent.model, 'suppress_final_output'):
                             agent.model.suppress_final_output = False  # Changed to False to show all agent messages
 
-                        # Apply current model to the new agent
-                        if hasattr(agent.model, 'model'):
-                            agent.model.model = current_model
+                        # Apply current model to the new agent and all its handoff agents
+                        update_agent_models_recursively(agent, current_model)
 
                         # Set agent name in the model for streaming display
                         if hasattr(agent.model, 'set_agent_name'):
@@ -540,10 +589,9 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                         # Create a fresh agent instance
                         instance_agent = get_agent_by_name(config.agent_name)
                         
-                        # Override model if specified
+                        # Override model if specified, updating recursively
                         if config.model and hasattr(instance_agent, 'model'):
-                            if hasattr(instance_agent.model, 'model'):
-                                instance_agent.model.model = config.model
+                            update_agent_models_recursively(instance_agent, config.model)
                         
                         # Override prompt if specified
                         instance_input = config.prompt or input_text
@@ -665,7 +713,7 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                         # Configure agent instance to match main agent settings
                         if hasattr(instance_agent, 'model') and hasattr(agent, 'model'):
                             if hasattr(instance_agent.model, 'model') and hasattr(agent.model, 'model'):
-                                instance_agent.model.model = agent.model.model
+                                update_agent_models_recursively(instance_agent, agent.model.model)
                         
                         # Create a fresh input for this instance - use just the user input directly
                         # This ensures each instance has its own completely independent context
@@ -876,6 +924,10 @@ def main():
         # Allow final output to ensure all agent messages are shown
         if hasattr(agent.model, 'suppress_final_output'):
             agent.model.suppress_final_output = False  # Changed to False to show all agent messages
+
+    # Ensure the agent and all its handoff agents use the current model
+    current_model = os.getenv('CAI_MODEL', 'qwen2.5:14b')
+    update_agent_models_recursively(agent, current_model)
 
     # Run the CLI with the selected agent
     run_cai_cli(agent)
