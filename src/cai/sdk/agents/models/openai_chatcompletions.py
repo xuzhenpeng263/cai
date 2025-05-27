@@ -14,7 +14,7 @@ import asyncio
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
-from cai.util import get_ollama_api_base, fix_message_list, cli_print_agent_messages, create_agent_streaming_context, update_agent_streaming_content, finish_agent_streaming, calculate_model_cost, COST_TRACKER
+from cai.util import get_ollama_api_base, fix_message_list, cli_print_agent_messages, create_agent_streaming_context, update_agent_streaming_content, finish_agent_streaming, calculate_model_cost, COST_TRACKER, cli_print_tool_output, _LIVE_STREAMING_PANELS, start_claude_thinking_if_applicable, finish_claude_thinking_display
 from cai.util import start_idle_timer, stop_idle_timer, start_active_timer, stop_active_timer
 from wasabi import color
 from cai.sdk.agents.run_to_jsonl import get_session_recorder
@@ -501,6 +501,10 @@ class OpenAIChatCompletionsModel(Model):
                 # Let the interrupt propagate up to end the current operation
                 stop_active_timer()
                 start_idle_timer()
+                
+                # Add visual feedback for interruption
+                print("\n[Non-streaming response interrupted - Cleanup completed]", file=sys.stderr)
+                
                 raise
 
             if _debug.DONT_LOG_MODEL_DATA:
@@ -817,58 +821,66 @@ class OpenAIChatCompletionsModel(Model):
         """
         Yields a partial message as it is generated, as well as the usage information.
         """
-        # IMPORTANT: Pre-process input to ensure it's in the correct format
-        # for streaming. This helps prevent errors during stream handling.
-        if not isinstance(input, str):
-            # Convert input items to messages and verify structure
-            try:
-                input_items = list(input)  # Make sure it's a list
-                # Pre-verify the input messages to avoid errors during streaming
-                from cai.util import fix_message_list
-                
-                # Apply fix_message_list to the input items that are dictionaries
-                dict_items = [item for item in input_items if isinstance(item, dict)]
-                if dict_items:
-                    fixed_dict_items = fix_message_list(dict_items)
-                    
-                    # Replace the original dict items with fixed ones while preserving non-dict items
-                    new_input = []
-                    dict_index = 0
-                    for item in input_items:
-                        if isinstance(item, dict):
-                            if dict_index < len(fixed_dict_items):
-                                new_input.append(fixed_dict_items[dict_index])
-                                dict_index += 1
-                        else:
-                            new_input.append(item)
-                    
-                    # Update input with the fixed version
-                    input = new_input
-            except Exception as e:
-                print(f"Warning: Error pre-processing input for streaming: {e}")
-                # Continue with original input even if pre-processing failed
-
-        # Increment the interaction counter for CLI display
-        self.interaction_counter += 1
-        self._intermediate_logs()
-        
-        # Stop idle timer and start active timer to track LLM processing time
-        stop_idle_timer()
-        start_active_timer()
-        
-        # --- Check if streaming should be shown in rich panel ---
-        should_show_rich_stream = os.getenv('CAI_STREAM', 'false').lower() == 'true' and not self.disable_rich_streaming
-        
-        # Create streaming context if needed
+        # Initialize streaming contexts as None
         streaming_context = None
-        if should_show_rich_stream:
-            streaming_context = create_agent_streaming_context(
-                agent_name=self.agent_name,
-                counter=self.interaction_counter,
-                model=str(self.model)
-            )
+        thinking_context = None
+        stream_interrupted = False
         
         try:
+            # IMPORTANT: Pre-process input to ensure it's in the correct format
+            # for streaming. This helps prevent errors during stream handling.
+            if not isinstance(input, str):
+                # Convert input items to messages and verify structure
+                try:
+                    input_items = list(input)  # Make sure it's a list
+                    # Pre-verify the input messages to avoid errors during streaming
+                    from cai.util import fix_message_list
+                    
+                    # Apply fix_message_list to the input items that are dictionaries
+                    dict_items = [item for item in input_items if isinstance(item, dict)]
+                    if dict_items:
+                        fixed_dict_items = fix_message_list(dict_items)
+                        
+                        # Replace the original dict items with fixed ones while preserving non-dict items
+                        new_input = []
+                        dict_index = 0
+                        for item in input_items:
+                            if isinstance(item, dict):
+                                if dict_index < len(fixed_dict_items):
+                                    new_input.append(fixed_dict_items[dict_index])
+                                    dict_index += 1
+                            else:
+                                new_input.append(item)
+                        
+                        # Update input with the fixed version
+                        input = new_input
+                except Exception as e:
+                    print(f"Warning: Error pre-processing input for streaming: {e}")
+                    # Continue with original input even if pre-processing failed
+
+            # Increment the interaction counter for CLI display
+            self.interaction_counter += 1
+            self._intermediate_logs()
+            
+            # Stop idle timer and start active timer to track LLM processing time
+            stop_idle_timer()
+            start_active_timer()
+            
+            # --- Check if streaming should be shown in rich panel ---
+            should_show_rich_stream = os.getenv('CAI_STREAM', 'false').lower() == 'true' and not self.disable_rich_streaming
+            
+            # Create streaming context if needed
+            if should_show_rich_stream:
+                try:
+                    streaming_context = create_agent_streaming_context(
+                        agent_name=self.agent_name,
+                        counter=self.interaction_counter,
+                        model=str(self.model)
+                    )
+                except Exception as e:
+                    print(f"Warning: Could not create streaming context: {e}")
+                    streaming_context = None
+            
             with generation_span(
                 model=str(self.model),
                 model_config=dataclasses.asdict(model_settings)
@@ -1017,8 +1029,6 @@ class OpenAIChatCompletionsModel(Model):
                 streamed_tool_calls = []
                 
                 # Initialize Claude thinking display if applicable
-                thinking_context = None
-                from cai.util import start_claude_thinking_if_applicable
                 if should_show_rich_stream:  # Only show thinking in rich streaming mode
                     thinking_context = start_claude_thinking_if_applicable(
                         str(self.model), 
@@ -1044,6 +1054,10 @@ class OpenAIChatCompletionsModel(Model):
                 
                 try:
                     async for chunk in stream:
+                        # Check if we've been interrupted
+                        if stream_interrupted:
+                            break
+                            
                         if not state.started:
                             state.started = True
                             yield ResponseCreatedEvent(
@@ -1467,22 +1481,18 @@ class OpenAIChatCompletionsModel(Model):
                                         # Set flag to suppress final output to avoid duplication
                                         self.suppress_final_output = True
 
-                except Exception as e:
-                    # Ensure streaming context is cleaned up in case of errors
-                    if streaming_context:
-                        try:
-                            finish_agent_streaming(streaming_context, None)
-                        except Exception:
-                            pass
+                except KeyboardInterrupt:
+                    # Handle interruption during streaming
+                    stream_interrupted = True
+                    print("\n[Streaming interrupted by user]", file=sys.stderr)
                     
-                    # Ensure thinking context is cleaned up in case of errors
-                    if thinking_context:
-                        try:
-                            from cai.util import finish_claude_thinking_display
-                            finish_claude_thinking_display(thinking_context)
-                        except Exception:
-                            pass
-                    raise e
+                    # Let the exception propagate after cleanup
+                    raise
+                    
+                except Exception as e:
+                    # Handle other exceptions during streaming
+                    logger.error(f"Error during streaming: {e}")
+                    raise
 
                 # Special handling for Ollama - check if accumulated text contains a valid function call
                 if is_ollama and ollama_full_content and len(state.function_calls) == 0:
@@ -1884,27 +1894,72 @@ class OpenAIChatCompletionsModel(Model):
                 stop_active_timer()
                 start_idle_timer()
                 
+        except KeyboardInterrupt:
+            # Handle keyboard interruption specifically
+            stream_interrupted = True
+            
+            # Make sure to clean up and re-raise
+            raise
+            
         except Exception as e:
-            # Ensure streaming context is cleaned up in case of errors
+            # Handle other exceptions
+            logger.error(f"Error in stream_response: {e}")
+            raise
+            
+        finally:
+            # Always clean up resources
+            # This block executes whether the try block succeeds, fails, or is interrupted
+            
+            # Clean up streaming context
             if streaming_context:
                 try:
-                    finish_agent_streaming(streaming_context, None)
-                except Exception:
-                    pass
+                    # Check if we need to force stop the streaming panel
+                    if streaming_context.get("is_started", False) and streaming_context.get("live"):
+                        streaming_context["live"].stop()
                     
-            # Ensure thinking context is cleaned up in case of errors
-            if 'thinking_context' in locals() and thinking_context:
+                    # Remove from active streaming contexts
+                    if hasattr(create_agent_streaming_context, "_active_streaming"):
+                        for key, value in list(create_agent_streaming_context._active_streaming.items()):
+                            if value is streaming_context:
+                                del create_agent_streaming_context._active_streaming[key]
+                                break
+                except Exception as cleanup_error:
+                    logger.debug(f"Error cleaning up streaming context: {cleanup_error}")
+                    
+            # Clean up thinking context
+            if thinking_context:
                 try:
+                    # Force finish the thinking display
                     from cai.util import finish_claude_thinking_display
                     finish_claude_thinking_display(thinking_context)
+                except Exception as cleanup_error:
+                    logger.debug(f"Error cleaning up thinking context: {cleanup_error}")
+                    
+            # Clean up any live streaming panels
+            if hasattr(cli_print_tool_output, '_streaming_sessions'):
+                # Find any sessions related to this stream
+                for call_id in list(cli_print_tool_output._streaming_sessions.keys()):
+                    if call_id in _LIVE_STREAMING_PANELS:
+                        try:
+                            live = _LIVE_STREAMING_PANELS[call_id]
+                            live.stop()
+                            del _LIVE_STREAMING_PANELS[call_id]
+                        except Exception:
+                            pass
+                            
+            # Stop active timer and start idle timer
+            try:
+                stop_active_timer()
+                start_idle_timer()
+            except Exception:
+                pass
+                
+            # If the stream was interrupted, add a visual indicator
+            if stream_interrupted:
+                try:
+                    print("\n[Stream interrupted - Cleanup completed]", file=sys.stderr)
                 except Exception:
                     pass
-                    
-            # Stop active timer and start idle timer when streaming errors out
-            stop_active_timer()
-            start_idle_timer()
-            
-            raise e
 
     @overload
     async def _fetch_response(

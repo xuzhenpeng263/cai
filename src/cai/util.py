@@ -33,6 +33,8 @@ import uuid
 from cai import is_pentestperf_available
 if is_pentestperf_available():
     import pentestperf as ptt 
+import signal
+import weakref
 
 # Global timing variables for tracking active and idle time
 _active_timer_start = None
@@ -48,6 +50,83 @@ _LIVE_STREAMING_PANELS = {}
 
 # Global tracker for Claude thinking streaming panels
 _CLAUDE_THINKING_PANELS = {}
+
+# Global flag to track if cleanup is in progress
+_cleanup_in_progress = False
+_cleanup_lock = threading.Lock()
+
+def cleanup_all_streaming_resources():
+    """
+    Clean up all active streaming resources.
+    This is called when the program is interrupted or exits.
+    """
+    global _cleanup_in_progress
+    
+    with _cleanup_lock:
+        if _cleanup_in_progress:
+            return
+        _cleanup_in_progress = True
+    
+    try:
+        # Clean up all active Live streaming panels
+        for call_id, live in list(_LIVE_STREAMING_PANELS.items()):
+            try:
+                if hasattr(live, 'stop'):
+                    live.stop()
+            except Exception:
+                pass
+        _LIVE_STREAMING_PANELS.clear()
+        
+        # Clean up all Claude thinking panels
+        for thinking_id, context in list(_CLAUDE_THINKING_PANELS.items()):
+            try:
+                if context and context.get("live") and context.get("is_started"):
+                    context["live"].stop()
+            except Exception:
+                pass
+        _CLAUDE_THINKING_PANELS.clear()
+        
+        # Clean up active streaming contexts from create_agent_streaming_context
+        if hasattr(create_agent_streaming_context, "_active_streaming"):
+            for context_key, context in list(create_agent_streaming_context._active_streaming.items()):
+                try:
+                    if context and context.get("live") and context.get("is_started"):
+                        context["live"].stop()
+                except Exception:
+                    pass
+            create_agent_streaming_context._active_streaming.clear()
+            
+        # Reset any streaming session states
+        if hasattr(cli_print_tool_output, '_streaming_sessions'):
+            cli_print_tool_output._streaming_sessions.clear()
+            
+    except Exception as e:
+        print(f"\nError during streaming cleanup: {e}", file=sys.stderr)
+    finally:
+        _cleanup_in_progress = False
+
+def signal_handler(signum, frame):
+    """
+    Handle interrupt signals (CTRL+C) gracefully.
+    """    
+    # Stop any active timers
+    try:
+        stop_active_timer()
+        start_idle_timer()
+    except Exception:
+        pass
+    
+    # Clean up all streaming resources
+    cleanup_all_streaming_resources()
+    
+    # Re-raise KeyboardInterrupt to allow normal interrupt handling
+    raise KeyboardInterrupt()
+
+# Register signal handler for CTRL+C
+signal.signal(signal.SIGINT, signal_handler)
+
+# Register cleanup at exit
+atexit.register(cleanup_all_streaming_resources)
 
 def start_active_timer():
     """
@@ -1560,6 +1639,7 @@ def create_agent_streaming_context(agent_name, counter, model):
             "panel_width": panel_width,
             "is_started": False,  # Track if we've started the display
             "error": None,  # Track any errors
+            "context_key": context_key,  # Store the key for cleanup
         }
         
         # Store the context for potential reuse
@@ -1582,6 +1662,11 @@ def update_agent_streaming_content(context, text_delta, token_stats=None):
         token_stats: Optional token statistics to show with each update
     """
     if not context:
+        return False
+    
+    # Check if cleanup is in progress to avoid updating a context being cleaned up
+    global _cleanup_in_progress
+    if _cleanup_in_progress:
         return False
         
     try:
@@ -1675,16 +1760,25 @@ def update_agent_streaming_content(context, text_delta, token_stats=None):
                 context["is_started"] = True
             except Exception as e:
                 context["error"] = str(e)
+                # Clean up the context if we can't start it
+                context_key = context.get("context_key")
+                if context_key and hasattr(create_agent_streaming_context, "_active_streaming"):
+                    create_agent_streaming_context._active_streaming.pop(context_key, None)
                 return False
         
         # Force an update with the new panel
-        context["live"].update(updated_panel)
-        context["panel"] = updated_panel
-        context["live"].refresh()
+        if context.get("is_started", False):
+            context["live"].update(updated_panel)
+            context["panel"] = updated_panel
+            context["live"].refresh()
         return True
     except Exception as e:
         # If there's an error, set it in the context
         context["error"] = str(e)
+        # Try to clean up the context
+        context_key = context.get("context_key")
+        if context_key and hasattr(create_agent_streaming_context, "_active_streaming"):
+            create_agent_streaming_context._active_streaming.pop(context_key, None)
         return False
 
 def finish_agent_streaming(context, final_stats=None):
@@ -1698,12 +1792,15 @@ def finish_agent_streaming(context, final_stats=None):
     if not context:
         return False
     
+    # Check if cleanup is in progress
+    global _cleanup_in_progress
+    if _cleanup_in_progress:
+        return False
+    
     # Clean up tracking of this context
-    if hasattr(create_agent_streaming_context, "_active_streaming"):
-        for key, value in list(create_agent_streaming_context._active_streaming.items()):
-            if value is context:
-                del create_agent_streaming_context._active_streaming[key]
-                break
+    context_key = context.get("context_key")
+    if context_key and hasattr(create_agent_streaming_context, "_active_streaming"):
+        create_agent_streaming_context._active_streaming.pop(context_key, None)
         
     try:
         # Check if there's actual content to display - don't show empty panels
@@ -1813,17 +1910,23 @@ def finish_agent_streaming(context, final_stats=None):
             expand=True
         )
         
-        # Update one last time
-        context["live"].update(final_panel)
-        
-        # Ensure updates are displayed before stopping
-        time.sleep(0.1)
-        
-        # Stop the live display
-        try:
-            context["live"].stop()
-        except Exception as e:
-            context["error"] = str(e)
+        # Update one last time if display is started
+        if context.get("is_started", False):
+            try:
+                context["live"].update(final_panel)
+                
+                # Ensure updates are displayed before stopping
+                time.sleep(0.1)
+                
+                # Stop the live display
+                context["live"].stop()
+            except Exception as e:
+                context["error"] = str(e)
+                # Try to force stop if update failed
+                try:
+                    context["live"].stop()
+                except Exception:
+                    pass
             
         return True
     except Exception as e:
@@ -1866,6 +1969,11 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
     
     # Skip early for execute_code tool in non-streaming mode
     if tool_name == "execute_code" and not streaming:
+        return
+    
+    # Check if cleanup is in progress
+    global _cleanup_in_progress
+    if _cleanup_in_progress:
         return
     
     # Set up global tracker for streaming sessions
@@ -2026,29 +2134,55 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
                 # If we already have a live panel for this call_id, update it
                 if call_id in _LIVE_STREAMING_PANELS:
                     live = _LIVE_STREAMING_PANELS[call_id]
-                    live.update(panel)
+                    try:
+                        live.update(panel)
+                    except Exception as e:
+                        # If update fails, try to clean up
+                        try:
+                            live.stop()
+                        except Exception:
+                            pass
+                        del _LIVE_STREAMING_PANELS[call_id]
                     
                     # If this is the final update, stop the live panel after a short delay
                     if execution_info and execution_info.get('is_final', False):
                         # Give a moment for the final panel to be seen
                         time.sleep(0.2)
-                        live.stop()
+                        try:
+                            live.stop()
+                        except Exception:
+                            pass
                         # Remove from the active panel dictionary
-                        del _LIVE_STREAMING_PANELS[call_id]
+                        if call_id in _LIVE_STREAMING_PANELS:
+                            del _LIVE_STREAMING_PANELS[call_id]
                 else:
                     # Create a new live panel
                     console = Console(theme=theme)
                     live = Live(panel, console=console, refresh_per_second=4, auto_refresh=True)
                     # Start and store the live panel
-                    live.start()
-                    _LIVE_STREAMING_PANELS[call_id] = live
+                    try:
+                        live.start()
+                        _LIVE_STREAMING_PANELS[call_id] = live
+                    except Exception as e:
+                        # If we can't start the live panel, fall back to simple output
+                        _print_simple_tool_output(tool_name, args, output, execution_info, token_info)
                 
                 # Return early for streaming updates
                 return
                 
-            except ImportError:
+            except (ImportError, Exception) as e:
                 # Fall back to simple updates without Rich
-                pass
+                # If we had a live panel, try to clean it up
+                if call_id in _LIVE_STREAMING_PANELS:
+                    try:
+                        _LIVE_STREAMING_PANELS[call_id].stop()
+                    except Exception:
+                        pass
+                    del _LIVE_STREAMING_PANELS[call_id]
+                    
+                # Use simple output
+                _print_simple_tool_output(tool_name, args, output, execution_info, token_info)
+                return
     else:
         # For non-streaming outputs, check if we've already seen this command
         if command_key in cli_print_tool_output._displayed_commands:
@@ -2169,7 +2303,7 @@ def cli_print_tool_output(tool_name="", args="", output="", call_id=None, execut
         # Display the panel
         console.print(panel)
         
-    except ImportError:
+    except (ImportError, Exception) as e:
         # Fall back to simple output format without rich
         _print_simple_tool_output(tool_name, args, output, execution_info, token_info)
 
