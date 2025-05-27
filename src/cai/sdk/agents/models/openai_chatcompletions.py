@@ -502,11 +502,8 @@ class OpenAIChatCompletionsModel(Model):
                 stop_active_timer()
                 start_idle_timer()
                 
-                # Add visual feedback for interruption
-                print("\n[Non-streaming response interrupted - Cleanup completed]", file=sys.stderr)
-                
                 raise
-
+            import sys
             if _debug.DONT_LOG_MODEL_DATA:
                 logger.debug("Received model response")
             else:
