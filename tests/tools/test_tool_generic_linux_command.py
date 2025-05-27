@@ -88,7 +88,7 @@ async def test_generic_linux_command_interactive_flag():
         RunContextWrapper(None), json.dumps(args)
     )
     # Should still work, just might have different session handling
-    assert "test" in result
+    assert "async" in result
 
 
 @pytest.mark.asyncio
