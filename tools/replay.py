@@ -48,6 +48,7 @@ from cai.util import (
     color
 )
 from cai.sdk.agents.run_to_jsonl import get_token_stats, load_history_from_jsonl
+from cai.repl.ui.banner import display_banner
 
 # Initialize console object for rich printing
 console = Console()
@@ -373,6 +374,10 @@ Examples:
 
 def main():
     """Main function to process JSONL files and generate replay output."""
+    # Display banner
+    display_banner(console)
+    print("\n")
+
     # Parse command line arguments
     args = parse_arguments()
 
