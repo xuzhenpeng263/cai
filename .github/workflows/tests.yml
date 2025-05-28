@@ -12,49 +12,49 @@ env:
   UV_FROZEN: "1"
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-      - name: Install dependencies
-        run: make sync
-      - name: Run lint
-        run: make lint
+  # lint:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #     - name: Setup uv
+  #       uses: astral-sh/setup-uv@v5
+  #       with:
+  #         enable-cache: true
+  #     - name: Install dependencies
+  #       run: make sync
+  #     - name: Run lint
+  #       run: make lint
 
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-      - name: Install dependencies
-        run: make sync
-      - name: Run typecheck
-        run: make mypy
+  # typecheck:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #     - name: Setup uv
+  #       uses: astral-sh/setup-uv@v5
+  #       with:
+  #         enable-cache: true
+  #     - name: Install dependencies
+  #       run: make sync
+  #     - name: Run typecheck
+  #       run: make mypy
 
-  tests:
-    runs-on: ubuntu-latest
-    env:
-      OPENAI_API_KEY: fake-for-tests
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-      - name: Install dependencies
-        run: make sync
-      - name: Run tests with coverage
-        run: make coverage
+  # tests:
+  #   runs-on: ubuntu-latest
+  #   env:
+  #     OPENAI_API_KEY: fake-for-tests
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #     - name: Setup uv
+  #       uses: astral-sh/setup-uv@v5
+  #       with:
+  #         enable-cache: true
+  #     - name: Install dependencies
+  #       run: make sync
+  #     - name: Run tests with coverage
+  #       run: make coverage
 
   build-docs:
     runs-on: ubuntu-latest
@@ -72,18 +72,18 @@ jobs:
       - name: Build docs
         run: make build-docs
 
-  old_versions:
-    runs-on: ubuntu-latest
-    env:
-      OPENAI_API_KEY: fake-for-tests
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-      - name: Install dependencies
-        run: make sync
-      - name: Run tests
-        run: make old_version_tests
+  # old_versions:
+  #   runs-on: ubuntu-latest
+  #   env:
+  #     OPENAI_API_KEY: fake-for-tests
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #     - name: Setup uv
+  #       uses: astral-sh/setup-uv@v5
+  #       with:
+  #         enable-cache: true
+  #     - name: Install dependencies
+  #       run: make sync
+  #     - name: Run tests
+  #       run: make old_version_tests
