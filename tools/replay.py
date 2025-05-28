@@ -171,12 +171,10 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
 
             # Handle user messages
             if role == "user":
-                # Use cli_print_agent_messages for user messages
                 print(color(f"CAI> ", fg="cyan") + f"{content}")
-
                 turn_counter += 1
                 interaction_counter = 0
-
+            
             # Handle assistant messages
             elif role == "assistant":
                 # Check if there are tool calls
@@ -315,7 +313,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
 
             # Force flush stdout to ensure immediate printing
             sys.stdout.flush()
-            
+
         except Exception as e:
             # Handle any errors during message processing
             print(color(f"Warning: Error processing message {i+1}: {str(e)}", fg="yellow"))
