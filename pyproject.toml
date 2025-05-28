@@ -89,15 +89,54 @@ agents = { workspace = true }
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+exclude = [
+    ".trunk/",
+    ".git/",
+    ".vscode/",
+    ".devcontainer/",
+    ".mypy_cache/",
+    ".pytest_cache/",
+    ".ruff_cache/",
+    "venv/",
+    ".venv/",
+    "dist/",
+    "build/",
+    "*.egg-info/",
+    "workspaces/",
+    "benchmarks/",
+    "logs/",
+    "site/",
+    ".cai/",
+    "nohup.out"
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/cai", "tools"]
+exclude = [
+    ".trunk/",
+    ".git/",
+    ".vscode/",
+    ".devcontainer/",
+    ".mypy_cache/",
+    ".pytest_cache/",
+    ".ruff_cache/",
+    "venv/",
+    ".venv/",
+    "dist/",
+    "build/",
+    "*.egg-info/",
+    "workspaces/",
+    "benchmarks/",
+    "logs/",
+    "site/",
+    ".cai/",
+    "nohup.out"
+]
 
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""
 "tools" = "tools"
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/cai/prompts" = "cai/prompts"
 
 [tool.ruff]
 line-length = 100
