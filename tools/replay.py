@@ -5,16 +5,20 @@ This allows reviewing conversations in a more readable format.
 
 Usage:
     JSONL_FILE_PATH="path/to/file.jsonl" REPLAY_DELAY="0.5" python3 tools/replay.py
-    
+
+    # Or using positional arguments:
+    python3 tools/replay.py path/to/file.jsonl 0.5
+    cai-replay path/to/file.jsonl 0.5
+
     # Or using command line arguments:
     python3 tools/replay.py --jsonl-file-path path/to/file.jsonl --replay-delay 0.5
 
 Usage with asciinema rec, generating a .cast file and then converting it to a gif:
-    asciinema rec --command="JSONL_FILE_PATH=\"/workspace/caiextensions-memory/caiextensions/memory/it/htb/challenges/insomnia/cai_20250307_114836.jsonl\" REPLAY_DELAY=\"0.5\" python3 tools/replay.py" --overwrite
+    asciinema rec --command="python3 tools/replay.py path/to/file.jsonl 0.5" --overwrite
 
 Or alternatively:
     asciinema rec --command="JSONL_FILE_PATH='caiextensions-memory/caiextensions/memory/it/pentestperf/hackableii/hackableII_autonomo.jsonl' REPLAY_DELAY='0.05' cai-replay"
-    
+
 Then convert the .cast file to a gif:
     agg /tmp/tmp6c4dxoac-ascii.cast demo.gif
 
@@ -54,7 +58,7 @@ def display_execution_time(metrics=None):
     """Display the total execution time with our local console."""
     if metrics is None:
         return
-    
+
     # Create a panel for the execution time
     content = []
     content.append(f"Session Time: {metrics['session_time']}")
@@ -93,42 +97,42 @@ def load_jsonl(file_path: str) -> List[Dict]:
 def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: Tuple = None) -> None:
     """
     Replay a conversation from a list of messages, printing in real-time.
-    
+
     Args:
         messages: List of message dictionaries
         replay_delay: Time in seconds to wait between actions
-        usage: Tuple containing (model_name, total_input_tokens, total_output_tokens, 
+        usage: Tuple containing (model_name, total_input_tokens, total_output_tokens,
                total_cost, active_time, idle_time)
     """
     turn_counter = 0
     interaction_counter = 0
     debug = 0  # Always set debug to 2
-    
+
     if not messages:
         print(color("No valid messages found in the JSONL file", fg="yellow"))
         return
-        
-    print(color(f"Replaying conversation with {len(messages)} messages...", 
+
+    print(color(f"Replaying conversation with {len(messages)} messages...",
                 fg="green"))
-    
+
     # Extract the usage stats from the usage tuple
     # Handle both old format (4 elements) and new format (6 elements with timing)
     file_model = usage[0]
     total_input_tokens = usage[1]
     total_output_tokens = usage[2]
     total_cost = usage[3]
-    
+
     # Check if timing information is available
     active_time = usage[4] if len(usage) > 4 else 0
     idle_time = usage[5] if len(usage) > 5 else 0
-    
+
     # Display timing information if available
     if active_time > 0 or idle_time > 0:
         print(color(f"Active time: {active_time:.2f}s", fg="cyan"))
         print(color(f"Idle time: {idle_time:.2f}s", fg="cyan"))
-    
+
     print(color(f"Total cost: ${total_cost:.6f}", fg="cyan"))
-    
+
     # First pass: Process all tool outputs
     tool_outputs = {}
     for idx, message in enumerate(messages):
@@ -152,17 +156,17 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
         # Add delay between actions
         if i > 0:
             time.sleep(replay_delay)
-            
+
         role = message.get("role", "")
         content = message.get("content")
         content = str(content).strip() if content is not None else ""
         sender = message.get("sender", role)
         model = message.get("model", file_model)
-        
+
         # Skip system messages
         if role == "system":
             continue
-            
+
         # Handle user messages
         if role == "user":
             # Use cli_print_agent_messages for user messages
@@ -170,20 +174,20 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
 
             turn_counter += 1
             interaction_counter = 0
-            
+
         # Handle assistant messages
         elif role == "assistant":
             # Check if there are tool calls
             tool_calls = message.get("tool_calls", [])
             tool_outputs = message.get("tool_outputs", {})
-            
+
             if tool_calls:
                 # Print the assistant message with tool calls
                 cli_print_agent_messages(
-                    sender, 
-                    content or "", 
-                    interaction_counter, 
-                    model, 
+                    sender,
+                    content or "",
+                    interaction_counter,
+                    model,
                     debug,
                     interaction_input_tokens=message.get("input_tokens", 0),
                     interaction_output_tokens=message.get("output_tokens", 0),
@@ -194,23 +198,23 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                     interaction_cost=message.get("interaction_cost", 0.0),
                     total_cost=total_cost
                 )
-                
+
                 # Print each tool call with its output
                 for tool_call in tool_calls:
                     function = tool_call.get("function", {})
                     name = function.get("name", "")
                     arguments = function.get("arguments", "{}")
                     call_id = tool_call.get("id", "")
-                    
+
                     # Get the tool output if available
                     tool_output = ""
                     if call_id and call_id in tool_outputs:
                         tool_output = tool_outputs[call_id]
-                    
+
                     # Skip empty tool calls
                     if not name:
                         continue
-                    
+
                     try:
                         # Try to parse arguments as JSON
                         if arguments and isinstance(arguments, str) and arguments.strip().startswith("{"):
@@ -219,7 +223,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                             args_obj = arguments
                     except json.JSONDecodeError:
                         args_obj = arguments
-                        
+
                     # Print the tool call and output
                     cli_print_tool_output(
                         tool_name=name,
@@ -241,10 +245,10 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
             else:
                 # Print regular assistant message
                 cli_print_agent_messages(
-                    sender, 
-                    content or "", 
-                    interaction_counter, 
-                    model, 
+                    sender,
+                    content or "",
+                    interaction_counter,
+                    model,
                     debug,
                     interaction_input_tokens=message.get("input_tokens", 0),
                     interaction_output_tokens=message.get("output_tokens", 0),
@@ -256,19 +260,19 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                     total_cost=total_cost
                 )
             interaction_counter += 1  # iterate the interaction counter
-        
+
         # Handle tool messages - only those not already displayed with assistant messages
         elif role == "tool":
             # Check if we've already displayed this tool output with an assistant message
             tool_call_id = message.get("tool_call_id", "")
-            
+
             # Skip tool messages that have been displayed with an assistant message
             is_already_displayed = False
             for prev_msg in messages[:i]:
                 if prev_msg.get("role") == "assistant" and tool_call_id in prev_msg.get("tool_outputs", {}):
                     is_already_displayed = True
                     break
-            
+
             if not is_already_displayed and content:  # Only show if there's actual content
                 tool_name = message.get("name", message.get("tool_call_id", "unknown"))
                 cli_print_tool_output(
@@ -287,7 +291,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                         "total_cost": total_cost
                     }
                 )
-        
+
         # Handle any other message types
         else:
             if content:  # Only display if there's actual content
@@ -306,7 +310,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                     interaction_cost=message.get("interaction_cost", 0.0),
                     total_cost=total_cost
                 )
-                    
+
         # Force flush stdout to ensure immediate printing
         sys.stdout.flush()
 
@@ -320,38 +324,50 @@ def parse_arguments():
 Examples:
   # Using environment variables:
   JSONL_FILE_PATH="path/to/file.jsonl" REPLAY_DELAY="0.5" python3 tools/replay.py
-  
+
+  # Using positional arguments:
+  python3 tools/replay.py path/to/file.jsonl 0.5
+  cai-replay path/to/file.jsonl 0.5
+
   # Using command line arguments:
   python3 tools/replay.py --jsonl-file-path path/to/file.jsonl --replay-delay 0.5
-  
-  # Using positional argument (equivalent to --jsonl-file-path):
+
+  # Using positional argument for file only:
   python3 tools/replay.py path/to/file.jsonl --replay-delay 0.5
-  
+
   # With asciinema:
-  asciinema rec --command="python3 tools/replay.py path/to/file.jsonl" --overwrite
+  asciinema rec --command="python3 tools/replay.py path/to/file.jsonl 0.5" --overwrite
 """
     )
-    
+
     parser.add_argument(
-        "jsonl_file", 
-        nargs="?", 
+        "jsonl_file",
+        nargs="?",
         default=None,
-        help="Path to the JSONL file containing conversation history (positional argument)"
-    )
-    
-    parser.add_argument(
-        "--jsonl-file-path", 
-        type=str, 
         help="Path to the JSONL file containing conversation history"
     )
-    
+
     parser.add_argument(
-        "--replay-delay", 
-        type=float, 
+        "replay_delay_pos",
+        nargs="?",
+        type=float,
+        default=None,
+        help="Time in seconds to wait between actions (positional argument)"
+    )
+
+    parser.add_argument(
+        "--jsonl-file-path",
+        type=str,
+        help="Path to the JSONL file containing conversation history"
+    )
+
+    parser.add_argument(
+        "--replay-delay",
+        type=float,
         default=0.5,
         help="Time in seconds to wait between actions (default: 0.5)"
     )
-    
+
     return parser.parse_args()
 
 
@@ -359,18 +375,25 @@ def main():
     """Main function to process JSONL files and generate replay output."""
     # Parse command line arguments
     args = parse_arguments()
-    
+
     # Get environment variables or command line arguments
     # First check for --jsonl-file-path, then positional argument, then environment variable
     jsonl_file_path = args.jsonl_file_path or args.jsonl_file or os.environ.get("JSONL_FILE_PATH")
-    replay_delay = args.replay_delay if args.replay_delay is not None else float(os.environ.get("REPLAY_DELAY", "0.5"))
-    
+
+    # For replay delay, prioritize: positional arg > --replay-delay > environment variable > default
+    if args.replay_delay_pos is not None:
+        replay_delay = args.replay_delay_pos
+    elif args.replay_delay != 0.5:  # Check if --replay-delay was explicitly set
+        replay_delay = args.replay_delay
+    else:
+        replay_delay = float(os.environ.get("REPLAY_DELAY", "0.5"))
+
     # Validate required parameters
     if not jsonl_file_path:
-        print(color("Error: JSONL file path is required. Use a positional argument, --jsonl-file-path option, or set JSONL_FILE_PATH environment variable.", 
+        print(color("Error: JSONL file path is required. Use a positional argument, --jsonl-file-path option, or set JSONL_FILE_PATH environment variable.",
                     fg="red"))
         sys.exit(1)
-    
+
     print(color(f"Loading JSONL file: {jsonl_file_path}", fg="blue"))
 
     try:
@@ -405,7 +428,7 @@ def main():
             print(color(f"Idle time: {usage[5]:.2f}s", fg="blue"))
 
         # Generate the replay with live printing
-        replay_conversation(messages, replay_delay, usage)        
+        replay_conversation(messages, replay_delay, usage)
         print(color("Replay completed successfully", fg="green"))
 
         # Display the total cost
@@ -427,7 +450,7 @@ def main():
                     return f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
                 else:
                     return f"{int(minutes)}m {int(seconds)}s"
-        
+
         metrics = {
             'session_time': format_time(total_time),
             'llm_time': "0.0s",
