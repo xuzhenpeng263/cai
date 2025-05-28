@@ -136,9 +136,7 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
         if self.ctf:
             self.is_running = True
             self.output_buffer.append(
-                f"[Session {
-                    self.session_id}] Started CTF command: {
-                    self.command}")
+                f"[Session {self.session_id}] Started CTF command: {self.command}")
             try:
                 output = self.ctf.get_shell(self.command)
                 self.output_buffer.append(output)
@@ -162,9 +160,7 @@ class ShellSession:  # pylint: disable=too-many-instance-attributes
             )
             self.is_running = True
             self.output_buffer.append(
-                f"[Session {
-                    self.session_id}] Started: {
-                    self.command}")
+                f"[Session {self.session_id}] Started: {self.command}")
             # Start a thread to read output
             threading.Thread(target=self._read_output, daemon=True).start()
         except Exception as e:  # pylint: disable=broad-except

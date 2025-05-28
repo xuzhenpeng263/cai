@@ -87,11 +87,9 @@ class Command:
         Returns:
             True if the command was handled successfully, False otherwise
         """
+        subcommands = ', '.join(self.get_subcommands())
         console.print(
-            f"[yellow]{
-                self.name} command requires a subcommand: {
-                ', '.join(
-                    self.get_subcommands())}[/yellow]")
+            f"[yellow]{self.name} command requires a subcommand: {subcommands}[/yellow]")
         return False
 
     def handle_unknown_subcommand(self, subcommand: str) -> bool:
@@ -104,8 +102,7 @@ class Command:
             True if the command was handled successfully, False otherwise
         """
         console.print(
-            f"[red]Unknown {
-                self.name} subcommand: {subcommand}[/red]")
+            f"[red]Unknown {self.name} subcommand: {subcommand}[/red]")
         return False
 
 

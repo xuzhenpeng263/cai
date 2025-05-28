@@ -113,18 +113,12 @@ def update_toolbar_in_background():
         # Update the cache
         toolbar_cache['html'] = HTML(
             f"<{active_env_color}><b>ENV:</b> {active_env_icon} {active_env_name}</{active_env_color}>|"
-            f"<ansired><b>IP:</b></ansired> <ansigreen>{
-                ip_address}</ansigreen> | "
-            f"<ansiyellow><b>OS:</b></ansiyellow> <ansiblue>{
-                os_name} {os_version}</ansiblue> | "
-            f"<ansicyan><b>Ollama:</b></ansicyan> <ansimagenta>{
-                ollama_status}</ansimagenta> | "
-            f"<ansiyellow><b>Model:</b></ansiyellow> <ansigreen>{
-                os.getenv('CAI_MODEL', 'default')}</ansigreen> | "
-            f"<ansicyan><b>Max Turns:</b></ansicyan> <ansiblue>{
-                os.getenv('CAI_MAX_TURNS', 'inf')}</ansiblue> | "
-            f"<ansiyellow><b>Price Limit:</b></ansiyellow> <ansiblue>{
-                os.getenv('CAI_PRICE_LIMIT', 'inf')}</ansiblue> | "
+            f"<ansired><b>IP:</b></ansired> <ansigreen>{ip_address}</ansigreen> | "
+            f"<ansiyellow><b>OS:</b></ansiyellow> <ansiblue>{os_name} {os_version}</ansiblue> | "
+            f"<ansicyan><b>Ollama:</b></ansicyan> <ansimagenta>{ollama_status}</ansimagenta> | "
+            f"<ansiyellow><b>Model:</b></ansiyellow> <ansigreen>{os.getenv('CAI_MODEL', 'default')}</ansigreen> | "
+            f"<ansicyan><b>Max Turns:</b></ansicyan> <ansiblue>{os.getenv('CAI_MAX_TURNS', 'inf')}</ansiblue> | "
+            f"<ansiyellow><b>Price Limit:</b></ansiyellow> <ansiblue>{os.getenv('CAI_PRICE_LIMIT', 'inf')}</ansiblue> | "
             f"<ansigray>{current_time_with_tz}</ansigray>"
         )
         toolbar_cache['last_update'] = datetime.datetime.now()

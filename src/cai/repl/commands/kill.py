@@ -69,8 +69,7 @@ class KillCommand(Command):
             return False
         except ProcessLookupError:
             console.print(
-                f"[yellow]No process with PID {
-                    args[0]} found[/yellow]")
+                f"[yellow]No process with PID {args[0]} found[/yellow]")
             return False
         except Exception as e:  # pylint: disable=broad-exception-caught
             console.print(f"[red]Error killing process: {str(e)}[/red]")

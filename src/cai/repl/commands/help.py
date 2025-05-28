@@ -819,9 +819,8 @@ class HelpCommand(Command):
                     platform = platform_manager.get_platform(platform_name)
                     commands = platform.get_commands()
                     if commands:
-                        examples.append(
-                            f"[green]/platform {platform_name} {
-                                commands[0]}[/green] - Example {platform_name} command")
+                        command_example = f"[green]/platform {platform_name} {commands[0]}[/green] - Example {platform_name} command"
+                        examples.append(command_example)
 
                 if examples:
                     console.print(Panel(

@@ -154,83 +154,133 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                     message["tool_outputs"][call_id] = tool_outputs[call_id]
 
     for i, message in enumerate(messages):
-        # Add delay between actions
-        if i > 0:
-            time.sleep(replay_delay)
+        try:
+            # Add delay between actions
+            if i > 0:
+                time.sleep(replay_delay)
 
-        role = message.get("role", "")
-        content = message.get("content")
-        content = str(content).strip() if content is not None else ""
-        sender = message.get("sender", role)
-        model = message.get("model", file_model)
+            role = message.get("role", "")
+            content = message.get("content")
+            content = str(content).strip() if content is not None else ""
+            sender = message.get("sender", role)
+            model = message.get("model", file_model)
 
-        # Skip system messages
-        if role == "system":
-            continue
+            # Skip system messages
+            if role == "system":
+                continue
 
-        # Handle user messages
-        if role == "user":
-            # Use cli_print_agent_messages for user messages
-            print(color(f"CAI> ", fg="cyan") + f"{content}")
+            # Handle user messages
+            if role == "user":
+                # Use cli_print_agent_messages for user messages
+                print(color(f"CAI> ", fg="cyan") + f"{content}")
 
-            turn_counter += 1
-            interaction_counter = 0
+                turn_counter += 1
+                interaction_counter = 0
 
-        # Handle assistant messages
-        elif role == "assistant":
-            # Check if there are tool calls
-            tool_calls = message.get("tool_calls", [])
-            tool_outputs = message.get("tool_outputs", {})
+            # Handle assistant messages
+            elif role == "assistant":
+                # Check if there are tool calls
+                tool_calls = message.get("tool_calls", [])
+                tool_outputs = message.get("tool_outputs", {})
 
-            if tool_calls:
-                # Print the assistant message with tool calls
-                cli_print_agent_messages(
-                    sender,
-                    content or "",
-                    interaction_counter,
-                    model,
-                    debug,
-                    interaction_input_tokens=message.get("input_tokens", 0),
-                    interaction_output_tokens=message.get("output_tokens", 0),
-                    interaction_reasoning_tokens=message.get("reasoning_tokens", 0),
-                    total_input_tokens=total_input_tokens,
-                    total_output_tokens=total_output_tokens,
-                    total_reasoning_tokens=message.get("total_reasoning_tokens", 0),
-                    interaction_cost=message.get("interaction_cost", 0.0),
-                    total_cost=total_cost
-                )
+                if tool_calls:
+                    # Print the assistant message with tool calls
+                    cli_print_agent_messages(
+                        sender,
+                        content or "",
+                        interaction_counter,
+                        model,
+                        debug,
+                        interaction_input_tokens=message.get("input_tokens", 0),
+                        interaction_output_tokens=message.get("output_tokens", 0),
+                        interaction_reasoning_tokens=message.get("reasoning_tokens", 0),
+                        total_input_tokens=total_input_tokens,
+                        total_output_tokens=total_output_tokens,
+                        total_reasoning_tokens=message.get("total_reasoning_tokens", 0),
+                        interaction_cost=message.get("interaction_cost", 0.0),
+                        total_cost=total_cost
+                    )
 
-                # Print each tool call with its output
-                for tool_call in tool_calls:
-                    function = tool_call.get("function", {})
-                    name = function.get("name", "")
-                    arguments = function.get("arguments", "{}")
-                    call_id = tool_call.get("id", "")
+                    # Print each tool call with its output
+                    for tool_call in tool_calls:
+                        function = tool_call.get("function", {})
+                        name = function.get("name", "")
+                        arguments = function.get("arguments", "{}")
+                        call_id = tool_call.get("id", "")
 
-                    # Get the tool output if available
-                    tool_output = ""
-                    if call_id and call_id in tool_outputs:
-                        tool_output = tool_outputs[call_id]
+                        # Get the tool output if available
+                        tool_output = ""
+                        if call_id and call_id in tool_outputs:
+                            tool_output = tool_outputs[call_id]
 
-                    # Skip empty tool calls
-                    if not name:
-                        continue
+                        # Skip empty tool calls
+                        if not name:
+                            continue
 
-                    try:
-                        # Try to parse arguments as JSON
-                        if arguments and isinstance(arguments, str) and arguments.strip().startswith("{"):
-                            args_obj = json.loads(arguments)
-                        else:
+                        try:
+                            # Try to parse arguments as JSON
+                            if arguments and isinstance(arguments, str) and arguments.strip().startswith("{"):
+                                args_obj = json.loads(arguments)
+                            else:
+                                args_obj = arguments
+                        except json.JSONDecodeError:
                             args_obj = arguments
-                    except json.JSONDecodeError:
-                        args_obj = arguments
 
-                    # Print the tool call and output
+                        # Print the tool call and output
+                        cli_print_tool_output(
+                            tool_name=name,
+                            args=args_obj,
+                            output=tool_output,  # Use the matched tool output
+                            call_id=call_id,
+                            token_info={
+                                "interaction_input_tokens": message.get("input_tokens", 0),
+                                "interaction_output_tokens": message.get("output_tokens", 0),
+                                "interaction_reasoning_tokens": message.get("reasoning_tokens", 0),
+                                "total_input_tokens": total_input_tokens,
+                                "total_output_tokens": total_output_tokens,
+                                "total_reasoning_tokens": message.get("total_reasoning_tokens", 0),
+                                "model": model,
+                                "interaction_cost": message.get("interaction_cost", 0.0),
+                                "total_cost": total_cost
+                            }
+                        )
+                else:
+                    # Print regular assistant message
+                    cli_print_agent_messages(
+                        sender,
+                        content or "",
+                        interaction_counter,
+                        model,
+                        debug,
+                        interaction_input_tokens=message.get("input_tokens", 0),
+                        interaction_output_tokens=message.get("output_tokens", 0),
+                        interaction_reasoning_tokens=message.get("reasoning_tokens", 0),
+                        total_input_tokens=total_input_tokens,
+                        total_output_tokens=total_output_tokens,
+                        total_reasoning_tokens=message.get("total_reasoning_tokens", 0),
+                        interaction_cost=message.get("interaction_cost", 0.0),
+                        total_cost=total_cost
+                    )
+                interaction_counter += 1  # iterate the interaction counter
+
+            # Handle tool messages - only those not already displayed with assistant messages
+            elif role == "tool":
+                # Check if we've already displayed this tool output with an assistant message
+                tool_call_id = message.get("tool_call_id", "")
+
+                # Skip tool messages that have been displayed with an assistant message
+                is_already_displayed = False
+                for prev_msg in messages[:i]:
+                    if prev_msg.get("role") == "assistant" and tool_call_id in prev_msg.get("tool_outputs", {}):
+                        is_already_displayed = True
+                        break
+
+                if not is_already_displayed and content:  # Only show if there's actual content
+                    tool_name = message.get("name", message.get("tool_call_id", "unknown"))
                     cli_print_tool_output(
-                        tool_name=name,
-                        args=args_obj,
-                        output=tool_output,  # Use the matched tool output
-                        call_id=call_id,
+                        tool_name=tool_name,
+                        args="",
+                        output=content,
                         token_info={
                             "interaction_input_tokens": message.get("input_tokens", 0),
                             "interaction_output_tokens": message.get("output_tokens", 0),
@@ -243,77 +293,34 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
                             "total_cost": total_cost
                         }
                     )
+
+            # Handle any other message types
             else:
-                # Print regular assistant message
-                cli_print_agent_messages(
-                    sender,
-                    content or "",
-                    interaction_counter,
-                    model,
-                    debug,
-                    interaction_input_tokens=message.get("input_tokens", 0),
-                    interaction_output_tokens=message.get("output_tokens", 0),
-                    interaction_reasoning_tokens=message.get("reasoning_tokens", 0),
-                    total_input_tokens=total_input_tokens,
-                    total_output_tokens=total_output_tokens,
-                    total_reasoning_tokens=message.get("total_reasoning_tokens", 0),
-                    interaction_cost=message.get("interaction_cost", 0.0),
-                    total_cost=total_cost
-                )
-            interaction_counter += 1  # iterate the interaction counter
+                if content:  # Only display if there's actual content
+                    cli_print_agent_messages(
+                        sender or role,
+                        content,
+                        interaction_counter,
+                        model,
+                        debug,
+                        interaction_input_tokens=message.get("input_tokens", 0),
+                        interaction_output_tokens=message.get("output_tokens", 0),
+                        interaction_reasoning_tokens=message.get("reasoning_tokens", 0),
+                        total_input_tokens=total_input_tokens,
+                        total_output_tokens=total_output_tokens,
+                        total_reasoning_tokens=message.get("total_reasoning_tokens", 0),
+                        interaction_cost=message.get("interaction_cost", 0.0),
+                        total_cost=total_cost
+                    )
 
-        # Handle tool messages - only those not already displayed with assistant messages
-        elif role == "tool":
-            # Check if we've already displayed this tool output with an assistant message
-            tool_call_id = message.get("tool_call_id", "")
-
-            # Skip tool messages that have been displayed with an assistant message
-            is_already_displayed = False
-            for prev_msg in messages[:i]:
-                if prev_msg.get("role") == "assistant" and tool_call_id in prev_msg.get("tool_outputs", {}):
-                    is_already_displayed = True
-                    break
-
-            if not is_already_displayed and content:  # Only show if there's actual content
-                tool_name = message.get("name", message.get("tool_call_id", "unknown"))
-                cli_print_tool_output(
-                    tool_name=tool_name,
-                    args="",
-                    output=content,
-                    token_info={
-                        "interaction_input_tokens": message.get("input_tokens", 0),
-                        "interaction_output_tokens": message.get("output_tokens", 0),
-                        "interaction_reasoning_tokens": message.get("reasoning_tokens", 0),
-                        "total_input_tokens": total_input_tokens,
-                        "total_output_tokens": total_output_tokens,
-                        "total_reasoning_tokens": message.get("total_reasoning_tokens", 0),
-                        "model": model,
-                        "interaction_cost": message.get("interaction_cost", 0.0),
-                        "total_cost": total_cost
-                    }
-                )
-
-        # Handle any other message types
-        else:
-            if content:  # Only display if there's actual content
-                cli_print_agent_messages(
-                    sender or role,
-                    content,
-                    interaction_counter,
-                    model,
-                    debug,
-                    interaction_input_tokens=message.get("input_tokens", 0),
-                    interaction_output_tokens=message.get("output_tokens", 0),
-                    interaction_reasoning_tokens=message.get("reasoning_tokens", 0),
-                    total_input_tokens=total_input_tokens,
-                    total_output_tokens=total_output_tokens,
-                    total_reasoning_tokens=message.get("total_reasoning_tokens", 0),
-                    interaction_cost=message.get("interaction_cost", 0.0),
-                    total_cost=total_cost
-                )
-
-        # Force flush stdout to ensure immediate printing
-        sys.stdout.flush()
+            # Force flush stdout to ensure immediate printing
+            sys.stdout.flush()
+            
+        except Exception as e:
+            # Handle any errors during message processing
+            print(color(f"Warning: Error processing message {i+1}: {str(e)}", fg="yellow"))
+            print(color("Continuing with next message...", fg="yellow"))
+            continue
 
 
 def parse_arguments():
