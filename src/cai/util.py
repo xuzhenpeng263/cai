@@ -741,6 +741,7 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
            a tool_result block (tool message with matching tool_call_id).
         6. Each 'tool' message must be immediately preceded by an 'assistant' message
            with matching tool_call_id in its tool_calls.
+        7. Tool call IDs are truncated to 40 characters for API compatibility.
 
     Args:
         messages (List[dict]): List of message dictionaries containing
@@ -754,22 +755,45 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     # Deep-copy to ensure we don't modify the input
     sanitized_messages = []
     
-    # First pass - identify tool_call_ids from assistant messages and tool messages
+    # First, truncate all tool call IDs to 40 characters throughout the messages
+    # This ensures consistency for providers like DeepSeek that have strict ID matching
+    for msg in messages:
+        msg_copy = msg.copy()
+        
+        # Truncate tool_call_id in tool messages
+        if msg_copy.get("role") == "tool" and msg_copy.get("tool_call_id"):
+            if len(msg_copy["tool_call_id"]) > 40:
+                msg_copy["tool_call_id"] = msg_copy["tool_call_id"][:40]
+        
+        # Truncate IDs in assistant tool_calls
+        if msg_copy.get("role") == "assistant" and msg_copy.get("tool_calls"):
+            tool_calls_copy = []
+            for tc in msg_copy["tool_calls"]:
+                tc_copy = tc.copy()
+                if tc_copy.get("id") and len(tc_copy["id"]) > 40:
+                    tc_copy["id"] = tc_copy["id"][:40]
+                tool_calls_copy.append(tc_copy)
+            msg_copy["tool_calls"] = tool_calls_copy
+        
+        sanitized_messages.append(msg_copy)
+    
+    # Now process the messages with truncated IDs
+    processed_messages = []
     tool_call_map = {}  # Map from tool_call_id to (assistant_idx, tool_idx)
     
-    for i, msg in enumerate(messages):
+    for i, msg in enumerate(sanitized_messages):
         # Skip empty messages (considered empty if 'content' is None or only whitespace)
         if msg.get("role") in ["user", "system"] and (msg.get("content") is None or not str(msg.get("content", "")).strip()):
             # Special case: if it's a system message, set content to empty string instead of skipping
             if msg.get("role") == "system":
                 # Replace None with empty string
                 msg["content"] = ""
-                sanitized_messages.append(msg)
+                processed_messages.append(msg)
             # Skip empty user messages entirely
             continue
             
-        # Add valid messages to our sanitized list first
-        sanitized_messages.append(msg)
+        # Add valid messages to our processed list first
+        processed_messages.append(msg)
         
         # Now track tool calls and tool messages for pairing 
         if msg.get("role") == "assistant" and msg.get("tool_calls"):
@@ -777,12 +801,12 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                 if tc.get("id"):
                     tool_id = tc.get("id")
                     if tool_id not in tool_call_map:
-                        tool_call_map[tool_id] = {"assistant_idx": len(sanitized_messages) - 1, "tool_idx": None}
+                        tool_call_map[tool_id] = {"assistant_idx": len(processed_messages) - 1, "tool_idx": None}
         
         if msg.get("role") == "tool" and msg.get("tool_call_id"):
             tool_id = msg.get("tool_call_id")
             if tool_id in tool_call_map:
-                tool_call_map[tool_id]["tool_idx"] = len(sanitized_messages) - 1
+                tool_call_map[tool_id]["tool_idx"] = len(processed_messages) - 1
             else:
                 # Tool response without a matching tool call - create a synthetic pair
                 # by adding a dummy assistant message with a tool_call
@@ -799,15 +823,15 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                     }]
                 }
                 # Insert the assistant message *before* the tool message
-                sanitized_messages.insert(len(sanitized_messages) - 1, assistant_msg)
+                processed_messages.insert(len(processed_messages) - 1, assistant_msg)
                 # Update mapping
-                tool_call_map[tool_id] = {"assistant_idx": len(sanitized_messages) - 2, "tool_idx": len(sanitized_messages) - 1}
+                tool_call_map[tool_id] = {"assistant_idx": len(processed_messages) - 2, "tool_idx": len(processed_messages) - 1}
     
     # Second pass - ensure correct sequence (tool messages must directly follow their assistant messages)
     # This fixes the error "messages with role 'tool' must be a response to a preceeding message with 'tool_calls'"
     i = 0
-    while i < len(sanitized_messages):
-        msg = sanitized_messages[i]
+    while i < len(processed_messages):
+        msg = processed_messages[i]
         
         # Check if this is a tool message that might be out of sequence
         if msg.get("role") == "tool" and msg.get("tool_call_id"):
@@ -815,7 +839,7 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
             
             # If this isn't the first message, check if the previous message is a matching assistant message
             if i > 0:
-                prev_msg = sanitized_messages[i-1]
+                prev_msg = processed_messages[i-1]
                 
                 # Check if the previous message is an assistant message with matching tool_call_id
                 is_valid_sequence = (
@@ -827,7 +851,7 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                 if not is_valid_sequence:
                     # Find the assistant message with this tool_call_id
                     assistant_idx = None
-                    for j, assistant_msg in enumerate(sanitized_messages):
+                    for j, assistant_msg in enumerate(processed_messages):
                         if (assistant_msg.get("role") == "assistant" and 
                             assistant_msg.get("tool_calls") and
                             any(tc.get("id") == tool_id for tc in assistant_msg.get("tool_calls", []))):
@@ -837,10 +861,10 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                     # If we found a matching assistant message, move this tool message right after it
                     if assistant_idx is not None:
                         # Remember to save the tool message
-                        tool_msg = sanitized_messages.pop(i)
+                        tool_msg = processed_messages.pop(i)
                         
                         # Insert right after the assistant message
-                        sanitized_messages.insert(assistant_idx + 1, tool_msg)
+                        processed_messages.insert(assistant_idx + 1, tool_msg)
                         
                         # Adjust i to account for the move
                         if assistant_idx < i:
@@ -867,7 +891,7 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                         }
                         
                         # Insert the assistant message before the tool message
-                        sanitized_messages.insert(i, assistant_msg)
+                        processed_messages.insert(i, assistant_msg)
                         
                         # Skip past both messages
                         i += 2
@@ -889,7 +913,7 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
                 }
                 
                 # Insert the assistant message before the tool message
-                sanitized_messages.insert(0, assistant_msg)
+                processed_messages.insert(0, assistant_msg)
                 
                 # Skip past both messages
                 i += 2
@@ -903,7 +927,7 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
         if indices["tool_idx"] is None:
             # Tool call without a response - create a synthetic tool message
             assistant_idx = indices["assistant_idx"]
-            assistant_msg = sanitized_messages[assistant_idx]
+            assistant_msg = processed_messages[assistant_idx]
             
             # Find the relevant tool call
             tool_name = "unknown_function"
@@ -921,18 +945,18 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
             }
             
             # Insert immediately after the assistant message
-            if assistant_idx + 1 < len(sanitized_messages):
+            if assistant_idx + 1 < len(processed_messages):
                 # Insert at the position after assistant
-                sanitized_messages.insert(assistant_idx + 1, tool_msg)
+                processed_messages.insert(assistant_idx + 1, tool_msg)
             else:
                 # Just append if we're at the end
-                sanitized_messages.append(tool_msg)
+                processed_messages.append(tool_msg)
             
             # Update the map to note that this tool call now has a response
             tool_call_map[tool_id]["tool_idx"] = assistant_idx + 1
     
     # Ensure messages have non-null content (required by some providers)
-    for msg in sanitized_messages:
+    for msg in processed_messages:
         # For assistant messages with tool_calls, content can be None
         if msg.get("role") == "assistant" and msg.get("tool_calls"):
             # Assistant messages with tool calls can have None content - this is valid
@@ -949,9 +973,9 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
     # Special case for Claude: ensure strict alternating pattern between assistant tool_calls and tool results
     # If multiple consecutive assistant messages with tool_calls exist, interleave them with tool responses
     i = 0
-    while i < len(sanitized_messages) - 1:
-        current_msg = sanitized_messages[i]
-        next_msg = sanitized_messages[i + 1]
+    while i < len(processed_messages) - 1:
+        current_msg = processed_messages[i]
+        next_msg = processed_messages[i + 1]
         
         # When current message is assistant with tool_calls and next message is NOT a tool response
         if (current_msg.get("role") == "assistant" and 
@@ -972,13 +996,13 @@ def fix_message_list(messages):  # pylint: disable=R0914,R0915,R0912
             }
             
             # Insert the tool message after the current assistant message
-            sanitized_messages.insert(i + 1, tool_msg)
+            processed_messages.insert(i + 1, tool_msg)
             
             # Skip over the newly inserted message
             i += 2
         else:
             i += 1
-    return sanitized_messages
+    return processed_messages
 
 def cli_print_tool_call(tool_name="", args="", output="", prefix="  "):
     """Print a tool call with pretty formatting"""

@@ -2162,7 +2162,7 @@ class OpenAIChatCompletionsModel(Model):
                     kwargs["reasoning_effort"] = model_settings.reasoning_effort
                 else:
                     # Default to "low" reasoning effort if model supports it
-                    kwargs["reasoning_effort"] = "high"
+                    kwargs["reasoning_effort"] = "low"
             elif provider == "claude" or "claude" in model_str:
                 litellm.drop_params = True
                 kwargs.pop("store", None)
@@ -2371,7 +2371,7 @@ class OpenAIChatCompletionsModel(Model):
                             provider_kwargs["reasoning_effort"] = model_settings.reasoning_effort
                         else:
                             # Default to "low" reasoning effort
-                            provider_kwargs["reasoning_effort"] = "high"
+                            provider_kwargs["reasoning_effort"] = "low"
                     elif provider == "claude" or "claude" in model_str:
                         provider_kwargs["custom_llm_provider"] = "anthropic"
                         provider_kwargs.pop("store", None)  # Claude doesn't support store parameter
@@ -3251,6 +3251,9 @@ class _Converter:
                 call_id = func_output["call_id"]
                 output_content = func_output["output"]
                 
+                # IMPORTANT: Truncate call_id to 40 characters for consistency
+                truncated_call_id = call_id[:40] if call_id else call_id
+                
                 # Update execution timing if we have the start time
                 if hasattr(cls, 'recent_tool_calls') and call_id in cls.recent_tool_calls:
                     tool_call_details = cls.recent_tool_calls[call_id] # Renamed for clarity
@@ -3371,10 +3374,10 @@ class _Converter:
                 # The responsibility for ensuring a preceding assistant message
                 # is now fully deferred to fix_message_list, called later.
 
-                # Now add the tool message
+                # Now add the tool message with truncated call_id
                 msg: ChatCompletionToolMessageParam = {
                     "role": "tool",
-                    "tool_call_id": func_output["call_id"],
+                    "tool_call_id": truncated_call_id,
                     "content": func_output["output"],
                 }
                 result.append(msg)
