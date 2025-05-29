@@ -1141,7 +1141,9 @@ class OpenAIChatCompletionsModel(Model):
                             else:
                                 # Non-streaming mode: Use simple text output
                                 from cai.util import print_claude_reasoning_simple, detect_claude_thinking_in_stream
-                                if detect_claude_thinking_in_stream(str(self.model)):
+                                # Check if model supports reasoning (Claude or DeepSeek)
+                                model_str_lower = str(self.model).lower()
+                                if detect_claude_thinking_in_stream(str(self.model)) or "deepseek" in model_str_lower:
                                     print_claude_reasoning_simple(reasoning_content, self.agent_name, str(self.model))
                         
 
@@ -2153,6 +2155,14 @@ class OpenAIChatCompletionsModel(Model):
                 # Remove tool_choice if no tools are specified
                 if not converted_tools:
                     kwargs.pop("tool_choice", None)
+                
+                # Add reasoning support for DeepSeek
+                # DeepSeek supports reasoning_effort parameter
+                if hasattr(model_settings, "reasoning_effort") and model_settings.reasoning_effort:
+                    kwargs["reasoning_effort"] = model_settings.reasoning_effort
+                else:
+                    # Default to "low" reasoning effort if model supports it
+                    kwargs["reasoning_effort"] = "high"
             elif provider == "claude" or "claude" in model_str:
                 litellm.drop_params = True
                 kwargs.pop("store", None)
@@ -2355,6 +2365,13 @@ class OpenAIChatCompletionsModel(Model):
                         provider_kwargs["custom_llm_provider"] = "deepseek"
                         provider_kwargs.pop("store", None)  # DeepSeek doesn't support store parameter
                         provider_kwargs.pop("parallel_tool_calls", None)  # DeepSeek doesn't support parallel tool calls
+                        
+                        # Add reasoning support for DeepSeek
+                        if hasattr(model_settings, "reasoning_effort") and model_settings.reasoning_effort:
+                            provider_kwargs["reasoning_effort"] = model_settings.reasoning_effort
+                        else:
+                            # Default to "low" reasoning effort
+                            provider_kwargs["reasoning_effort"] = "high"
                     elif provider == "claude" or "claude" in model_str:
                         provider_kwargs["custom_llm_provider"] = "anthropic"
                         provider_kwargs.pop("store", None)  # Claude doesn't support store parameter

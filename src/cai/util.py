@@ -3165,8 +3165,8 @@ def setup_ctf():
 
 def create_claude_thinking_context(agent_name, counter, model):
     """
-    Create a streaming context for Claude thinking/reasoning display.
-    This creates a dedicated panel that shows Claude's internal reasoning process.
+    Create a streaming context for AI thinking/reasoning display.
+    This creates a dedicated panel that shows the model's internal reasoning process.
     
     Args:
         agent_name: The name of the agent
@@ -3198,10 +3198,19 @@ def create_claude_thinking_context(agent_name, counter, model):
         terminal_width, _ = shutil.get_terminal_size((100, 24))
         panel_width = min(terminal_width - 4, 120)
         
+        # Determine model type for display
+        model_str = str(model).lower()
+        if "claude" in model_str:
+            model_display = "Claude"
+        elif "deepseek" in model_str:
+            model_display = "DeepSeek"
+        else:
+            model_display = "AI"
+        
         # Create the thinking panel header
         header = Text()
         header.append("🧠 ", style="bold yellow")
-        header.append(f"Claude Reasoning [{counter}]", style="bold yellow")
+        header.append(f"{model_display} Reasoning [{counter}]", style="bold yellow")
         header.append(f" | {agent_name}", style="bold cyan")
         header.append(f" | {timestamp}", style="dim")
         
@@ -3211,7 +3220,7 @@ def create_claude_thinking_context(agent_name, counter, model):
         # Create the panel for thinking
         panel = Panel(
             Group(header, Text("\n"), thinking_content),
-            title="[bold yellow]🧠 Thinking Process[/bold yellow]",
+            title=f"[bold yellow]🧠 {model_display} Thinking Process[/bold yellow]",
             border_style="yellow",
             box=ROUNDED,
             padding=(1, 2),
@@ -3230,6 +3239,7 @@ def create_claude_thinking_context(agent_name, counter, model):
             "thinking_content": thinking_content,
             "timestamp": timestamp,
             "model": model,
+            "model_display": model_display,
             "agent_name": agent_name,
             "panel_width": panel_width,
             "is_started": False,
@@ -3242,12 +3252,12 @@ def create_claude_thinking_context(agent_name, counter, model):
         return context
         
     except Exception as e:
-        print(f"Error creating Claude thinking context: {e}")
+        print(f"Error creating {model_display} thinking context: {e}")
         return None
 
 def update_claude_thinking_content(context, thinking_delta):
     """
-    Update the Claude thinking content with new reasoning text.
+    Update the AI thinking content with new reasoning text.
     
     Args:
         context: The thinking context created by create_claude_thinking_context
@@ -3283,6 +3293,9 @@ def update_claude_thinking_content(context, thinking_delta):
             # For short thinking, use regular text with styling
             thinking_display = Text(thinking_text, style="white")
         
+        # Get model display name from context
+        model_display = context.get("model_display", "AI")
+        
         # Update the panel content
         updated_panel = Panel(
             Group(
@@ -3290,7 +3303,7 @@ def update_claude_thinking_content(context, thinking_delta):
                 Text("\n"), 
                 thinking_display
             ),
-            title="[bold yellow]🧠 Thinking Process[/bold yellow]",
+            title=f"[bold yellow]🧠 {model_display} Thinking Process[/bold yellow]",
             border_style="yellow",
             box=ROUNDED,
             padding=(1, 2),
@@ -3304,7 +3317,8 @@ def update_claude_thinking_content(context, thinking_delta):
                 context["live"].start()
                 context["is_started"] = True
             except Exception as e:
-                print(f"Error starting Claude thinking display: {e}")
+                model_display = context.get("model_display", "AI")
+                print(f"Error starting {model_display} thinking display: {e}")
                 return False
         
         # Update the live display
@@ -3315,12 +3329,13 @@ def update_claude_thinking_content(context, thinking_delta):
         return True
         
     except Exception as e:
-        print(f"Error updating Claude thinking content: {e}")
+        model_display = context.get("model_display", "AI")
+        print(f"Error updating {model_display} thinking content: {e}")
         return False
 
 def finish_claude_thinking_display(context):
     """
-    Finish the Claude thinking display session.
+    Finish the AI thinking display session.
     
     Args:
         context: The thinking context to finish
@@ -3339,10 +3354,13 @@ def finish_claude_thinking_display(context):
         from rich.syntax import Syntax
         from rich.console import Group
         
+        # Get model display name
+        model_display = context.get("model_display", "AI")
+        
         # Add final formatting to show completion
         final_header = Text()
         final_header.append("🧠 ", style="bold green")
-        final_header.append(f"Claude Reasoning Complete", style="bold green")
+        final_header.append(f"{model_display} Reasoning Complete", style="bold green")
         final_header.append(f" | {context['agent_name']}", style="bold cyan")
         final_header.append(f" | {context['timestamp']}", style="dim")
         
@@ -3368,7 +3386,7 @@ def finish_claude_thinking_display(context):
                 Text("\n"),
                 final_thinking_display
             ),
-            title="[bold green]🧠 Thinking Complete[/bold green]",
+            title=f"[bold green]🧠 {model_display} Thinking Complete[/bold green]",
             border_style="green",
             box=ROUNDED,
             padding=(1, 2),
@@ -3390,13 +3408,14 @@ def finish_claude_thinking_display(context):
         return True
         
     except Exception as e:
-        print(f"Error finishing Claude thinking display: {e}")
+        model_display = context.get("model_display", "AI")
+        print(f"Error finishing {model_display} thinking display: {e}")
         return False
 
 def detect_claude_thinking_in_stream(model_name):
     """
     Detect if a model should show thinking/reasoning display.
-    Only applies to Claude models with reasoning capability.
+    Applies to Claude and DeepSeek models with reasoning capability.
     
     Args:
         model_name: The model name to check
@@ -3412,7 +3431,7 @@ def detect_claude_thinking_in_stream(model_name):
     # Check for Claude models with reasoning capability
     # Claude 4 models (like claude-sonnet-4-20250514) support reasoning
     # Also check for explicit "thinking" in model name
-    has_reasoning = (
+    has_claude_reasoning = (
         "claude" in model_str and (
             # Claude 4 models (sonnet-4, haiku-4, opus-4)
             "-4-" in model_str or
@@ -3425,11 +3444,23 @@ def detect_claude_thinking_in_stream(model_name):
         )
     )
     
-    return has_reasoning
+    # Check for DeepSeek models with reasoning capability
+    has_deepseek_reasoning = (
+        "deepseek" in model_str and (
+            # DeepSeek reasoner models
+            "reasoner" in model_str or
+            # DeepSeek chat models also support reasoning
+            "chat" in model_str or
+            # Generic deepseek models likely support it
+            "/" in model_str  # e.g., deepseek/deepseek-chat
+        )
+    )
+    
+    return has_claude_reasoning or has_deepseek_reasoning
 
 def print_claude_reasoning_simple(reasoning_content, agent_name, model_name):
     """
-    Print Claude reasoning content in simple mode (no Rich panels).
+    Print AI reasoning content in simple mode (no Rich panels).
     Used when CAI_STREAM=False.
     
     Args:
@@ -3440,16 +3471,26 @@ def print_claude_reasoning_simple(reasoning_content, agent_name, model_name):
     if not reasoning_content or not reasoning_content.strip():
         return
         
+    # Determine model type for display
+    model_str = str(model_name).lower()
+    if "claude" in model_str:
+        model_display = "Claude"
+    elif "deepseek" in model_str:
+        model_display = "DeepSeek"
+    else:
+        model_display = "AI"
+        
     # Simple text output without Rich formatting
     timestamp = datetime.now().strftime("%H:%M:%S")
-    print(f"\n🧠 Reasoning | {agent_name} | {model_name} | {timestamp}")
+    print(f"\n🧠 {model_display} Reasoning | {agent_name} | {model_name} | {timestamp}")
     print("=" * 60)
     print(reasoning_content)
     print("=" * 60 + "\n")
 
 def start_claude_thinking_if_applicable(model_name, agent_name, counter):
     """
-    Start Claude thinking display if the model supports it AND streaming is enabled.
+    Start AI thinking display if the model supports it AND streaming is enabled.
+    Supports Claude and DeepSeek models with reasoning capabilities.
     
     Args:
         model_name: The model name
