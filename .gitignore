@@ -156,3 +156,6 @@ benchmarks/outputs
 
 # other
 nohup.out
+venv*
+caiextensions-*
+pentestperf
