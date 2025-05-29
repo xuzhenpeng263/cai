@@ -40,7 +40,8 @@ from cai.repl.commands import (  # pylint: disable=import-error,unused-import,li
     workspace,
     virtualization,
     load,
-    parallel  # Add the new parallel command
+    parallel,  # Add the new parallel command
+    mcp  # Add the MCP command
 )
 
 # Define helper functions
