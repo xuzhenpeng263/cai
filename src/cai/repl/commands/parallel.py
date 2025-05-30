@@ -98,8 +98,9 @@ class ParallelCommand(Command):
                 model = args[i + 1]
                 i += 2
             elif args[i] == "--prompt" and i + 1 < len(args):
-                prompt = args[i + 1]
-                i += 2
+                # Capture all remaining arguments as the prompt
+                prompt = " ".join(args[i + 1:])
+                break  # Stop parsing after --prompt since we take everything after it
             else:
                 i += 1
                 
