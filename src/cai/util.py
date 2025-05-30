@@ -645,9 +645,65 @@ def visualize_agent_graph(start_agent):
 
         # Add tools
         tools_node = node.add("[yellow]Tools[/yellow]")
-        for tool in getattr(agent, "tools", []):
+        
+        # Get regular tools and MCP tools separately
+        regular_tools = getattr(agent, "tools", [])
+        mcp_tools = []
+        
+        try:
+            # Try to get MCP tools specifically
+            import asyncio
+            
+            async def get_mcp_tools_async():
+                return await agent.get_mcp_tools()
+            
+            # Run async function to get MCP tools
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're in a loop, we need to use a different approach
+                import concurrent.futures
+                
+                def run_in_thread():
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        return new_loop.run_until_complete(get_mcp_tools_async())
+                    finally:
+                        new_loop.close()
+                
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_in_thread)
+                    mcp_tools = future.result(timeout=10)
+                    
+            except RuntimeError:
+                # No running loop, we can use asyncio.run
+                mcp_tools = asyncio.run(get_mcp_tools_async())
+                
+        except Exception:
+            # If MCP tools fetch fails, mcp_tools remains empty list
+            mcp_tools = []
+        
+        # Show regular tools first
+        for tool in regular_tools:
             tool_name = getattr(tool, "name", None) or getattr(tool, "__name__", "")
             tools_node.add(f"[blue]{tool_name}[/blue]")
+        
+        # Show MCP tools with a different color/prefix
+        if mcp_tools:
+            for tool in mcp_tools:
+                tool_name = getattr(tool, "name", None) or getattr(tool, "__name__", "")
+                tools_node.add(f"[magenta]🔌 {tool_name}[/magenta]")
+        
+        # Add a summary line if we have both types
+        if regular_tools and mcp_tools:
+            summary_text = f"[dim]({len(regular_tools)} regular, {len(mcp_tools)} MCP tools)[/dim]"
+            tools_node.add(summary_text)
+        elif mcp_tools and not regular_tools:
+            summary_text = f"[dim]({len(mcp_tools)} MCP tools)[/dim]"
+            tools_node.add(summary_text)
+        elif regular_tools and not mcp_tools:
+            summary_text = f"[dim]({len(regular_tools)} regular tools)[/dim]"
+            tools_node.add(summary_text)
 
         # Add handoffs
         transfers_node = node.add("[magenta]Handoffs[/magenta]")
