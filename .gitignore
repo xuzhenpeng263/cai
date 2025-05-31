@@ -156,3 +156,4 @@ benchmarks/outputs
 
 # other
 nohup.out
+.aider*
