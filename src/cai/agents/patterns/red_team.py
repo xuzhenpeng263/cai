@@ -13,27 +13,38 @@ from cai.agents.mail import dns_smtp_agent
 from cai.sdk.agents import handoff
 
 
+# Clone agents to avoid modifying the original instances
+_redteam_agent_copy = redteam_agent.clone()
+_thought_agent_copy = thought_agent.clone()
+_dns_smtp_agent_copy = dns_smtp_agent.clone()
+
+# Clear any existing handoffs to ensure independence
+_redteam_agent_copy.handoffs = []
+_thought_agent_copy.handoffs = []
+_dns_smtp_agent_copy.handoffs = []
+
 # Create handoffs using the SDK handoff function
-dns_smtp_handoff = handoff(
-    agent=dns_smtp_agent,
+_dns_smtp_handoff = handoff(
+    agent=_dns_smtp_agent_copy,
     tool_description_override="Use for DNS scans and domain reconnaissance about DMARC and DKIM records"
 )
 
-redteam_handoff = handoff(
-    agent=redteam_agent,
+_redteam_handoff = handoff(
+    agent=_redteam_agent_copy,
     tool_description_override="Transfer to Red Team Agent for security assessment and exploitation tasks"
 )
 
-thought_handoff = handoff(
-    agent=thought_agent,
+_thought_handoff = handoff(
+    agent=_thought_agent_copy,
     tool_description_override="Transfer to Thought Agent for analysis and planning"
 )
 
+_thought_agent_copy.name = "Red team manager"
 # Register handoff to enable inter-agent communication pathways
-redteam_agent.handoffs.append(dns_smtp_handoff)
-dns_smtp_agent.handoffs.append(redteam_handoff)
-thought_agent.handoffs.append(redteam_handoff)
+_redteam_agent_copy.handoffs.append(_dns_smtp_handoff)
+_dns_smtp_agent_copy.handoffs.append(_redteam_handoff)
+_thought_agent_copy.handoffs.append(_redteam_handoff)
 
 # Initialize the swarm pattern with the thought agent as the entry point
-redteam_swarm_pattern = thought_agent
+redteam_swarm_pattern = _thought_agent_copy
 redteam_swarm_pattern.pattern = "swarm"

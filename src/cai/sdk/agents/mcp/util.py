@@ -80,10 +80,52 @@ class MCPUtil:
             logger.debug(f"Invoking MCP tool {tool.name} with input {input_json}")
 
         try:
+            # Check if server session is still valid
+            if not hasattr(server, 'session') or server.session is None:
+                logger.warning(f"MCP server session not found for tool {tool.name}, attempting to reconnect...")
+                # Try to reconnect
+                try:
+                    await server.connect()
+                    logger.info(f"Successfully reconnected to MCP server for tool {tool.name}")
+                except Exception as reconnect_error:
+                    logger.error(f"Failed to reconnect to MCP server: {reconnect_error}")
+                    raise AgentsException(
+                        f"MCP server connection lost for tool {tool.name}. "
+                        f"Please remove and re-add the MCP server. "
+                        f"Reconnection error: {str(reconnect_error)}"
+                    ) from reconnect_error
+            
+            # Now try to call the tool
             result = await server.call_tool(tool.name, json_data)
+            
+        except AttributeError as ae:
+            # This often happens when the server object is not properly initialized
+            logger.error(f"MCP server not properly initialized for tool {tool.name}: {ae}")
+            logger.error(f"Server type: {type(server)}, has session: {hasattr(server, 'session')}")
+            raise AgentsException(
+                f"MCP server not properly initialized for tool {tool.name}. "
+                f"The server connection may have been lost. "
+                f"AttributeError: {str(ae)}\n"
+                f"Try: /mcp remove <server_name> then /mcp load ... to reconnect."
+            ) from ae
         except Exception as e:
-            logger.error(f"Error invoking MCP tool {tool.name}: {e}")
-            raise AgentsException(f"Error invoking MCP tool {tool.name}: {e}") from e
+            # Log the full exception details
+            logger.error(f"Error invoking MCP tool {tool.name}: {type(e).__name__}: {str(e)}")
+            logger.error(f"Full exception details: {repr(e)}")
+            
+            # Check if it's a connection issue
+            error_str = str(e).lower()
+            if "session" in error_str or "connection" in error_str or "closed" in error_str:
+                raise AgentsException(
+                    f"MCP server connection error for tool {tool.name}. "
+                    f"Error: {type(e).__name__}: {str(e)}\n"
+                    f"Use '/mcp status' to check server health and '/mcp remove' + '/mcp load' to reconnect."
+                ) from e
+            else:
+                # For other errors, include the full error details
+                raise AgentsException(
+                    f"Error invoking MCP tool {tool.name}: {type(e).__name__}: {str(e)}"
+                ) from e
 
         if _debug.DONT_LOG_TOOL_DATA:
             logger.debug(f"MCP tool {tool.name} completed.")

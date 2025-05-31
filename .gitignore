@@ -157,3 +157,8 @@ benchmarks/outputs
 # other
 nohup.out
 .aider*
+caiextensions-*
+pentestperf
+
+# python venvs
+venv*
