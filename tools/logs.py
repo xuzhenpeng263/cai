@@ -9,6 +9,11 @@ Usage:
     
     # Show last 10 logs and enable map
     python tools/web_logs.py --enable-map <(tail -n 10 ./logs.txt)
+
+Ideas for further improvements:
+- Re-generate the log heatmap with only top 20 IPs
+- Create a map with the top 20 IPs
+- Dive into the logs
 """
 
 import matplotlib

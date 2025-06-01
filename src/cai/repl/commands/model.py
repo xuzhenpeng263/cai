@@ -75,15 +75,19 @@ class ModelCommand(Command):
                     )
                 }
             ],
-            "Claude 3.7": [
+            "Anthropic Claude": [
+                {
+                    "name": "claude-sonnet-4-20250514",
+                    "description": (
+                        "Excellent balance of performance and efficiency"
+                    )
+                },
                 {
                     "name": "claude-3-7-sonnet-20250219",
                     "description": (
                         "Excellent model for complex reasoning and creative tasks"
                     )
-                }
-            ],
-            "Claude 3.5": [
+                },
                 {
                     "name": "claude-3-5-sonnet-20240620",
                     "description": (
@@ -91,27 +95,13 @@ class ModelCommand(Command):
                     )
                 },
                 {
-                    "name": "claude-3-5-sonnet-20241022",
+                    "name": "claude-3-5-haiku-20240307",
                     "description": (
-                        "Latest Claude 3.5 model with improved capabilities"
+                        "Fast and efficient model"
                     )
-                }
-            ],
-            "Claude 3": [
-                {
-                    "name": "claude-3-opus-20240229",
-                    "description": "Powerful Claude 3 model for complex tasks"
                 },
-                {
-                    "name": "claude-3-sonnet-20240229",
-                    "description": "Balanced performance and speed"
-                },
-                {
-                    "name": "claude-3-haiku-20240307",
-                    "description": "Fast and efficient model"
-                }
             ],
-            "OpenAI O-series": [
+            "OpenAI": [
                 {
                     "name": "o1",
                     "description": (
@@ -146,33 +136,6 @@ class ModelCommand(Command):
                 {
                     "name": "gpt-4o-audio-preview-2024-10-01",
                     "description": "Previous GPT-4o with audio capabilities"
-                }
-            ],
-            "OpenAI GPT-4": [
-                {"name": "gpt-4", "description": "Original GPT-4 model"},
-                {"name": "gpt-4-turbo",
-                 "description": "Fast and powerful GPT-4 model"}
-            ],
-            "OpenAI GPT-4o-mini": [
-                {"name": "gpt-4o-mini", "description": " GPT-4o mini model"}
-            ],
-            "OpenAI GPT-4.5": [
-                {
-                    "name": "gpt-4.5-preview",
-                    "description": (
-                        "Latest non reasoning openai model with "
-                        "improved capabilities"
-                    )
-                },
-                {
-                    "name": "gpt-4.5-preview-2025-02-27",
-                    "description": "Specific version of GPT-4.5 preview"
-                }
-            ],
-            "OpenAI GPT-3.5": [
-                {
-                    "name": "gpt-3.5-turbo",
-                    "description": "Fast and cost-effective model"
                 }
             ],
             "DeepSeek": [
