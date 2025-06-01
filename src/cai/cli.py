@@ -558,6 +558,10 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
                 if session_logger:
                     session_logger.log_session_end()
 
+                # Create symlink to the last log file
+                if session_logger and hasattr(session_logger, 'filename'):
+                    create_last_log_symlink(session_logger.filename)
+
                 # Prevent duplicate cost display from the COST_TRACKER exit handler
                 os.environ["CAI_COST_DISPLAYED"] = "true"
 
@@ -903,6 +907,38 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
             # Make sure we switch back to idle mode even if there's an error
             stop_active_timer()
             start_idle_timer()
+
+def create_last_log_symlink(log_filename):
+    """
+    Create a symbolic link 'logs/last' pointing to the current log file.
+    
+    Args:
+        log_filename: Path to the current log file
+    """
+    try:
+        import os
+        from pathlib import Path
+        
+        if not log_filename:
+            return
+            
+        log_path = Path(log_filename)
+        if not log_path.exists():
+            return
+            
+        # Create the symlink path
+        symlink_path = Path("logs/last")
+        
+        # Remove existing symlink if it exists
+        if symlink_path.exists() or symlink_path.is_symlink():
+            symlink_path.unlink()
+        
+        # Create new symlink pointing to just the filename (relative path within logs dir)
+        symlink_path.symlink_to(log_path.name)
+        
+    except Exception:
+        # Silently ignore errors to avoid disrupting the main flow
+        pass
 
 def main():
     # Apply litellm patch to fix the __annotations__ error
