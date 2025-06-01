@@ -17,7 +17,7 @@ thought_agent_system_prompt = load_prompt_template("prompts/system_thought_route
 thought_agent = Agent(
     name="ThoughtAgent",
     model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
+        model=os.getenv('CAI_MODEL', "alias0"),
         openai_client=AsyncOpenAI(),
     ),
     description="""Agent focused on analyzing and planning the next steps

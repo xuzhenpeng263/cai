@@ -184,7 +184,7 @@ class CodeAgent(Agent):
     def __init__(  # pylint: disable=too-many-arguments,too-many-locals # noqa: E501
         self,
         name: str = "CodeAgent",
-        model: str = "qwen2.5:14b",
+        model: str = "alias0",
         instructions: Union[str, Callable[[], str]] = None,
         tools: List[Callable] = None,
         additional_authorized_imports: Optional[List[str]] = None,

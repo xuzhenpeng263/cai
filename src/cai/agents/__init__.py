@@ -64,7 +64,7 @@ from dotenv import load_dotenv  # pylint: disable=import-error # noqa: E501
 __path__ = pkgutil.extend_path(__path__, __name__)
 
 # Get model from environment or use default
-model = os.getenv('CAI_MODEL', "qwen2.5:14b")
+model = os.getenv('CAI_MODEL', "alias0")
 
 
 PATTERNS = [

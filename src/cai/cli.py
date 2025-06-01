@@ -20,7 +20,7 @@ Environment Variables
             within container (default: "true")
 
         CAI_MODEL: Model to use for agents
-            (default: "qwen2.5:14b")
+            (default: "alias0")
         CAI_DEBUG: Set debug output level (default: "1")
             - 0: Only tool outputs
             - 1: Verbose debug output
@@ -182,7 +182,7 @@ set_tracing_disabled(True)
 
 # llm_model=os.getenv('LLM_MODEL', 'gpt-4o-mini')
 # # llm_model=os.getenv('LLM_MODEL', 'claude-3-7')
-llm_model=os.getenv('LLM_MODEL', 'qwen2.5:14b')
+llm_model=os.getenv('LLM_MODEL', 'alias0')
 
 
 # For Qwen models, we need to skip system instructions as they're not supported
@@ -271,7 +271,7 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
     turn_count = 0
     idle_time = 0
     console = Console()
-    last_model = os.getenv('CAI_MODEL', 'qwen2.5:14b')
+    last_model = os.getenv('CAI_MODEL', 'alias0')
     last_agent_type = os.getenv('CAI_AGENT_TYPE', 'one_tool_agent')
     parallel_count = int(os.getenv('CAI_PARALLEL', '1'))
 
@@ -351,7 +351,7 @@ def run_cai_cli(starting_agent, context_variables=None, max_turns=float('inf'), 
             idle_start_time = time.time()
 
             # Check if model has changed and update if needed
-            current_model = os.getenv('CAI_MODEL', 'qwen2.5:14b')
+            current_model = os.getenv('CAI_MODEL', 'alias0')
             if current_model != last_model and hasattr(agent, 'model'):
                 # Update the model recursively for the agent and all handoff agents
                 update_agent_models_recursively(agent, current_model)
@@ -926,7 +926,7 @@ def main():
             agent.model.suppress_final_output = False  # Changed to False to show all agent messages
 
     # Ensure the agent and all its handoff agents use the current model
-    current_model = os.getenv('CAI_MODEL', 'qwen2.5:14b')
+    current_model = os.getenv('CAI_MODEL', 'alias0')
     update_agent_models_recursively(agent, current_model)
 
     # Run the CLI with the selected agent

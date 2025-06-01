@@ -6,7 +6,7 @@ from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, handoff
 from openai import AsyncOpenAI
 from cai.agents.one_tool import one_tool_agent
 
-model = os.getenv('CAI_MODEL', "qwen2.5:14b")
+model = os.getenv('CAI_MODEL', "alias0")
 
 # Create OpenAI client with fallback API key to prevent initialization errors
 # The actual API key should be set in environment variables or .env file
@@ -22,7 +22,7 @@ flag_discriminator = Agent(
                 4. If you do not find a flag, call `ctf_agent` to continue investigating.
                 """,
     model=OpenAIChatCompletionsModel(
-        model="qwen2.5:14b" if os.getenv('CAI_MODEL') == "o3-mini" else model,
+        model="alias0" if os.getenv('CAI_MODEL') == "o3-mini" else model,
         openai_client=AsyncOpenAI(api_key=api_key),
     ),
     handoffs=[

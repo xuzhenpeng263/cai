@@ -87,7 +87,7 @@ from cai.tools.misc.rag import add_to_memory_semantic, add_to_memory_episodic
 from cai.rag.vector_db import get_previous_memory
 
 # Get model from environment or use default
-model = os.getenv('CAI_MODEL', "qwen2.5:14b")
+model = os.getenv('CAI_MODEL', "alias0")
 
 
 def get_previous_steps(query: str) -> str:

@@ -2236,7 +2236,7 @@ class OpenAIChatCompletionsModel(Model):
             elif "gemini" in model_str:
                 kwargs.pop("parallel_tool_calls", None)
             elif "qwen" in model_str or ":" in model_str:
-                # Handle Ollama-served models with custom formats (e.g., qwen2.5:14b)
+                # Handle Ollama-served models with custom formats (e.g., alias0)
                 # These typically need the Ollama provider
                 litellm.drop_params = True
                 kwargs.pop("parallel_tool_calls", None)

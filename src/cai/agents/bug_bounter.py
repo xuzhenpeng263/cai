@@ -45,7 +45,7 @@ bug_bounter_agent = Agent(
                    Expert in web security, API testing, and responsible disclosure.""",
     tools=tools,
     model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
+        model=os.getenv('CAI_MODEL', "alias0"),
         openai_client=AsyncOpenAI(),
     )
    

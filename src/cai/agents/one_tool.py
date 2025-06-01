@@ -7,7 +7,7 @@ from cai.tools.reconnaissance.generic_linux_command import generic_linux_command
 from openai import AsyncOpenAI
 
 # Get model from environment or use default
-model_name = os.getenv('CAI_MODEL', "qwen2.5:14b")
+model_name = os.getenv('CAI_MODEL', "alias0")
 
 # NOTE: This is needed when using LiteLLM Proxy Server
 #

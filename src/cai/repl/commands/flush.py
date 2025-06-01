@@ -51,7 +51,7 @@ class FlushCommand(Command):
 
         if client and hasattr(client, 'interaction_input_tokens') and hasattr(
                 client, 'total_input_tokens'):
-            model = os.getenv('CAI_MODEL', "qwen2.5:14b")
+            model = os.getenv('CAI_MODEL', "alias0")
             input_tokens = client.interaction_input_tokens if hasattr(
                 client, 'interaction_input_tokens') else 0
             total_tokens = client.total_input_tokens if hasattr(

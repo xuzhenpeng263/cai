@@ -290,7 +290,7 @@ def display_quick_guide(console: Console):
     )
     
     # Get current environment variable values
-    current_model = os.getenv('CAI_MODEL', "qwen2.5:14b")
+    current_model = os.getenv('CAI_MODEL', "alias0")
     current_agent_type = os.getenv('CAI_AGENT_TYPE', "one_tool_agent")
     
     config_text = Text.assemble(
@@ -330,16 +330,23 @@ def display_quick_guide(console: Console):
     )
     
     context_tip = Panel(
-        "As security exercises progress, LLM quality may\n"
-        "degrade, especially if progress stalls.\n\n"
-        "It's often better to clear the context window\n"
-        "or restart CAI rather than waiting until\n"
-        "context usage reaches 100%.\n\n"
-        "When context exceeds 80%, follow these steps:\n"
-        "1. CAI> Dump your memory and findings in current scenario in findings.txt\n"
-        "2. CAI> /flush\n"
-        "3. CAI> Analyze findings.txt, and continue exercise with target: ...",
-        title="[bold yellow]Performance Tip[/bold yellow]",
+        Text.assemble(
+            "For optimal cybersecurity AI performance, use\n", 
+            ("alias0", "bold green"), 
+            " - specifically designed for cybersecurity\n"
+            "tasks with superior domain knowledge.\n\n",
+            ("alias0", "bold green"), 
+            " outperforms general-purpose models in:\n",
+            "• Vulnerability assessment\n",
+            "• Penetration testing and bug bounty\n",
+            "• Security analysis\n",
+            "• Threat detection\n\n",
+            "Learn more about ", 
+            ("alias0", "bold green"), 
+            " and its privacy-first approach:\n",
+            ("https://news.aliasrobotics.com/alias0-a-privacy-first-cybersecurity-ai/", "blue underline")
+        ),
+        title="[bold yellow]Cybersecurity Model Tip[/bold yellow]",
         border_style="yellow",
         padding=(1, 2),
         title_align="center"

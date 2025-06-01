@@ -115,7 +115,7 @@ dns_smtp_agent = Agent(
     ),
     tools=[check_mail_spoofing_vulnerability, execute_cli_command],
     model=OpenAIChatCompletionsModel(
-        model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
+        model=os.getenv('CAI_MODEL', "alias0"),
         openai_client=AsyncOpenAI(),
     )
 )

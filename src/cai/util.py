@@ -1805,7 +1805,7 @@ def update_agent_streaming_content(context, text_delta, token_stats=None):
                 footer_stats.append(f"${session_total_cost:.4f}", style="bold magenta")
                 
                 # Add context usage indicator
-                model_name = context.get("model", os.environ.get('CAI_MODEL', 'qwen2.5:14b'))
+                model_name = context.get("model", os.environ.get('CAI_MODEL', 'alias0'))
                 context_pct = input_tokens / get_model_input_tokens(model_name) * 100
                 if context_pct < 50:
                     indicator = "🟩"
@@ -3109,7 +3109,7 @@ def finish_tool_streaming(tool_name, args, output, call_id, execution_info=None,
         
         # Calculate cost if not provided
         if not interaction_cost and input_tokens > 0:
-            model_name = token_info.get('model', os.environ.get('CAI_MODEL', 'qwen2.5:14b'))
+            model_name = token_info.get('model', os.environ.get('CAI_MODEL', 'alias0'))
             interaction_cost = calculate_model_cost(model_name, input_tokens, output_tokens)
         
         # Add compact token info to output

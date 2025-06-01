@@ -20,7 +20,7 @@ from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error
 from cai.util import load_prompt_template
 
 load_dotenv()
-model_name = os.getenv("CAI_MODEL", "qwen2.5:14b")
+model_name = os.getenv("CAI_MODEL", "alias0")
 # Prompts
 redteam_agent_system_prompt = load_prompt_template("prompts/system_red_team_agent.md")
 # Define tools list based on available API keys

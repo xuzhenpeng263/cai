@@ -46,7 +46,7 @@ ENV_VARS = {
     6: {
         "name": "CAI_MODEL",
         "description": "Model to use for agents",
-        "default": "qwen2.5:14b"
+        "default": "alias0"
     },
     7: {
         "name": "CAI_DEBUG",
