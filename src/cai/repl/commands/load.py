@@ -25,7 +25,7 @@ class LoadCommand(Command):
         """Initialize the load command."""
         super().__init__(
             name="/load",
-            description="Load a jsonl into the context of the current session",
+            description="Load a jsonl into the context of the current session (uses logs/last if no file specified)",
             aliases=["/l"]
         )
 
@@ -44,17 +44,18 @@ class LoadCommand(Command):
         """Load a jsonl into the context of the current session.
 
         Args:
-            args: List containing the PID to kill
+            args: List containing the jsonl file path (optional)
 
         Returns:
             bool: True if the jsonl was loaded successfully
         """
+        # Use logs/last if no arguments provided
         if not args:
-            console.print("[red]Error: No jsonl file specified[/red]")
-            return False
+            jsonl_file = "logs/last"
+        else:
+            jsonl_file = args[0]
 
         try:
-            jsonl_file = args[0]
             # Try to load the jsonl file
             try:
                 # fetch messages from JSONL file
@@ -64,6 +65,7 @@ class LoadCommand(Command):
                 # If killing the process group fails, try killing just the
                 # process
                 console.print(f"[red]Error: Failed to load jsonl file {jsonl_file}[/red]")
+                return False
 
             # add them to message_history
             for message in messages:
