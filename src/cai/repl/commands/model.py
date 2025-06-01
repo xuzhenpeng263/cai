@@ -103,19 +103,6 @@ class ModelCommand(Command):
             ],
             "OpenAI": [
                 {
-                    "name": "o1",
-                    "description": (
-                        "Excellent for mathematical reasoning and "
-                        "problem-solving"
-                    )
-                },
-                {
-                    "name": "o1-mini",
-                    "description": (
-                        "Smaller O1 model with good math capabilities"
-                    )
-                },
-                {
                     "name": "o3-mini",
                     "description": "Latest mini model in the O-series"
                 },
@@ -125,18 +112,6 @@ class ModelCommand(Command):
                         "Latest GPT-4 model with improved capabilities"
                     )
                 },
-                {
-                    "name": "gpt-4o-audio-preview",
-                    "description": "GPT-4o with audio capabilities"
-                },
-                {
-                    "name": "gpt-4o-audio-preview-2024-12-17",
-                    "description": "Updated GPT-4o with audio capabilities"
-                },
-                {
-                    "name": "gpt-4o-audio-preview-2024-10-01",
-                    "description": "Previous GPT-4o with audio capabilities"
-                }
             ],
             "DeepSeek": [
                 {
@@ -316,7 +291,6 @@ class ModelCommand(Command):
                             "Free",
                             model_description
                         )
-
                         # Add to cached models for numeric selection
                         self.cached_models.append(model_name)
                         self.cached_model_numbers[str(i)] = model_name
