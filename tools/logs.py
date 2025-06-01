@@ -80,11 +80,18 @@ class Visualizations:
         # Add vertical red line on 2025-04-09
         if '2025-04-09' in daily_counts.index:
             red_line_index = daily_counts.index.get_loc('2025-04-09')
-            ax.axvline(x=red_line_index, color='red', linestyle='--', label='Public Release v0.3.11')
+            ax.axvline(x=red_line_index, color='red', linestyle='--', 
+                      label='Public Release v0.3.11')
             
             # Add grey-ish background to all elements prior to the red line
             ax.axvspan(0, red_line_index, color='grey', alpha=0.3)
-        
+
+        # Add vertical blue line on 2025-05-30
+        if '2025-05-30' in daily_counts.index:
+            green_line_index = daily_counts.index.get_loc('2025-05-30')
+            ax.axvline(x=green_line_index, color='green', linestyle='--', 
+                      label='"CAIv0.4.0" and "alias0" releases')
+
         # Add vertical yellow line on 2025-04-01
         if '2025-04-01' in daily_counts.index:
             yellow_line_index = daily_counts.index.get_loc('2025-04-01')
@@ -128,19 +135,20 @@ class Visualizations:
     def create_user_activity(self) -> Optional[str]:
         if not self.config.enable_user_activity:
             return None
-            
+
         plt.figure(figsize=(12, 6))
-        user_counts = self.df['username'].value_counts().head(20)
+        user_counts = self.df['username'].value_counts().head(50)
+        total_unique_users = self.df['username'].nunique()
         ax = user_counts.plot(kind='bar')
-        plt.title('Top 20 Most Active Users')
+        plt.title(f'Top 50 Most Active Users (out of {total_unique_users} different users)')
         plt.xlabel('Username')
         plt.ylabel('Number of Logs')
         plt.xticks(rotation=45)
-        
+
         # Add the actual number on top of each bar
         for i, count in enumerate(user_counts):
             ax.text(i, count, str(count), ha='center', va='bottom')
-        
+
         plt.tight_layout()
         return self._get_plot_base64()
 
