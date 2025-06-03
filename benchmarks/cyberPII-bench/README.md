@@ -1,6 +1,6 @@
 ## 🧠 CyberPII-Bench
 
-**CyberPII-Bench** is a benchmark designed to evaluate the ability of language models and automated systems to detect, analyze, and handle **Personally Identifiable Information (PII)** in cybersecurity contexts. The benchmark is built from real-world data generated during hands-on exercises conducted with **CAI (Cybersecurity AI)**, focusing on attack simulation, security testing, and reconnaissance scenarios.
+**CyberPII-Bench** is a benchmark designed to evaluate the ability of LLM models to maintain privacy and handle **Personally Identifiable Information (PII)** in cybersecurity contexts. Built from real-world data generated during offensive hands-on exercises conducted with **CAI (Cybersecurity AI)**, focusing on attack simulation, security testing, and reconnaissance scenarios.
 
 ### 📁 Dataset: `memory01_80/`
 
