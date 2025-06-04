@@ -3,11 +3,7 @@ import os
 from dotenv import load_dotenv
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
-
-from cai.tools.reconnaissance.generic_linux_command import (
-    generic_linux_command
-)
-
+from cai.tools.reconnaissance.generic_linux_command import null_tool
 from cai.util import load_prompt_template
 
 load_dotenv()
@@ -30,8 +26,7 @@ use_case_agent_system_prompt = load_prompt_template("prompts/system_use_cases.md
 #     find_file,
 #     execute_code,
 # ]
-tools = [generic_linux_command]
-
+tools = [null_tool]
 # Create the agent
 use_case_agent = Agent(
     name="Use Case Agent",
