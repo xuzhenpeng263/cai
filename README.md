@@ -48,6 +48,9 @@ A lightweight, ergonomic framework for building bug bounty-ready Cybersecurity A
 | [![asciicast](https://asciinema.org/a/713487.svg)](https://asciinema.org/a/713487) | [![asciicast](https://asciinema.org/a/713485.svg)](https://asciinema.org/a/713485) |
 
 
+> [!NOTE]
+> We encourage you to read CAI's the technical report at https://arxiv.org/pdf/2504.06017.
+
 > [!WARNING]
 > :warning: CAI is in active development, so don't expect it to work flawlessly. Instead, contribute by raising an issue or [sending a PR](https://github.com/aliasrobotics/cai/pulls).
 >
