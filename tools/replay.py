@@ -250,7 +250,7 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
             if role == "user":
                 print(color(f"CAI> ", fg="cyan") + f"{content}")
                 turn_counter += 1
-                interaction_counter = 0
+                # Don't reset interaction_counter to maintain numbering across user prompts
             
             # Handle assistant messages
             elif role == "assistant":
