@@ -2825,9 +2825,10 @@ def cli_print_tool_output(
                         # Check if we're in a container environment
                         is_container = bool(os.getenv("CAI_ACTIVE_CONTAINER", ""))
                         
-                        # In parallel mode OR container mode, use static panels
-                        if is_parallel or is_container:
-                            # In parallel mode or container mode, use static panels to avoid Live context conflicts
+                        # In parallel mode, use static panels
+                        # For container mode, use Live panels to allow real-time updates
+                        if is_parallel:
+                            # In parallel mode, use static panels to avoid Live context conflicts
                             # Check if we already printed this panel (shouldn't happen but be safe)
                             if call_id not in _LIVE_STREAMING_PANELS:
                                 # For container mode with streaming, if this is the initial call but we already
