@@ -20,7 +20,7 @@ Objectives:
 import os
 from openai import AsyncOpenAI
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, handoff  # pylint: disable=import-error
-from cai.util import load_prompt_template
+from cai.util import load_prompt_template, create_system_prompt_renderer
 from dotenv import load_dotenv
 from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
     run_ssh_command_with_credentials
@@ -72,7 +72,7 @@ if os.getenv('PERPLEXITY_API_KEY'):
 
 network_security_analyzer_agent = Agent(
     name="Network Security Analyzer",
-    instructions=network_security_analyzer_prompt,
+    instructions=create_system_prompt_renderer(network_security_analyzer_prompt),
     description="""Agent that specializes in network security analysis.
                    Expert in monitoring, capturing, and analyzing network communications for security threats.""",
         model=OpenAIChatCompletionsModel(

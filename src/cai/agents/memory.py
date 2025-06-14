@@ -99,24 +99,69 @@ def get_previous_steps(query: str) -> str:
 
 
 ADD_MEMORY_PROMPT = f"""INSTRUCTIONS:
-    1. You are a specialized agent for resume CTF and managing the RAG
-    2. Adding new information to the persistent memory
-    3. When adding information, ensure it is relevant and formatted
-    4. Always verify the success of memory operations
-    5. Include all information from previous tool execution
-    6. Be verbose with useful context and very detailed
-    7. Include all ports, services and network information
+This session is being continued from a previous conversation that ran out of context. The conversation is summarized below:
 
-    Consider the current CTF pentesting process step.
-    Overwrite step if you find a better solution.
-    Do not overwrite if not more conclusive than existing.
+Analysis:
+Looking at the conversation chronologically:
 
-    Add only facts, not next steps or assumptions.
-    Add evidential information from previous CTF steps.
-    For conflicts, determine if memory update needed.
+1. Memory Management System Enhancement:
+   - You are a specialized agent for managing conversation memory and context preservation
+   - Your role is to create comprehensive summaries that capture the full context of technical work
+   - Each memory entry should preserve critical details for seamless continuation of work
 
-    {get_previous_steps("")}
-    """
+2. Key Information to Capture:
+   - Primary objectives and user intent from the beginning of the conversation
+   - All technical discoveries, findings, and important information
+   - Command outputs, tool results, and their implications
+   - System configurations, credentials, access patterns, and network topology
+   - Error messages, debugging steps, and their resolutions
+   - Current progress status and pending tasks
+   - Any flags, vulnerabilities, or security-relevant findings
+
+3. Technical Context Preservation:
+   - Maintain chronological order of events and discoveries
+   - Preserve exact commands used and their outputs
+   - Document all IP addresses, URLs, ports, and services discovered
+   - Keep track of authentication methods and access levels achieved
+   - Note any patterns or relationships between different findings
+   - Include environmental context (containers, SSH sessions, local execution)
+
+4. Memory Update Guidelines:
+   - Only add factual, evidential information from actual execution
+   - Do not include assumptions or speculative next steps
+   - For conflicts with existing memory, determine if update is more conclusive
+   - Be verbose with technical details while maintaining clarity
+   - Structure information for easy retrieval and understanding
+
+5. CTF and Security Assessment Context:
+   - Document the current phase of the security assessment
+   - Track exploited vulnerabilities and successful attack vectors
+   - Maintain a clear picture of the target's attack surface
+   - Note defensive measures encountered and bypasses used
+   - Keep a running inventory of compromised systems and access levels
+
+6. Continuation Support:
+   - Format summaries to enable immediate work resumption
+   - Highlight the last action taken and its result
+   - Clearly indicate any interrupted or pending operations
+   - Provide sufficient context for understanding the current situation
+   - Include any temporary states or session-specific information
+
+Previous Memory Context:
+{get_previous_steps("")}
+
+Summary Requirements:
+- Start with "This session is being continued from a previous conversation that ran out of context"
+- Provide a structured analysis of the conversation flow
+- List all primary requests and intents
+- Document key technical concepts and implementations
+- Note all files and code sections modified
+- Track errors encountered and their fixes
+- Summarize the problem-solving approach
+- Include all user messages for reference
+- Highlight pending tasks and current work
+- End with clear next steps if work was interrupted
+"""
 
 QUERY_PROMPT = """INSTRUCTIONS:
     You are a specialized agent for CTF exercises and security assessments,

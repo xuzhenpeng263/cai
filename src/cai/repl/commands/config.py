@@ -187,6 +187,8 @@ class ConfigCommand(Command):
             ),
             aliases=["/cfg"]
         )
+        # Dynamically add agent-specific model variables
+        self._add_agent_model_vars()
 
         # Add subcommands
         self.add_subcommand(
@@ -212,6 +214,48 @@ class ConfigCommand(Command):
             True if the command was handled successfully, False otherwise
         """
         return self.handle_list(None)
+
+    def _add_agent_model_vars(self):
+        """Add CAI_<AGENT>_MODEL variables for each available agent."""
+        try:
+            from cai.agents import get_available_agents
+
+            available_agents = get_available_agents()
+            current_var_num = max(ENV_VARS.keys()) + 1
+
+            # Add general agent model overrides
+            for agent_key in sorted(available_agents.keys()):
+                var_name = f"CAI_{agent_key.upper()}_MODEL"
+                agent_obj = available_agents[agent_key]
+                agent_display_name = getattr(agent_obj, "name", agent_key)
+
+                ENV_VARS[current_var_num] = {
+                    "name": var_name,
+                    "description": f"Model override for {agent_display_name} agent",
+                    "default": None,
+                }
+                current_var_num += 1
+
+            # Add instance-specific model overrides for parallel execution
+            parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
+            if parallel_count > 1:
+                # Add instance-specific variables for each agent type
+                for agent_key in sorted(available_agents.keys()):
+                    agent_obj = available_agents[agent_key]
+                    agent_display_name = getattr(agent_obj, "name", agent_key)
+
+                    for instance_num in range(1, parallel_count + 1):
+                        var_name = f"CAI_{agent_key.upper()}_{instance_num}_MODEL"
+
+                        ENV_VARS[current_var_num] = {
+                            "name": var_name,
+                            "description": f"Model override for {agent_display_name} instance #{instance_num}",
+                            "default": None,
+                        }
+                        current_var_num += 1
+        except Exception:
+            # If we can't get agents, just skip adding these variables
+            pass
 
     def handle_list(self, _: Optional[List[str]] = None) -> bool:
         """List all environment variables and their values.

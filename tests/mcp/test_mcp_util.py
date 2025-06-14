@@ -72,9 +72,10 @@ async def test_invoke_mcp_tool():
 
 @pytest.mark.asyncio
 async def test_mcp_invoke_bad_json_errors(caplog: pytest.LogCaptureFixture):
-    caplog.set_level(logging.DEBUG)
-
     """Test that bad JSON input errors are logged and re-raised."""
+    # Set the level for the specific logger used by MCPUtil
+    caplog.set_level(logging.DEBUG, logger="openai.agents")
+    
     server = FakeMCPServer()
     server.add_tool("test_tool_1", {})
 
@@ -94,9 +95,10 @@ class CrashingFakeMCPServer(FakeMCPServer):
 
 @pytest.mark.asyncio
 async def test_mcp_invocation_crash_causes_error(caplog: pytest.LogCaptureFixture):
-    caplog.set_level(logging.DEBUG)
-
-    """Test that bad JSON input errors are logged and re-raised."""
+    """Test that tool invocation crashes are logged and re-raised."""
+    # Set the level for the specific logger used by MCPUtil
+    caplog.set_level(logging.DEBUG, logger="openai.agents")
+    
     server = CrashingFakeMCPServer()
     server.add_tool("test_tool_1", {})
 

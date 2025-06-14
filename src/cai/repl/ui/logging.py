@@ -11,9 +11,9 @@ def setup_session_logging():
     Returns:
         Tuple of (history_file, session_log, log_interaction function)
     """
-    # Setup history file
-    history_dir = Path.cwd() / ".cai"
-    history_dir.mkdir(exist_ok=True)
+    # Setup history file - use home directory for cross-platform compatibility
+    history_dir = Path.home() / ".cai"
+    history_dir.mkdir(exist_ok=True, parents=True)
     history_file = history_dir / "history.txt"
 
     # # Setup session log file

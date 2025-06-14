@@ -9,16 +9,19 @@
     # 1. Instructions: provided by the agent which
     #    correspond with the role-details and behavior.
     #
-    # 2. Memory (optional): past experiences recorded in
+    # 2. Compacted Summary (optional): AI-generated summary
+    #    from previous conversations to reduce context usage
+    #
+    # 3. Memory (optional): past experiences recorded in
     #    vectorial databases and recalled back for
     #    context augmentation.
     #
-    # 3. Reasoning (optional): Leverage reasoning-type
+    # 4. Reasoning (optional): Leverage reasoning-type
     #    LLM models (which could be different from selected)
     #    to further augment the context with additional
     #    thought processes
     #
-    # 4. Environment: Details about the environment of
+    # 5. Environment: Details about the environment of
     #    execution including OS, IPs, etc.
     #
 
@@ -27,15 +30,23 @@
     try:
         from cai.rag.vector_db import get_previous_memory
     except Exception as e:
-        print(e)
+        # Silently ignore if RAG module is not available
+        pass
     from cai import is_caiextensions_memory_available
+    
+    # Import compact summary function
+    try:
+        from cai.repl.commands.memory import get_compacted_summary
+        # Get agent name from the agent object
+        agent_name = getattr(agent, 'name', None)
+        compacted_summary = get_compacted_summary(agent_name)
+    except Exception as e:
+        compacted_summary = None
 
-    # Get system prompt from agent if provided
-    system_prompt = (
-        agent.instructions(context_variables)
-        if callable(agent.instructions)
-        else agent.instructions
-    )
+    # Get system prompt from the base instructions passed to the template
+    # The base instructions are passed as 'ctf_instructions' in the render context
+    # We use the pre-set system_prompt variable which equals base_instructions
+    # Do NOT call agent.instructions here as that would create infinite recursion!
 
     # Get CTF_INSIDE environment variable
     ctf_inside = os.getenv('CTF_INSIDE')
@@ -74,6 +85,16 @@
 
 %>
 ${system_prompt}
+% if compacted_summary:
+
+<compacted_context>
+This is a summary of previous conversation context that has been compacted to save tokens:
+
+${compacted_summary}
+
+Use this summary to understand the context and continue from where the conversation left off.
+</compacted_context>
+% endif
 % if rag_enabled:
 
 <memory>
