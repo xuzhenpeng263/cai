@@ -3,46 +3,50 @@ Commands module for CAI REPL.
 This module exports all commands available
 in the CAI REPL.
 """
+
 from typing import (
     Dict,
     List,
 )
 
-from cai.repl.commands.completer import (
-    FuzzyCommandCompleter
+# Import all command modules
+# These imports will register the commands with the registry
+from cai.repl.commands import (  # pylint: disable=import-error,unused-import,line-too-long,redefined-builtin # noqa: E501,F401
+    agent,
+    compact,  # Add the compact command
+    config,
+    cost,  # Add the cost command
+    env,
+    exit,
+    flush,
+    graph,
+    help,
+    history,
+    kill,
+    load,
+    mcp,  # Add the MCP command
+    memory,  # Add the memory command
+    merge,  # Add the merge command (alias for /parallel merge)
+    model,
+    parallel,  # Add the new parallel command
+    platform,
+    quickstart,  # Add the quickstart command
+    run,  # Add the run command for parallel mode
+    shell,
+    virtualization,
+    workspace,
 )
 
 # Import base command structure
 from cai.repl.commands.base import (
-    Command,
-    COMMANDS,
     COMMAND_ALIASES,
-    register_command,
+    COMMANDS,
+    Command,
     get_command,
-    handle_command
+    handle_command,
+    register_command,
 )
-
-# Import all command modules
-# These imports will register the commands with the registry
-from cai.repl.commands import (  # pylint: disable=import-error,unused-import,line-too-long,redefined-builtin # noqa: E501,F401
-    help,
-    graph,
-    exit,
-    shell,
-    env,
-    platform,
-    kill,
-    model,
-    agent,
-    history,
-    config,
-    flush,
-    workspace,
-    virtualization,
-    load,
-    parallel,  # Add the new parallel command
-    mcp  # Add the MCP command
-)
+from cai.repl.commands.completer import FuzzyCommandCompleter
 
 # Define helper functions
 
@@ -83,14 +87,14 @@ def get_all_commands() -> Dict[str, List[str]]:
 
 # Export command registry
 __all__ = [
-    'Command',
-    'COMMANDS',
-    'COMMAND_ALIASES',
-    'register_command',
-    'get_command',
-    'handle_command',
-    'get_command_descriptions',
-    'get_subcommand_descriptions',
-    'get_all_commands',
-    'FuzzyCommandCompleter'
+    "Command",
+    "COMMANDS",
+    "COMMAND_ALIASES",
+    "register_command",
+    "get_command",
+    "handle_command",
+    "get_command_descriptions",
+    "get_subcommand_descriptions",
+    "get_all_commands",
+    "FuzzyCommandCompleter",
 ]

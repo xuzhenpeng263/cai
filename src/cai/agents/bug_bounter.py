@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
-from cai.util import load_prompt_template
+from cai.util import load_prompt_template, create_system_prompt_renderer
 from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
     run_ssh_command_with_credentials
 )
@@ -40,7 +40,7 @@ if os.getenv('GOOGLE_SEARCH_API_KEY') and os.getenv('GOOGLE_SEARCH_CX'):
 
 bug_bounter_agent = Agent(
     name="Bug Bounter",
-    instructions=bug_bounter_system_prompt,
+    instructions=create_system_prompt_renderer(bug_bounter_system_prompt),
     description="""Agent that specializes in bug bounty hunting and vulnerability discovery.
                    Expert in web security, API testing, and responsible disclosure.""",
     tools=tools,

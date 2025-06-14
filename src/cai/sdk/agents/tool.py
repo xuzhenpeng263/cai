@@ -22,6 +22,14 @@ from .tracing import SpanError
 from .util import _error_tracing
 from .util._types import MaybeAwaitable
 
+
+def truncate_for_logging(output: Any, max_length: int = 1000) -> str:
+    """Truncate output for logging purposes."""
+    output_str = str(output)
+    if len(output_str) <= max_length:
+        return output_str
+    return f"{output_str[:max_length]}... (truncated)"
+
 ToolParams = ParamSpec("ToolParams")
 
 ToolFunctionWithoutContext = Callable[ToolParams, Any]
@@ -257,15 +265,23 @@ def function_tool(
                 else:
                     result = await the_func(*args, **kwargs_dict)
             else:
+                # Run synchronous functions in a thread pool to avoid blocking the event loop
+                import asyncio
+                import functools
+                
                 if schema.takes_context:
-                    result = the_func(ctx, *args, **kwargs_dict)
+                    func_with_args = functools.partial(the_func, ctx, *args, **kwargs_dict)
                 else:
-                    result = the_func(*args, **kwargs_dict)
+                    func_with_args = functools.partial(the_func, *args, **kwargs_dict)
+                
+                # Run in thread pool executor to prevent blocking
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, func_with_args)
 
             if _debug.DONT_LOG_TOOL_DATA:
                 logger.debug(f"Tool {schema.name} completed.")
             else:
-                logger.debug(f"Tool {schema.name} returned {result}")
+                logger.debug(f"Tool {schema.name} returned {truncate_for_logging(result)}")
 
             return result
 

@@ -333,3 +333,8 @@
   <<: *run_test
   variables:
     TEST_PATH: tests/commands/test_command_help.py
+
+💻 commands test_command_cost.py:
+  <<: *run_test
+  variables:
+    TEST_PATH: tests/commands/test_command_cost.py

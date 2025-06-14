@@ -21,7 +21,22 @@ def base_agent():
 
 def test_master_template_basic(template, base_agent):
     """Test basic master template rendering without optional components."""
-    result = template.render(agent=base_agent, reasoning_content=None, ctf_instructions="")
+    result = template.render(
+        agent=base_agent, 
+        reasoning_content=None, 
+        ctf_instructions="",
+        env_context="false",
+        compacted_summary="",
+        rag_enabled=False,
+        seclist_dirs="",
+        wordlist_files="",
+        artifacts="",
+        system_prompt=base_agent.instructions,
+        context_variables={},
+        os=os,
+        locals=locals,
+        globals=globals
+    )
     print(result)
     # Verify that the agent's instructions are included in the rendered template
     assert 'Test instructions' in result
@@ -32,7 +47,22 @@ def test_master_template_with_env_vars(template, base_agent):
     """Test master template with environment variables and vector DB."""
     # Set an environment variable for the CTF name
     os.environ['CTF_NAME'] = 'test_ctf'
-    result = template.render(agent=base_agent, reasoning_content=None, ctf_instructions="")
+    result = template.render(
+        agent=base_agent, 
+        reasoning_content=None, 
+        ctf_instructions="",
+        env_context="false",
+        compacted_summary="",
+        rag_enabled=False,
+        seclist_dirs="",
+        wordlist_files="",
+        artifacts="",
+        system_prompt=base_agent.instructions,
+        context_variables={},
+        os=os,
+        locals=locals,
+        globals=globals
+    )
     # Verify that the agent's instructions are included in the rendered template
     assert "Test instructions" in result
     # Clean up by deleting the environment variable
@@ -42,6 +72,21 @@ def test_master_template_no_instructions(template):
     """Test master template without agent instructions."""
     # Create an agent with empty instructions
     agent = type('Agent', (), {'instructions': ''})()
-    result = template.render(agent=agent, reasoning_content=None, ctf_instructions="")
+    result = template.render(
+        agent=agent, 
+        reasoning_content=None, 
+        ctf_instructions="",
+        env_context="false",
+        compacted_summary="",
+        rag_enabled=False,
+        seclist_dirs="",
+        wordlist_files="",
+        artifacts="",
+        system_prompt=agent.instructions,
+        context_variables={},
+        os=os,
+        locals=locals,
+        globals=globals
+    )
     # Verify that the rendered template starts with an empty string
     assert result.strip().startswith('')

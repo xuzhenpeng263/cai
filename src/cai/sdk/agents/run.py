@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import os
+import logging
 from dataclasses import dataclass, field
 from typing import Any, cast
 
 from openai.types.responses import ResponseCompletedEvent
+
+logger = logging.getLogger(__name__)
 
 from ._run_impl import (
     AgentToolUseTracker,
@@ -43,7 +47,6 @@ from .tracing import Span, SpanError, agent_span, get_current_trace, trace
 from .tracing.span_data import AgentSpanData
 from .usage import Usage
 from .util import _coro, _error_tracing
-import os
 
 # CAI_MAX_TURNS must be converted to an int to avoid type mismatch error when comparing.
 max_turns_env = os.getenv("CAI_MAX_TURNS")
@@ -288,7 +291,43 @@ class Runner:
                             output_guardrail_results=output_guardrail_results,
                         )
                     elif isinstance(turn_result.next_step, NextStepHandoff):
+                        # Get the previous agent before switching
+                        previous_agent = current_agent
                         current_agent = cast(Agent[TContext], turn_result.next_step.new_agent)
+                        
+                        # Transfer message history for swarm patterns
+                        # Check if both agents have models with message_history
+                        if (hasattr(previous_agent, 'model') and hasattr(previous_agent.model, 'message_history') and
+                            hasattr(current_agent, 'model') and hasattr(current_agent.model, 'message_history')):
+                            # Import the is_swarm_pattern function from patterns utils
+                            try:
+                                from cai.agents.patterns.utils import is_swarm_pattern
+                                # Check if either agent is part of a swarm pattern
+                                if is_swarm_pattern(previous_agent) or is_swarm_pattern(current_agent):
+                                    # Transfer the message history to the new agent
+                                    current_agent.model.message_history = previous_agent.model.message_history
+                                    # Also share history in AGENT_MANAGER
+                                    if hasattr(previous_agent, 'name') and hasattr(current_agent, 'name'):
+                                        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+                                        AGENT_MANAGER.share_swarm_history(previous_agent.name, current_agent.name)
+                            except ImportError:
+                                # If we can't import, check if agents have bidirectional handoffs
+                                # by looking if the new agent can handoff back to the previous agent
+                                if hasattr(current_agent, 'handoffs'):
+                                    for handoff_item in current_agent.handoffs:
+                                        if hasattr(handoff_item, 'agent_name') and handoff_item.agent_name == previous_agent.name:
+                                            # Bidirectional handoff detected, share history
+                                            current_agent.model.message_history = previous_agent.model.message_history
+                                            break
+                        
+                        # Register the handoff agent with AGENT_MANAGER for tracking
+                        # This ensures patterns/swarms work with commands like /history and /graph
+                        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+                        if hasattr(current_agent, 'name'):
+                            # For non-parallel patterns, use set_active_agent which will handle it as single agent
+                            # This maintains compatibility with single agent commands
+                            AGENT_MANAGER.set_active_agent(current_agent, current_agent.name)
+                        
                         current_span.finish(reset_current=True)
                         current_span = None
                         should_run_agent_start_hooks = True
@@ -577,7 +616,8 @@ class Runner:
                         all_tools,
                     )
                     should_run_agent_start_hooks = False
-
+                    
+                    # Process the turn result
                     streamed_result.raw_responses = streamed_result.raw_responses + [
                         turn_result.model_response
                     ]
@@ -585,7 +625,35 @@ class Runner:
                     streamed_result.new_items = turn_result.generated_items
 
                     if isinstance(turn_result.next_step, NextStepHandoff):
+                        # Get the previous agent before switching
+                        previous_agent = current_agent
                         current_agent = turn_result.next_step.new_agent
+                        
+                        # Transfer message history for swarm patterns
+                        # Check if both agents have models with message_history
+                        if (hasattr(previous_agent, 'model') and hasattr(previous_agent.model, 'message_history') and
+                            hasattr(current_agent, 'model') and hasattr(current_agent.model, 'message_history')):
+                            # Import the is_swarm_pattern function from patterns utils
+                            try:
+                                from cai.agents.patterns.utils import is_swarm_pattern
+                                # Check if either agent is part of a swarm pattern
+                                if is_swarm_pattern(previous_agent) or is_swarm_pattern(current_agent):
+                                    # Transfer the message history to the new agent
+                                    current_agent.model.message_history = previous_agent.model.message_history
+                                    # Also share history in AGENT_MANAGER
+                                    if hasattr(previous_agent, 'name') and hasattr(current_agent, 'name'):
+                                        from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+                                        AGENT_MANAGER.share_swarm_history(previous_agent.name, current_agent.name)
+                            except ImportError:
+                                # If we can't import, check if agents have bidirectional handoffs
+                                # by looking if the new agent can handoff back to the previous agent
+                                if hasattr(current_agent, 'handoffs'):
+                                    for handoff_item in current_agent.handoffs:
+                                        if hasattr(handoff_item, 'agent_name') and handoff_item.agent_name == previous_agent.name:
+                                            # Bidirectional handoff detected, share history
+                                            current_agent.model.message_history = previous_agent.model.message_history
+                                            break
+                        
                         current_span.finish(reset_current=True)
                         current_span = None
                         should_run_agent_start_hooks = True
@@ -615,6 +683,9 @@ class Runner:
                         streamed_result._event_queue.put_nowait(QueueCompleteSentinel())
                     elif isinstance(turn_result.next_step, NextStepRunAgain):
                         pass
+                except (KeyboardInterrupt, asyncio.CancelledError) as e:
+                    # Re-raise to propagate the interruption
+                    raise e
                 except Exception as e:
                     if current_span:
                         _error_tracing.attach_error_to_span(
@@ -666,9 +737,9 @@ class Runner:
         model = cls._get_model(agent, run_config)
         model_settings = agent.model_settings.resolve(run_config.model_settings)
         model_settings = RunImpl.maybe_reset_tool_choice(agent, tool_use_tracker, model_settings)
-        
+
         # Ensure agent model is set in model_settings for streaming mode
-        if not hasattr(model_settings, 'agent_model') or not model_settings.agent_model:
+        if not hasattr(model_settings, "agent_model") or not model_settings.agent_model:
             if isinstance(agent.model, str):
                 model_settings.agent_model = agent.model
             elif isinstance(run_config.model, str):
@@ -715,22 +786,31 @@ class Runner:
             raise ModelBehaviorError("Model did not produce a final response!")
 
         # 3. Now, we can process the turn as we do in the non-streaming case
-        single_step_result = await cls._get_single_step_result_from_response(
-            agent=agent,
-            original_input=streamed_result.input,
-            pre_step_items=streamed_result.new_items,
-            new_response=final_response,
-            output_schema=output_schema,
-            all_tools=all_tools,
-            handoffs=handoffs,
-            hooks=hooks,
-            context_wrapper=context_wrapper,
-            run_config=run_config,
-            tool_use_tracker=tool_use_tracker,
-        )
+        single_step_result = None
+        try:
+            single_step_result = await cls._get_single_step_result_from_response(
+                agent=agent,
+                original_input=streamed_result.input,
+                pre_step_items=streamed_result.new_items,
+                new_response=final_response,
+                output_schema=output_schema,
+                all_tools=all_tools,
+                handoffs=handoffs,
+                hooks=hooks,
+                context_wrapper=context_wrapper,
+                run_config=run_config,
+                tool_use_tracker=tool_use_tracker,
+            )
 
-        RunImpl.stream_step_result_to_queue(single_step_result, streamed_result._event_queue)
-        return single_step_result
+            RunImpl.stream_step_result_to_queue(single_step_result, streamed_result._event_queue)
+            return single_step_result
+        except (KeyboardInterrupt, asyncio.CancelledError) as e:
+            # When interrupted, we need to ensure the message history is consistent
+            # The tool calls were already added during streaming, but results were not
+            # If we have a partial result, stream it before re-raising
+            if single_step_result:
+                RunImpl.stream_step_result_to_queue(single_step_result, streamed_result._event_queue)
+            raise e
 
     @classmethod
     async def _run_single_turn(
@@ -806,7 +886,6 @@ class Runner:
         run_config: RunConfig,
         tool_use_tracker: AgentToolUseTracker,
     ) -> SingleStepResult:
-
         processed_response = RunImpl.process_model_response(
             agent=agent,
             all_tools=all_tools,
@@ -814,41 +893,41 @@ class Runner:
             output_schema=output_schema,
             handoffs=handoffs,
         )
-        
+
         # Log tools used with robust type checking
-        if hasattr(processed_response, 'tools_used') and processed_response.tools_used:
+        if hasattr(processed_response, "tools_used") and processed_response.tools_used:
             for i, tool_call in enumerate(processed_response.tools_used):
                 try:
                     # Safely extract tool name with multiple fallbacks
                     tool_name = "Unknown"
                     try:
-                        if hasattr(tool_call, 'tool'):
+                        if hasattr(tool_call, "tool"):
                             if isinstance(tool_call.tool, str):
                                 tool_name = tool_call.tool
-                            elif hasattr(tool_call.tool, 'name'):
+                            elif hasattr(tool_call.tool, "name"):
                                 tool_name = tool_call.tool.name
                             else:
                                 tool_name = str(tool_call.tool)
                     except Exception:
                         pass
-                    
+
                     # Safely extract call_id
                     call_id = "Unknown"
                     try:
-                        if hasattr(tool_call, 'call_id'):
+                        if hasattr(tool_call, "call_id"):
                             call_id = str(tool_call.call_id)
                     except Exception:
                         pass
-                    
+
                     # Safely extract parsed_args
                     parsed_args = "Unknown"
                     try:
-                        if hasattr(tool_call, 'parsed_args'):
+                        if hasattr(tool_call, "parsed_args"):
                             parsed_args = str(tool_call.parsed_args)
                     except Exception:
                         pass
                 except Exception:
-                    pass        
+                    pass
 
         tool_use_tracker.add_tool_use(agent, processed_response.tools_used)
 
@@ -958,7 +1037,7 @@ class Runner:
         model_settings = RunImpl.maybe_reset_tool_choice(agent, tool_use_tracker, model_settings)
 
         # Ensure agent model is set in model_settings
-        if not hasattr(model_settings, 'agent_model') or not model_settings.agent_model:
+        if not hasattr(model_settings, "agent_model") or not model_settings.agent_model:
             if isinstance(agent.model, str):
                 model_settings.agent_model = agent.model
             elif isinstance(run_config.model, str):
@@ -1015,13 +1094,13 @@ class Runner:
         else:
             model = run_config.model_provider.get_model(agent.model)
             agent_model = agent.model
-            
+
         # Store the original agent model in model_settings for later use
-        if agent_model and hasattr(agent, 'model_settings'):
+        if agent_model and hasattr(agent, "model_settings"):
             agent.model_settings.agent_model = agent_model
-            
+
         # Set agent name if the model supports it (for CLI display)
-        if hasattr(model, 'set_agent_name'):
+        if hasattr(model, "set_agent_name"):
             model.set_agent_name(agent.name)
-            
+
         return model

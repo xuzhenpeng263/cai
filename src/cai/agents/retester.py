@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
-from cai.util import load_prompt_template
+from cai.util import load_prompt_template, create_system_prompt_renderer
 from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
     generic_linux_command
 )
@@ -30,7 +30,7 @@ if os.getenv('GOOGLE_SEARCH_API_KEY') and os.getenv('GOOGLE_SEARCH_CX'):
 
 retester_agent = Agent(
     name="Retester Agent",
-    instructions=retester_system_prompt,
+    instructions=create_system_prompt_renderer(retester_system_prompt),
     description="""Agent that specializes in vulnerability verification and 
                    triage. Expert in determining exploitability and 
                    eliminating false positives.""",

@@ -62,7 +62,8 @@ def execute_code(code: str = "", language: str = "python",
 
     # Create code file with content
     create_cmd = f"cat << 'EOF' > {full_filename}\n{code}\nEOF"
-    result = run_command(create_cmd, ctf=ctf, stream=True, tool_name="execute_code")
+    # Don't stream the file creation and suppress output display
+    result = run_command(create_cmd, ctf=ctf, stream=False, tool_name="_internal_file_creation")
     if "error" in result.lower():
         return f"Failed to create code file: {result}"
     
@@ -79,9 +80,9 @@ def execute_code(code: str = "", language: str = "python",
         exec_cmd = f"perl {full_filename}"
     elif language in ["golang", "go"]:
         temp_dir = f"/tmp/go_exec_{filename}"
-        run_command(f"mkdir -p {temp_dir}", ctf=ctf)
-        run_command(f"cp {full_filename} {temp_dir}/main.go", ctf=ctf)
-        run_command(f"cd {temp_dir} && go mod init temp", ctf=ctf)
+        run_command(f"mkdir -p {temp_dir}", ctf=ctf, stream=False, tool_name="_internal_setup")
+        run_command(f"cp {full_filename} {temp_dir}/main.go", ctf=ctf, stream=False, tool_name="_internal_setup")
+        run_command(f"cd {temp_dir} && go mod init temp", ctf=ctf, stream=False, tool_name="_internal_setup")
         exec_cmd = f"cd {temp_dir} && go run main.go"
     elif language in ["javascript", "js"]:
         exec_cmd = f"node {full_filename}"
@@ -89,27 +90,27 @@ def execute_code(code: str = "", language: str = "python",
         exec_cmd = f"ts-node {full_filename}"
     elif language in ["rust", "rs"]:
         # For Rust, we need to compile first
-        run_command(f"rustc {full_filename} -o {filename}", ctf=ctf)
+        run_command(f"rustc {full_filename} -o {filename}", ctf=ctf, stream=False, tool_name="_internal_setup")
         exec_cmd = f"./{filename}"
     elif language in ["csharp", "cs"]:
         # For C#, compile with dotnet
-        run_command(f"dotnet build {full_filename}", ctf=ctf)
+        run_command(f"dotnet build {full_filename}", ctf=ctf, stream=False, tool_name="_internal_setup")
         exec_cmd = f"dotnet run {full_filename}"
     elif language in ["java"]:
         # For Java, compile first
-        run_command(f"javac {full_filename}", ctf=ctf)
+        run_command(f"javac {full_filename}", ctf=ctf, stream=False, tool_name="_internal_setup")
         exec_cmd = f"java {filename}"
     elif language in ["kotlin", "kt"]:
         # For Kotlin, compile first
-        run_command(f"kotlinc {full_filename} -include-runtime -d {filename}.jar", ctf=ctf)
+        run_command(f"kotlinc {full_filename} -include-runtime -d {filename}.jar", ctf=ctf, stream=False, tool_name="_internal_setup")
         exec_cmd = f"java -jar {filename}.jar"
     elif language in ["c"]:
         # For C, compile with gcc
-        run_command(f"gcc {full_filename} -o {filename}", ctf=ctf)
+        run_command(f"gcc {full_filename} -o {filename}", ctf=ctf, stream=False, tool_name="_internal_setup")
         exec_cmd = f"./{filename}"
     elif language in ["cpp", "c++"]:
         # For C++, compile with g++
-        run_command(f"g++ {full_filename} -o {filename}", ctf=ctf)
+        run_command(f"g++ {full_filename} -o {filename}", ctf=ctf, stream=False, tool_name="_internal_setup")
         exec_cmd = f"./{filename}"
     else:
         return f"Unsupported language: {language}"
@@ -129,7 +130,7 @@ def execute_code(code: str = "", language: str = "python",
         exec_cmd, 
         ctf=ctf, 
         timeout=timeout, 
-        stream=True, 
+        stream=True,  # ALWAYS use streaming
         tool_name="execute_code", 
         args=tool_args
     )

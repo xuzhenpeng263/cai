@@ -48,3 +48,7 @@ _thought_agent_copy.handoffs.append(_redteam_handoff)
 # Initialize the swarm pattern with the thought agent as the entry point
 redteam_swarm_pattern = _thought_agent_copy
 redteam_swarm_pattern.pattern = "swarm"
+
+# Mark all agents in the swarm with the pattern attribute
+_redteam_agent_copy.pattern = "swarm"
+_dns_smtp_agent_copy.pattern = "swarm"

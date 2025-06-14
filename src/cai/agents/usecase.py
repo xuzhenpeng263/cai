@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 from cai.tools.reconnaissance.generic_linux_command import null_tool
-from cai.util import load_prompt_template
+from cai.util import load_prompt_template, create_system_prompt_renderer
 
 load_dotenv()
 model_name = os.getenv("CAI_MODEL", "alias0")
@@ -33,7 +33,7 @@ use_case_agent = Agent(
     description="""Agent that creates high-quality cybersecurity case studies 
                    demonstrating how CAI tackles various security scenarios, 
                    CTF challenges, and cybersecurity exercises.""",
-    instructions=use_case_agent_system_prompt,
+    instructions=create_system_prompt_renderer(use_case_agent_system_prompt),
     tools=tools,
     model=OpenAIChatCompletionsModel(
         model=model_name,
