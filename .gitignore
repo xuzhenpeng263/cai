@@ -163,3 +163,5 @@ pentestperf
 
 # python venvs
 venv*
+
+.claude
