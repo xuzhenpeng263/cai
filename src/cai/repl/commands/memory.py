@@ -43,10 +43,12 @@ MEMORY_DIR = Path.home() / ".cai" / "memory"
 MEMORY_INDEX_FILE = MEMORY_DIR / "index.json"
 
 # Global storage for compacted summaries (deprecated - use file storage)
-COMPACTED_SUMMARIES: Dict[str, str] = {}
+# Now supports multiple memories per agent
+COMPACTED_SUMMARIES: Dict[str, List[str]] = {}
 
 # Global storage for memory ID mappings per agent
-APPLIED_MEMORY_IDS: Dict[str, str] = {}
+# Now supports multiple memory IDs per agent
+APPLIED_MEMORY_IDS: Dict[str, List[str]] = {}
 
 
 class MemoryCommand(Command):
@@ -69,6 +71,9 @@ class MemoryCommand(Command):
         self.add_subcommand("merge", "Merge multiple memories into one", self.handle_merge)
         self.add_subcommand("status", "Show memory status", self.handle_status)
         self.add_subcommand("compact", "Compact and save agent history", self.handle_compact)
+        self.add_subcommand("remove", "Remove a specific memory from an agent", self.handle_remove)
+        self.add_subcommand("clear", "Clear all memories from an agent", self.handle_clear)
+        self.add_subcommand("list-applied", "Show which memories are applied to an agent", self.handle_list_applied)
         
 # Remove local compact_model since we'll use the one from compact command
         
@@ -93,7 +98,18 @@ class MemoryCommand(Command):
             return self.handle_show(args)
             
         # Otherwise show help
-        console.print("[yellow]Unknown subcommand. Use /memory list, save, apply, show, delete, merge, status, or compact[/yellow]")
+        console.print("[yellow]Unknown subcommand. Available commands:[/yellow]")
+        console.print("[dim]  • /memory list                - List all stored memories[/dim]")
+        console.print("[dim]  • /memory save                - Save current agent history as memory[/dim]")
+        console.print("[dim]  • /memory apply               - Apply a memory to an agent[/dim]")
+        console.print("[dim]  • /memory show                - Show memory content[/dim]")
+        console.print("[dim]  • /memory delete              - Delete a stored memory[/dim]")
+        console.print("[dim]  • /memory merge               - Merge multiple memories into one[/dim]")
+        console.print("[dim]  • /memory status              - Show memory status[/dim]")
+        console.print("[dim]  • /memory compact             - Compact and save agent history[/dim]")
+        console.print("[dim]  • /memory remove              - Remove a specific memory from an agent[/dim]")
+        console.print("[dim]  • /memory clear               - Clear all memories from an agent[/dim]")
+        console.print("[dim]  • /memory list-applied        - Show which memories are applied to an agent[/dim]")
         return True
     
     def _ensure_memory_dir(self):
@@ -294,8 +310,13 @@ class MemoryCommand(Command):
         # Show applied memories
         if APPLIED_MEMORY_IDS:
             console.print("\n[bold cyan]:brain: Applied Memories[/bold cyan]")
-            for agent_name, memory_id in APPLIED_MEMORY_IDS.items():
-                console.print(f"  • {agent_name}: {memory_id}")
+            for agent_name, memory_ids in APPLIED_MEMORY_IDS.items():
+                if isinstance(memory_ids, list):
+                    ids_str = ", ".join(memory_ids) if memory_ids else "None"
+                    console.print(f"  • {agent_name}: [{ids_str}]")
+                else:
+                    # Backward compatibility for single memory ID
+                    console.print(f"  • {agent_name}: {memory_ids}")
         
         # Show usage hints
         console.print("\n[dim]Commands:[/dim]")
@@ -307,7 +328,11 @@ class MemoryCommand(Command):
         console.print("[dim]  • /memory delete <ID/name>    - Delete a memory[/dim]")
         console.print("[dim]  • /memory merge <ID1> <ID2>   - Merge multiple memories[/dim]")
         console.print("[dim]  • /memory compact <agent>     - Compact agent history to memory[/dim]")
+        console.print("[dim]  • /memory remove <ID> <agent> - Remove a specific memory from agent[/dim]")
+        console.print("[dim]  • /memory clear <agent>       - Clear all memories from agent[/dim]")
+        console.print("[dim]  • /memory list-applied        - Show applied memories by agent[/dim]")
         console.print("[dim]\nNote: You can use memory IDs (e.g., M001) instead of full names[/dim]")
+        console.print("[dim]      Agents now support multiple memories![/dim]")
         
         return True
     
@@ -435,8 +460,13 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             console.print(f"[green]✓ Saved memory: {memory_name} (ID: {memory_id})[/green]")
             
             # Automatically apply the memory to the agent's system prompt
-            COMPACTED_SUMMARIES[agent_name] = summary
-            APPLIED_MEMORY_IDS[agent_name] = memory_id
+            if agent_name not in COMPACTED_SUMMARIES:
+                COMPACTED_SUMMARIES[agent_name] = []
+                APPLIED_MEMORY_IDS[agent_name] = []
+            
+            # Clear existing memories and add new one (maintain single memory behavior for save)
+            COMPACTED_SUMMARIES[agent_name] = [summary]
+            APPLIED_MEMORY_IDS[agent_name] = [memory_id]
             console.print(f"[green]✓ Memory {memory_id} automatically applied to {agent_name}'s system prompt[/green]")
             os.environ['CAI_MEMORY'] = 'true' 
             
@@ -549,12 +579,22 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
         success_count = 0
         for agent_name in target_agents:
             try:
-                # Inject into system prompt (store for later use)
-                COMPACTED_SUMMARIES[agent_name] = summary
+                # Initialize lists if not present
+                if agent_name not in COMPACTED_SUMMARIES:
+                    COMPACTED_SUMMARIES[agent_name] = []
+                    APPLIED_MEMORY_IDS[agent_name] = []
+                
+                # Check if memory already applied
+                if memory_id and memory_id in APPLIED_MEMORY_IDS[agent_name]:
+                    console.print(f"[yellow]Memory {memory_id} already applied to {agent_name}[/yellow]")
+                    continue
+                
+                # Append memory (supports multiple memories)
+                COMPACTED_SUMMARIES[agent_name].append(summary)
                 
                 # Store the memory ID for this agent
                 if memory_id:
-                    APPLIED_MEMORY_IDS[agent_name] = memory_id
+                    APPLIED_MEMORY_IDS[agent_name].append(memory_id)
                     console.print(f"[green]✓ Applied memory {memory_id} to {agent_name}[/green]")
                 else:
                     console.print(f"[green]✓ Applied memory '{memory_identifier}' to {agent_name}[/green]")
@@ -798,8 +838,14 @@ Model: Merged from {len(memory_identifiers)} memories
         if apply.lower() == 'y':
             agent_name = self._get_current_agent_name()
             if agent_name:
-                COMPACTED_SUMMARIES[agent_name] = combined_summary
-                APPLIED_MEMORY_IDS[agent_name] = memory_id
+                # Initialize lists if not present
+                if agent_name not in COMPACTED_SUMMARIES:
+                    COMPACTED_SUMMARIES[agent_name] = []
+                    APPLIED_MEMORY_IDS[agent_name] = []
+                
+                # Append the merged memory
+                COMPACTED_SUMMARIES[agent_name].append(combined_summary)
+                APPLIED_MEMORY_IDS[agent_name].append(memory_id)
                 console.print(f"[green]✓ Applied merged memory {memory_id} to {agent_name}[/green]")
                 # Reload the agent with the new memory
                 self._reload_agent_with_memory(agent_name)
@@ -822,10 +868,17 @@ Model: Merged from {len(memory_identifiers)} memories
         # Show applied memories (from COMPACTED_SUMMARIES)
         if COMPACTED_SUMMARIES:
             console.print("\n[yellow]Applied Memories:[/yellow]")
-            for agent_name, summary in COMPACTED_SUMMARIES.items():
-                memory_id = APPLIED_MEMORY_IDS.get(agent_name, "Unknown")
+            for agent_name, summaries in COMPACTED_SUMMARIES.items():
+                memory_ids = APPLIED_MEMORY_IDS.get(agent_name, [])
                 display_name = "Global" if agent_name == "__global__" else agent_name
-                console.print(f"  - {display_name}: {len(summary)} chars (ID: {memory_id})")
+                if isinstance(summaries, list):
+                    total_chars = sum(len(s) for s in summaries)
+                    ids_str = ", ".join(memory_ids) if memory_ids else "Unknown"
+                    console.print(f"  - {display_name}: {len(summaries)} memories, {total_chars} chars (IDs: {ids_str})")
+                else:
+                    # Backward compatibility
+                    memory_id = memory_ids if isinstance(memory_ids, str) else "Unknown"
+                    console.print(f"  - {display_name}: {len(summaries)} chars (ID: {memory_id})")
         else:
             console.print("\n[yellow]No memories currently applied[/yellow]")
         
@@ -913,8 +966,13 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 console.print(f"[green]✓ Saved memory: {memory_name} (ID: {memory_id})[/green]")
                 
                 # Automatically apply the memory to the agent's system prompt
-                COMPACTED_SUMMARIES[agent_name] = summary
-                APPLIED_MEMORY_IDS[agent_name] = memory_id
+                if agent_name not in COMPACTED_SUMMARIES:
+                    COMPACTED_SUMMARIES[agent_name] = []
+                    APPLIED_MEMORY_IDS[agent_name] = []
+                
+                # Clear existing memories and add new one (maintain single memory behavior for compact all)
+                COMPACTED_SUMMARIES[agent_name] = [summary]
+                APPLIED_MEMORY_IDS[agent_name] = [memory_id]
                 console.print(f"[green]✓ Memory {memory_id} automatically applied to {agent_name}'s system prompt[/green]")
                 
                 # Clear the agent's history after saving
@@ -1011,8 +1069,13 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             console.print(f"[green]✓ Saved memory: {memory_name} (ID: {memory_id})[/green]")
             os.environ['CAI_MEMORY'] = 'true'
             # Automatically apply the memory to the agent's system prompt
-            COMPACTED_SUMMARIES[agent_name] = summary
-            APPLIED_MEMORY_IDS[agent_name] = memory_id
+            if agent_name not in COMPACTED_SUMMARIES:
+                COMPACTED_SUMMARIES[agent_name] = []
+                APPLIED_MEMORY_IDS[agent_name] = []
+            
+            # Clear existing memories and add new one (maintain single memory behavior for compact single)
+            COMPACTED_SUMMARIES[agent_name] = [summary]
+            APPLIED_MEMORY_IDS[agent_name] = [memory_id]
             console.print(f"[green]✓ Memory {memory_id} automatically applied to {agent_name}'s system prompt[/green]")
             
             # Ask if user wants to clear history
@@ -1380,6 +1443,169 @@ This session is being continued from a previous conversation that ran out of con
         except Exception as e:
             console.print(f"[yellow]Warning: Could not reload agent automatically: {e}[/yellow]")
             console.print("[dim]The memory will be applied on the next agent interaction[/dim]")
+    
+    def handle_remove(self, args: Optional[List[str]] = None) -> bool:
+        """Remove a specific memory from an agent."""
+        if not args or len(args) < 2:
+            console.print("[red]Error: Memory ID and agent name required[/red]")
+            console.print("Usage: /memory remove <memory_id> <agent_name>")
+            return False
+        
+        memory_id = args[0].upper()
+        agent_identifier = " ".join(args[1:])
+        agent_name = self._resolve_agent_name(agent_identifier)
+        
+        if not agent_name:
+            console.print(f"[red]Error: Could not resolve agent '{agent_identifier}'[/red]")
+            return False
+        
+        # Check if agent has memories applied
+        if agent_name not in APPLIED_MEMORY_IDS:
+            console.print(f"[yellow]Agent '{agent_name}' has no memories applied[/yellow]")
+            return True
+        
+        memory_ids = APPLIED_MEMORY_IDS[agent_name]
+        summaries = COMPACTED_SUMMARIES.get(agent_name, [])
+        
+        # Handle backward compatibility
+        if isinstance(memory_ids, str):
+            if memory_ids == memory_id:
+                del APPLIED_MEMORY_IDS[agent_name]
+                if agent_name in COMPACTED_SUMMARIES:
+                    del COMPACTED_SUMMARIES[agent_name]
+                console.print(f"[green]✓ Removed memory {memory_id} from {agent_name}[/green]")
+                self._reload_agent_with_memory(agent_name)
+                return True
+            else:
+                console.print(f"[yellow]Memory {memory_id} not found for agent '{agent_name}'[/yellow]")
+                return True
+        
+        # Handle list of memories
+        if memory_id not in memory_ids:
+            console.print(f"[yellow]Memory {memory_id} not found for agent '{agent_name}'[/yellow]")
+            return True
+        
+        # Find index and remove
+        idx = memory_ids.index(memory_id)
+        memory_ids.pop(idx)
+        if isinstance(summaries, list) and idx < len(summaries):
+            summaries.pop(idx)
+        
+        # Clean up if no memories left
+        if not memory_ids:
+            del APPLIED_MEMORY_IDS[agent_name]
+            if agent_name in COMPACTED_SUMMARIES:
+                del COMPACTED_SUMMARIES[agent_name]
+        
+        console.print(f"[green]✓ Removed memory {memory_id} from {agent_name}[/green]")
+        self._reload_agent_with_memory(agent_name)
+        
+        return True
+    
+    def handle_clear(self, args: Optional[List[str]] = None) -> bool:
+        """Clear all memories from an agent."""
+        if not args:
+            console.print("[red]Error: Agent name required[/red]")
+            console.print("Usage: /memory clear <agent_name>")
+            return False
+        
+        agent_identifier = " ".join(args)
+        agent_name = self._resolve_agent_name(agent_identifier)
+        
+        if not agent_name:
+            console.print(f"[red]Error: Could not resolve agent '{agent_identifier}'[/red]")
+            return False
+        
+        # Check if agent has memories applied
+        if agent_name not in APPLIED_MEMORY_IDS:
+            console.print(f"[yellow]Agent '{agent_name}' has no memories applied[/yellow]")
+            return True
+        
+        # Ask for confirmation
+        memory_ids = APPLIED_MEMORY_IDS.get(agent_name)
+        count = len(memory_ids) if isinstance(memory_ids, list) else 1
+        confirm = console.input(f"Clear {count} memory(ies) from '{agent_name}'? (y/N): ")
+        
+        if confirm.lower() == 'y':
+            del APPLIED_MEMORY_IDS[agent_name]
+            if agent_name in COMPACTED_SUMMARIES:
+                del COMPACTED_SUMMARIES[agent_name]
+            console.print(f"[green]✓ Cleared all memories from {agent_name}[/green]")
+            self._reload_agent_with_memory(agent_name)
+        else:
+            console.print("[dim]Cancelled[/dim]")
+        
+        return True
+    
+    def handle_list_applied(self, args: Optional[List[str]] = None) -> bool:
+        """Show which memories are applied to an agent."""
+        if not args:
+            # Show all agents with applied memories
+            if not APPLIED_MEMORY_IDS:
+                console.print("[yellow]No memories applied to any agents[/yellow]")
+                return True
+            
+            console.print("[bold cyan]Applied Memories by Agent[/bold cyan]\n")
+            
+            for agent_name, memory_ids in APPLIED_MEMORY_IDS.items():
+                console.print(f"[green]{agent_name}:[/green]")
+                
+                if isinstance(memory_ids, list):
+                    for i, memory_id in enumerate(memory_ids):
+                        # Try to get memory details
+                        index = self._load_index()
+                        memory_file = index.get('mappings', {}).get(memory_id, "Unknown")
+                        console.print(f"  {i+1}. {memory_id} - {memory_file}")
+                else:
+                    # Backward compatibility
+                    index = self._load_index()
+                    memory_file = index.get('mappings', {}).get(memory_ids, "Unknown")
+                    console.print(f"  1. {memory_ids} - {memory_file}")
+                
+                console.print()
+        else:
+            # Show memories for specific agent
+            agent_identifier = " ".join(args)
+            agent_name = self._resolve_agent_name(agent_identifier)
+            
+            if not agent_name:
+                console.print(f"[red]Error: Could not resolve agent '{agent_identifier}'[/red]")
+                return False
+            
+            if agent_name not in APPLIED_MEMORY_IDS:
+                console.print(f"[yellow]No memories applied to '{agent_name}'[/yellow]")
+                return True
+            
+            memory_ids = APPLIED_MEMORY_IDS[agent_name]
+            summaries = COMPACTED_SUMMARIES.get(agent_name, [])
+            
+            console.print(f"[bold cyan]Memories applied to {agent_name}[/bold cyan]\n")
+            
+            if isinstance(memory_ids, list):
+                for i, memory_id in enumerate(memory_ids):
+                    # Get memory details
+                    index = self._load_index()
+                    memory_file = index.get('mappings', {}).get(memory_id, "Unknown")
+                    
+                    # Show summary preview
+                    summary_preview = ""
+                    if isinstance(summaries, list) and i < len(summaries):
+                        summary_preview = summaries[i][:100] + "..." if len(summaries[i]) > 100 else summaries[i]
+                    
+                    console.print(f"[green]{i+1}. {memory_id}[/green] - {memory_file}")
+                    if summary_preview:
+                        console.print(f"   [dim]{summary_preview}[/dim]")
+                    console.print()
+            else:
+                # Backward compatibility
+                index = self._load_index()
+                memory_file = index.get('mappings', {}).get(memory_ids, "Unknown")
+                console.print(f"[green]1. {memory_ids}[/green] - {memory_file}")
+                if isinstance(summaries, str) and summaries:
+                    summary_preview = summaries[:100] + "..." if len(summaries) > 100 else summaries
+                    console.print(f"   [dim]{summary_preview}[/dim]")
+        
+        return True
 
 
 # Global instance for access from other modules
@@ -1393,6 +1619,7 @@ def get_compacted_summary(agent_name: Optional[str] = None) -> Optional[str]:
     """Get compacted summary for injection into system prompt.
     
     This retrieves any applied memory summaries for the agent.
+    Now supports multiple memories per agent.
     
     Args:
         agent_name: Specific agent name or None for global summary
@@ -1402,9 +1629,24 @@ def get_compacted_summary(agent_name: Optional[str] = None) -> Optional[str]:
     """
     # First check for applied memories in COMPACTED_SUMMARIES
     if agent_name and agent_name in COMPACTED_SUMMARIES:
-        return COMPACTED_SUMMARIES[agent_name]
+        summaries = COMPACTED_SUMMARIES[agent_name]
+        if isinstance(summaries, list) and summaries:
+            # Concatenate multiple memories with clear separators
+            memory_ids = APPLIED_MEMORY_IDS.get(agent_name, [])
+            parts = []
+            for i, summary in enumerate(summaries):
+                memory_id = memory_ids[i] if i < len(memory_ids) else "Unknown"
+                parts.append(f"Memory {i+1}/{len(summaries)} (ID: {memory_id}):\n{summary}")
+            return "\n\n---\n\n".join(parts)
+        elif isinstance(summaries, str):
+            # Backward compatibility for single memory
+            return summaries
     elif "__global__" in COMPACTED_SUMMARIES:
-        return COMPACTED_SUMMARIES["__global__"]
+        global_summaries = COMPACTED_SUMMARIES["__global__"]
+        if isinstance(global_summaries, list) and global_summaries:
+            return "\n\n---\n\n".join(global_summaries)
+        elif isinstance(global_summaries, str):
+            return global_summaries
     
     # Optionally, could auto-load the most recent memory for this agent
     # but for now we require explicit application
@@ -1414,10 +1656,34 @@ def get_compacted_summary(agent_name: Optional[str] = None) -> Optional[str]:
 def get_applied_memory_id(agent_name: str) -> Optional[str]:
     """Get the ID of the memory currently applied to an agent.
     
+    For backward compatibility, returns first memory ID if multiple exist.
+    
     Args:
         agent_name: The agent name to check
         
     Returns:
         Memory ID if applied, None otherwise
     """
-    return APPLIED_MEMORY_IDS.get(agent_name)
+    memory_ids = APPLIED_MEMORY_IDS.get(agent_name)
+    if isinstance(memory_ids, list) and memory_ids:
+        return memory_ids[0]  # Return first for backward compatibility
+    elif isinstance(memory_ids, str):
+        return memory_ids
+    return None
+
+
+def get_applied_memory_ids(agent_name: str) -> List[str]:
+    """Get all memory IDs currently applied to an agent.
+    
+    Args:
+        agent_name: The agent name to check
+        
+    Returns:
+        List of memory IDs if applied, empty list otherwise
+    """
+    memory_ids = APPLIED_MEMORY_IDS.get(agent_name, [])
+    if isinstance(memory_ids, list):
+        return memory_ids
+    elif isinstance(memory_ids, str):
+        return [memory_ids]  # Convert single ID to list
+    return []
