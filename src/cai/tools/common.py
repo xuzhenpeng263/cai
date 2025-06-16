@@ -744,7 +744,8 @@ async def _run_local_async(command, stdout=False, timeout=100, stream=False, cal
             # The SDK will handle ALL display when CAI_STREAM=false
             streaming_enabled = os.getenv("CAI_STREAM", "false").lower() == "true"
             
-            # Only display if we're in streaming mode AND parallel mode
+            # Only display panels if we're in streaming mode or parallel mode
+            # In streaming mode, the Live panels are handled by the streaming system
             if streaming_enabled and is_parallel:
                 # Display the completed tool output
                 from cai.util import cli_print_tool_output

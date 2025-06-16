@@ -133,10 +133,14 @@ async def generic_linux_command(command: str = "",
     else:
         timeout = 100
         
-    # Tools always stream EXCEPT in parallel mode
+    # Tools always stream EXCEPT in parallel mode or when CAI_STREAM=False
     # In parallel mode, multiple agents run concurrently with Runner.run()
     # and streaming would create confusing overlapping outputs
     stream = True  # Default to streaming
+    
+    # Check if CAI_STREAM is explicitly set to False
+    if os.getenv("CAI_STREAM", "true").lower() == "false":
+        stream = False
     
     # Simple heuristic: If CAI_PARALLEL > 1 AND we have a P agent ID, disable streaming
     # This is more reliable than trying to count active agents

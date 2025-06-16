@@ -2825,9 +2825,10 @@ def cli_print_tool_output(
                         # Check if we're in a container environment
                         is_container = bool(os.getenv("CAI_ACTIVE_CONTAINER", ""))
                         
-                        # In parallel mode OR container mode, use static panels
-                        if is_parallel or is_container:
-                            # In parallel mode or container mode, use static panels to avoid Live context conflicts
+                        # In parallel mode, use static panels
+                        # For container mode, use Live panels to allow real-time updates
+                        if is_parallel:
+                            # In parallel mode, use static panels to avoid Live context conflicts
                             # Check if we already printed this panel (shouldn't happen but be safe)
                             if call_id not in _LIVE_STREAMING_PANELS:
                                 # For container mode with streaming, if this is the initial call but we already
@@ -2900,7 +2901,11 @@ def cli_print_tool_output(
                 # Use simple output
                 _print_simple_tool_output(tool_name, args, output, execution_info, token_info)
                 return
-    else:
+    
+    # Initialize is_first_display for later use
+    is_first_display = False
+    
+    if not streaming:
         # For non-streaming outputs, check if we've already seen this command
         streaming_enabled = os.getenv("CAI_STREAM", "false").lower() == "true"
         
@@ -2927,11 +2932,11 @@ def cli_print_tool_output(
             if not output:
                 return
 
+        # Check if this is first time display before adding to displayed commands
+        is_first_display = command_key not in cli_print_tool_output._displayed_commands
+        
         # Add to displayed commands since we're going to show it
         cli_print_tool_output._displayed_commands.add(command_key)
-        
-        # Track display time for better duplicate detection
-        cli_print_tool_output._command_display_times[command_key] = time.time()
 
     # For non-streaming updates with call_id, check if already seen
     # This _seen_calls logic is an additional layer for non-streaming calls that might have call_ids
@@ -3066,12 +3071,62 @@ def cli_print_tool_output(
             title_align="left",
         )
 
+        # When CAI_STREAM=false and this is the first display (not a duplicate),
+        # show a small command execution panel first
+        if not streaming_enabled and not streaming and is_first_display:
+            # Get agent name for the panel
+            agent_name = ""
+            if token_info and token_info.get("agent_name"):
+                agent_name = token_info.get("agent_name")
+            else:
+                agent_name = "Agent"
+                
+            # Extract the command from args
+            command_text = ""
+            if isinstance(display_args, dict):
+                if "command" in display_args:
+                    command_text = display_args.get("command", "")
+                    if "args" in display_args and display_args["args"]:
+                        command_text += f" {display_args['args']}"
+                elif "full_command" in display_args:
+                    command_text = display_args.get("full_command", "")
+                else:
+                    # Fallback to string representation
+                    command_text = str(display_args)
+            else:
+                command_text = str(display_args)
+                
+            # Create a small panel showing just the command being executed
+            command_panel = Panel(
+                f"[bold cyan]{command_text}[/bold cyan]",
+                title=f"[bold blue]{agent_name} - Executing Command[/bold blue]",
+                border_style="blue",
+                padding=(0, 1),
+                box=ROUNDED,
+                title_align="left",
+                width=None,  # Auto width based on content
+                expand=False  # Don't expand to full width
+            )
+            
+            # Print the command panel
+            console.print(command_panel)
+            console.print()  # Add spacing between panels
+        
         # Display the panel
         console.print(panel)
+        
+        # Track display time AFTER the panel is rendered
+        # This ensures accurate timing for duplicate detection
+        if not streaming and command_key:
+            cli_print_tool_output._command_display_times[command_key] = time.time()
 
     except (ImportError, Exception):
         # Fall back to simple output format without rich
         _print_simple_tool_output(tool_name, args, output, execution_info, token_info)
+        
+        # Also track display time for simple output
+        if not streaming and command_key:
+            cli_print_tool_output._command_display_times[command_key] = time.time()
 
 
 # Helper function to format tool arguments
