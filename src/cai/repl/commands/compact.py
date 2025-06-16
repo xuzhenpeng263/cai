@@ -632,9 +632,8 @@ class CompactCommand(Command):
                 if agent_name in PERSISTENT_MESSAGE_HISTORIES:
                     PERSISTENT_MESSAGE_HISTORIES[agent_name].clear()
                 
-                # Clear in AGENT_MANAGER as well
-                if hasattr(AGENT_MANAGER, '_message_history') and agent_name in AGENT_MANAGER._message_history:
-                    AGENT_MANAGER._message_history[agent_name].clear()
+                # Clear in AGENT_MANAGER as well using the proper method
+                AGENT_MANAGER.clear_history(agent_name)
                 
             else:
                 console.print(f"[red]Failed to compact conversation[/red]")
