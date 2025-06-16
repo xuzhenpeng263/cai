@@ -84,7 +84,6 @@ Environment Variables enabling the episodic memory store
 import os
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel
 from cai.tools.misc.rag import add_to_memory_semantic, add_to_memory_episodic
-from cai.rag.vector_db import get_previous_memory
 
 # Get model from environment or use default
 model = os.getenv('CAI_MODEL', "alias0")
