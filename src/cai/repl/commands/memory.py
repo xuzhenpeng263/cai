@@ -438,6 +438,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             COMPACTED_SUMMARIES[agent_name] = summary
             APPLIED_MEMORY_IDS[agent_name] = memory_id
             console.print(f"[green]✓ Memory {memory_id} automatically applied to {agent_name}'s system prompt[/green]")
+            os.environ['CAI_MEMORY'] = 'true' 
             
             # Reload the agent with the new memory
             self._reload_agent_with_memory(agent_name)
@@ -566,6 +567,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 console.print(f"[red]Error applying memory to {agent_name}: {e}[/red]")
         
         if success_count > 0:
+            os.environ['CAI_MEMORY'] = 'true' 
             console.print("[dim]The memory will be included in the agents' system prompts[/dim]")
             
             # Show summary with ID if available (only once)
@@ -906,7 +908,8 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 
                 # Register the memory in the index
                 self._register_memory(memory_id, memory_name)
-                
+
+                os.environ['CAI_MEMORY'] = 'true'
                 console.print(f"[green]✓ Saved memory: {memory_name} (ID: {memory_id})[/green]")
                 
                 # Automatically apply the memory to the agent's system prompt
@@ -1006,7 +1009,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             self._register_memory(memory_id, memory_name)
             
             console.print(f"[green]✓ Saved memory: {memory_name} (ID: {memory_id})[/green]")
-            
+            os.environ['CAI_MEMORY'] = 'true'
             # Automatically apply the memory to the agent's system prompt
             COMPACTED_SUMMARIES[agent_name] = summary
             APPLIED_MEMORY_IDS[agent_name] = memory_id
