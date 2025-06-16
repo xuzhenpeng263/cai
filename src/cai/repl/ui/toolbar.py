@@ -157,8 +157,8 @@ def update_toolbar_in_background():
                 auto_compact_color = "ansired"
         
         # Get memory status
-        memory_enabled = os.getenv('CAI_MEMORY', 'false').lower() != 'false'
-        memory_str = os.getenv('CAI_MEMORY', 'false') if memory_enabled else "✗"
+        memory_enabled = os.getenv('CAI_MEMORY', 'false').lower() == 'true'
+        memory_str = "✓"  if memory_enabled else "✗"
         memory_color = "ansigreen" if memory_enabled else "ansigray"
         
         # Get streaming status

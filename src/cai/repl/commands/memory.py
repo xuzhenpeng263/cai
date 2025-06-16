@@ -906,7 +906,8 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 
                 # Register the memory in the index
                 self._register_memory(memory_id, memory_name)
-                
+
+                os.environ['CAI_MEMORY'] = 'true'
                 console.print(f"[green]✓ Saved memory: {memory_name} (ID: {memory_id})[/green]")
                 
                 # Automatically apply the memory to the agent's system prompt
