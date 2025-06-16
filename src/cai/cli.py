@@ -1216,40 +1216,41 @@ def run_cai_cli(
             # text content and ignore tool call entries to prevent schema
             # mismatches when converting to OpenAI chat format.
             history_context = []
-            # Get agent name for history lookup
-            agent_history_name = getattr(agent, 'name', last_agent_type)
-            for msg in get_agent_message_history(agent_history_name):
-                role = msg.get("role")
-                content = msg.get("content")
-                tool_calls = msg.get("tool_calls")
+            # Use the agent's model's message history directly instead of AGENT_MANAGER
+            # This ensures compaction actually clears the history
+            if hasattr(agent, 'model') and hasattr(agent.model, 'message_history'):
+                for msg in agent.model.message_history:
+                    role = msg.get("role")
+                    content = msg.get("content")
+                    tool_calls = msg.get("tool_calls")
 
-                if role == "user":
-                    history_context.append({"role": "user", "content": content or ""})
-                elif role == "system":
-                    history_context.append({"role": "system", "content": content or ""})
-                elif role == "assistant":
-                    if tool_calls:
+                    if role == "user":
+                        history_context.append({"role": "user", "content": content or ""})
+                    elif role == "system":
+                        history_context.append({"role": "system", "content": content or ""})
+                    elif role == "assistant":
+                        if tool_calls:
+                            history_context.append(
+                                {
+                                    "role": "assistant",
+                                    "content": content,  # Can be None
+                                    "tool_calls": tool_calls,
+                                }
+                            )
+                        elif content is not None:
+                            history_context.append({"role": "assistant", "content": content})
+                        elif (
+                            content is None and not tool_calls
+                        ):  # Explicitly handle empty assistant message
+                            history_context.append({"role": "assistant", "content": None})
+                    elif role == "tool":
                         history_context.append(
                             {
-                                "role": "assistant",
-                                "content": content,  # Can be None
-                                "tool_calls": tool_calls,
+                                "role": "tool",
+                                "tool_call_id": msg.get("tool_call_id"),
+                                "content": msg.get("content"),  # Tool output
                             }
                         )
-                    elif content is not None:
-                        history_context.append({"role": "assistant", "content": content})
-                    elif (
-                        content is None and not tool_calls
-                    ):  # Explicitly handle empty assistant message
-                        history_context.append({"role": "assistant", "content": None})
-                elif role == "tool":
-                    history_context.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": msg.get("tool_call_id"),
-                            "content": msg.get("content"),  # Tool output
-                        }
-                    )
 
             # Fix message list structure BEFORE sending to the model to prevent errors
             try:
