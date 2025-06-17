@@ -1641,6 +1641,24 @@ def get_compacted_summary(agent_name: Optional[str] = None) -> Optional[str]:
         elif isinstance(summaries, str):
             # Backward compatibility for single memory
             return summaries
+    
+    # NEW: For parallel agents, try to find memory under base name
+    # Example: "Bug bounty Triage Agent #1" -> "Bug bounty Triage Agent"
+    if agent_name and " #" in agent_name:
+        base_name = agent_name.split(" #")[0]
+        if base_name in COMPACTED_SUMMARIES:
+            summaries = COMPACTED_SUMMARIES[base_name]
+            if isinstance(summaries, list) and summaries:
+                # Concatenate multiple memories with clear separators
+                memory_ids = APPLIED_MEMORY_IDS.get(base_name, [])
+                parts = []
+                for i, summary in enumerate(summaries):
+                    memory_id = memory_ids[i] if i < len(memory_ids) else "Unknown"
+                    parts.append(f"Memory {i+1}/{len(summaries)} (ID: {memory_id}):\n{summary}")
+                return "\n\n---\n\n".join(parts)
+            elif isinstance(summaries, str):
+                # Backward compatibility for single memory
+                return summaries
     elif "__global__" in COMPACTED_SUMMARIES:
         global_summaries = COMPACTED_SUMMARIES["__global__"]
         if isinstance(global_summaries, list) and global_summaries:
