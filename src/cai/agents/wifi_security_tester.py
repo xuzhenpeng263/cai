@@ -1,6 +1,8 @@
 """Wi-Fi Security Testing Agent"""
 import os
-from cai.sdk.agents import Agent  # pylint: disable=import-error
+from dotenv import load_dotenv
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
+from openai import AsyncOpenAI
 from cai.util import load_prompt_template  # Add this import
 from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
     run_ssh_command_with_credentials
@@ -17,6 +19,7 @@ from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error
     execute_code
 )
 
+load_dotenv()
 # Prompts
 wifi_security_agent_system_prompt = load_prompt_template("prompts/wifi_security_agent.md")
 
@@ -37,7 +40,9 @@ wifi_security_agent = Agent(
     instructions=wifi_security_agent_system_prompt,
     description="""Agent for Wi-Fi network security testing and penetration.
                    Specializes in wireless attacks, password recovery, and communication disruption.""",
-    model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
     tools=functions,
-    
+    model=OpenAIChatCompletionsModel(
+        model=os.getenv('CAI_MODEL', "alias0"),
+        openai_client=AsyncOpenAI(),
+    )
 )
