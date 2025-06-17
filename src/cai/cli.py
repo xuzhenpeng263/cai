@@ -172,6 +172,12 @@ class ComprehensiveErrorFilter(logging.Filter):
             "task was destroyed",
             "event loop is closed",
             "session is closed",
+            # Add specific aiohttp session warnings
+            "unclosed client session",
+            "unclosed connector",
+            "client_session:",
+            "connector:",
+            "connections:",
         ]
         
         # Check if any suppress pattern matches
@@ -208,6 +214,7 @@ loggers_to_configure = [
     "anyio",
     "anyio._backends._asyncio",
     "cai.sdk.agents",
+    "aiohttp",  # Add aiohttp logger to suppress session warnings
 ]
 
 for logger_name in loggers_to_configure:
@@ -221,6 +228,7 @@ for logger_name in loggers_to_configure:
 
 # Suppress various warnings globally with more comprehensive patterns
 warnings.filterwarnings("ignore", category=RuntimeWarning)  # Ignore ALL RuntimeWarnings
+warnings.filterwarnings("ignore", category=ResourceWarning)  # Ignore ResourceWarnings (aiohttp sessions)
 warnings.filterwarnings("ignore", message=".*asynchronous generator.*")
 warnings.filterwarnings("ignore", message=".*was never awaited.*")
 warnings.filterwarnings("ignore", message=".*didn't stop after athrow.*")
@@ -230,11 +238,42 @@ warnings.filterwarnings("ignore", message=".*coroutine.*was never awaited.*")
 warnings.filterwarnings("ignore", message=".*generator.*didn't stop.*")
 warnings.filterwarnings("ignore", message=".*Task was destroyed.*")
 warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
+# Add specific aiohttp session warnings
+warnings.filterwarnings("ignore", message=".*Unclosed client session.*")
+warnings.filterwarnings("ignore", message=".*Unclosed connector.*")
+warnings.filterwarnings("ignore", message=".*client_session:.*")
+warnings.filterwarnings("ignore", message=".*connector:.*")
+warnings.filterwarnings("ignore", message=".*connections:.*")
 
 # Also configure Python's warning system to be less verbose
 import sys
 if not sys.warnoptions:
     warnings.simplefilter("ignore", RuntimeWarning)
+    warnings.simplefilter("ignore", ResourceWarning)  # Also ignore ResourceWarnings
+
+# Additional aiohttp warning suppression
+def suppress_aiohttp_warnings():
+    """Suppress aiohttp specific warnings about unclosed sessions."""
+    try:
+        import aiohttp
+        # Suppress aiohttp warnings about unclosed sessions
+        aiohttp_logger = logging.getLogger("aiohttp")
+        aiohttp_logger.setLevel(logging.ERROR)  # Only show errors, not warnings
+        
+        # Also suppress aiohttp.client warnings
+        aiohttp_client_logger = logging.getLogger("aiohttp.client")
+        aiohttp_client_logger.setLevel(logging.ERROR)
+        
+        # Suppress aiohttp.connector warnings
+        aiohttp_connector_logger = logging.getLogger("aiohttp.connector")
+        aiohttp_connector_logger.setLevel(logging.ERROR)
+        
+    except ImportError:
+        # aiohttp not installed, skip
+        pass
+
+# Call the function to suppress aiohttp warnings
+suppress_aiohttp_warnings()
 
 # OpenAI imports
 from openai import AsyncOpenAI
