@@ -376,7 +376,7 @@ At its core, CAI abstracts its cybersecurity behavior via `Agents` and agentic `
 
 
 ```python
-from cai.types import Agent
+from cai.sdk.agents import Agent
 from cai.core import CAI
 ctf_agent = Agent(
     name="CTF Agent",
@@ -399,7 +399,7 @@ response = client.run(agent=ctf_agent,
 `Tools` let cybersecurity agents take actions by providing interfaces to execute system commands, run security scans, analyze vulnerabilities, and interact with target systems and APIs - they are the core capabilities that enable CAI agents to perform security tasks effectively; in CAI, tools include built-in cybersecurity utilities (like LinuxCmd for command execution, WebSearch for OSINT gathering, Code for dynamic script execution, and SSHTunnel for secure remote access), function calling mechanisms that allow integration of any Python function as a security tool, and agent-as-tool functionality that enables specialized security agents (such as reconnaissance or exploit agents) to be used by other agents, creating powerful collaborative security workflows without requiring formal handoffs between agents.
 
 ```python
-from cai.types import Agent
+from cai.sdk.agents import Agent
 from cai.tools.common import run_command
 from cai.core import CAI
 
@@ -450,7 +450,7 @@ You may find different [tools](cai/tools). They are grouped in 6 major categorie
 
 
 ```python
-from cai.types import Agent
+from cai.sdk.agents import Agent
 from cai.core import CAI
 
 ctf_agent = Agent(

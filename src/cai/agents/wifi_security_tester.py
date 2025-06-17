@@ -1,6 +1,6 @@
 """Wi-Fi Security Testing Agent"""
 import os
-from cai.types import Agent  # pylint: disable=import-error
+from cai.sdk.agents import Agent  # pylint: disable=import-error
 from cai.util import load_prompt_template  # Add this import
 from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
     run_ssh_command_with_credentials
@@ -38,6 +38,6 @@ wifi_security_agent = Agent(
     description="""Agent for Wi-Fi network security testing and penetration.
                    Specializes in wireless attacks, password recovery, and communication disruption.""",
     model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
-    functions=functions,
-    parallel_tool_calls=False,
+    tools=functions,
+    
 )
