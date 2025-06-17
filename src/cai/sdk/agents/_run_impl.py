@@ -414,7 +414,7 @@ class RunImpl:
         return ProcessedResponse(
             new_items=items,
             handoffs=run_handoffs,
-            tools=functions,
+            functions=functions,
             computer_actions=computer_actions,
             tools_used=tools_used,
         )
