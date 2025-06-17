@@ -66,7 +66,7 @@ async def test_stream_response_yields_events_for_text_content(monkeypatch) -> No
             output=[],
             tool_choice="none",
             tools=[],
-            parallel_tool_calls=False,
+            
         )
         return resp, fake_stream()
 
@@ -155,7 +155,7 @@ async def test_stream_response_yields_events_for_refusal_content(monkeypatch) ->
             output=[],
             tool_choice="none",
             tools=[],
-            parallel_tool_calls=False,
+            
         )
         return resp, fake_stream()
 
@@ -242,7 +242,7 @@ async def test_stream_response_yields_events_for_tool_call(monkeypatch) -> None:
             output=[],
             tool_choice="none",
             tools=[],
-            parallel_tool_calls=False,
+            
         )
         return resp, fake_stream()
 

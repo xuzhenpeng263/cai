@@ -244,7 +244,7 @@ class CodeAgent(Agent):
             model=model,
             description=description,
             instructions=instructions,
-            functions=functions or [],
+            tools=functions or [],
             reasoning_effort=reasoning_effort,
             temperature=0.2,  # Lower temperature for predictable code
         )

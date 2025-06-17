@@ -1,6 +1,6 @@
 """Reverse Engineering and Binary Analysis Agent"""
 import os
-from cai.types import Agent  # pylint: disable=import-error
+from cai.sdk.agents import Agent  # pylint: disable=import-error
 from cai.util import load_prompt_template  # Add this import
 from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
     run_ssh_command_with_credentials
@@ -40,6 +40,6 @@ reverse_engineering_agent = Agent(
                    decompilation, and vulnerability discovery using tools
                    like Ghidra, Binwalk, and various binary analysis utilities.""",
     model=os.getenv('CAI_MODEL', "qwen2.5:14b"),
-    functions=functions,
-    parallel_tool_calls=False,
+    tools=functions,
+    
 )
