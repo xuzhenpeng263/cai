@@ -124,5 +124,5 @@ def get_response_obj(output: list[TResponseOutputItem], response_id: str | None 
         tool_choice="none",
         tools=[],
         top_p=None,
-        parallel_tool_calls=False,
+        
     )
