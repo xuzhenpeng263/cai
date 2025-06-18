@@ -140,7 +140,7 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
             json.dump(session_start, f)
             f.write('\n')
 
-    def rec_training_data(self, create_params, msg, total_cost=None) -> None:
+    def rec_training_data(self, create_params, msg, total_cost=None, agent_name=None) -> None:
         """
         Records a single training data entry to the JSONL file
 
@@ -148,6 +148,7 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
             create_params: Parameters used for the LLM call
             msg: Response from the LLM
             total_cost: Optional total accumulated cost from CAI instance
+            agent_name: Optional agent name/type for tracking
         """
         request_data = {
             "model": create_params["model"],
@@ -224,6 +225,7 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
             "object": "chat.completion",
             "created": int(datetime.now().timestamp()),
             "model": msg.model,
+            "agent_name": agent_name if agent_name else "unknown",
             "messages": [
                 {
                     "role": m.role,
@@ -364,6 +366,8 @@ def load_history_from_jsonl(file_path):
     messages = []
     last_assistant_message = None
     tool_outputs = {}  # Map tool_call_id to output content
+    agent_name_by_timestamp = {}  # Map timestamp to agent name
+    current_agent_name = None
     
     try:
         with open(file_path, encoding='utf-8') as f:
@@ -376,6 +380,13 @@ def load_history_from_jsonl(file_path):
                 except Exception:  # pylint: disable=broad-except
                     print(f"Error loading line: {line}")
                     continue
+
+                # Track agent names from completion records
+                if record.get("agent_name"):
+                    current_agent_name = record.get("agent_name")
+                    timestamp = record.get("timestamp_iso")
+                    if timestamp:
+                        agent_name_by_timestamp[timestamp] = current_agent_name
 
                 # Collect tool outputs from tool_message events
                 if record.get("event") == "tool_message":
@@ -402,6 +413,9 @@ def load_history_from_jsonl(file_path):
                             if not any(m.get("role") == msg.get("role") and 
                                        m.get("content") == msg.get("content") and
                                        m.get("tool_call_id") == msg.get("tool_call_id") for m in messages):
+                                # Add agent name if we have it for this record
+                                if current_agent_name and msg.get("role") == "assistant":
+                                    msg["agent_name"] = current_agent_name
                                 messages.append(msg)
 
                 # Extract assistant messages and tool responses from model record choices
@@ -412,6 +426,9 @@ def load_history_from_jsonl(file_path):
                         if not any(m.get("role") == msg.get("role") and 
                                   m.get("content") == msg.get("content") and
                                   m.get("tool_call_id") == msg.get("tool_call_id") for m in messages):
+                            # Add agent name if we have it for this record
+                            if current_agent_name and msg.get("role") == "assistant":
+                                msg["agent_name"] = current_agent_name
                             messages.append(msg)
     except Exception as e:  # pylint: disable=broad-except
         print(f"Error loading history from {file_path}: {e}")
@@ -451,10 +468,14 @@ def load_history_from_jsonl(file_path):
         # Check if this message is already in the list
         if not any(m.get("role") == "assistant" and 
                   m.get("content") == last_assistant_message for m in final_messages):
-            final_messages.append({
+            last_msg = {
                 "role": "assistant",
                 "content": last_assistant_message
-            })
+            }
+            # Add agent name if we have it
+            if current_agent_name:
+                last_msg["agent_name"] = current_agent_name
+            final_messages.append(last_msg)
     
     return final_messages
 

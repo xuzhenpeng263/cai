@@ -22,11 +22,92 @@ try:
 except ImportError:
     START_TIME = None
 
+
+def _get_agent_token_info():
+    """Get current agent's token information from the active model instance."""
+    # Try to get agent info from the current execution context
+    try:
+        from cai.sdk.agents.models.openai_chatcompletions import get_current_active_model
+        
+        # First try to get the current active model (set during execution)
+        model = get_current_active_model()
+        
+        if model:
+            # Get display name with ID (e.g., "Red Team Agent [P1]")
+            if hasattr(model, 'get_full_display_name'):
+                display_name = model.get_full_display_name()
+            elif hasattr(model, 'agent_name'):
+                # Include [P1] only if we have a valid agent_id
+                if hasattr(model, 'agent_id') and model.agent_id:
+                    display_name = f"{model.agent_name} [{model.agent_id}]"
+                else:
+                    # In single agent mode, just show the agent name without [P1]
+                    display_name = model.agent_name
+            else:
+                display_name = 'Agent'
+            
+            return {
+                "agent_name": display_name,  # This now includes the ID
+                "agent_id": getattr(model, "agent_id", None),
+                "interaction_counter": getattr(model, "interaction_counter", 0),
+                "total_input_tokens": getattr(model, "total_input_tokens", 0),
+                "total_output_tokens": getattr(model, "total_output_tokens", 0),
+                "total_reasoning_tokens": getattr(model, "total_reasoning_tokens", 0),
+                "total_cost": getattr(model, "total_cost", 0.0)
+            }
+        
+        # Fallback: Try to get from the most recent instance in the registry
+        from cai.sdk.agents.models.openai_chatcompletions import ACTIVE_MODEL_INSTANCES
+        
+        if ACTIVE_MODEL_INSTANCES:
+            # Get the most recent instance (highest instance ID)
+            latest_key = max(ACTIVE_MODEL_INSTANCES.keys(), key=lambda x: x[1])
+            model_ref = ACTIVE_MODEL_INSTANCES[latest_key]
+            model = model_ref() if model_ref else None
+            
+            if model:
+                # Get display name with ID
+                if hasattr(model, 'get_full_display_name'):
+                    display_name = model.get_full_display_name()
+                elif hasattr(model, 'agent_name'):
+                    # Include [P1] only if we have a valid agent_id
+                    if hasattr(model, 'agent_id') and model.agent_id:
+                        display_name = f"{model.agent_name} [{model.agent_id}]"
+                    else:
+                        # In single agent mode, just show the agent name without [P1]
+                        display_name = model.agent_name
+                else:
+                    display_name = 'Agent'
+                
+                return {
+                    "agent_name": display_name,  # This now includes the ID
+                    "agent_id": getattr(model, "agent_id", None),
+                    "interaction_counter": getattr(model, "interaction_counter", 0),
+                    "total_input_tokens": getattr(model, "total_input_tokens", 0),
+                    "total_output_tokens": getattr(model, "total_output_tokens", 0),
+                    "total_reasoning_tokens": getattr(model, "total_reasoning_tokens", 0),
+                    "total_cost": getattr(model, "total_cost", 0.0)
+                }
+    except Exception:
+        pass
+    
+    # Return default values if we can't get agent info
+    return {
+        "agent_name": "Agent",
+        "agent_id": None,
+        "interaction_counter": 0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_reasoning_tokens": 0,
+        "total_cost": 0.0
+    }
+
 # Global dictionary to store active sessions
 ACTIVE_SESSIONS = {}
 
 # Global counter for session output commands to ensure they always display
 SESSION_OUTPUT_COUNTER = {}
+
 
 def _get_workspace_dir() -> str:
     """Determines the target workspace directory based on env vars for host."""
@@ -495,6 +576,495 @@ def _run_ssh(command, stdout=False, timeout=100, workspace_dir=None, stream=Fals
         return error_msg
 
 
+async def _run_local_async(command, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None, workspace_dir=None, custom_args=None):
+    """Async version of _run_local that uses asyncio subprocess for non-blocking execution."""
+    import asyncio
+    
+    # Make sure we're in active time mode for tool execution
+    stop_idle_timer()
+    start_active_timer()
+    
+    process_start_time = time.time()  # Initialize with current time
+    try:
+        target_dir = workspace_dir or _get_workspace_dir()
+        original_cmd_for_msg = command # For logging
+        context_msg = f"(local:{target_dir})"
+        
+        # If streaming is enabled and we have a call_id
+        if stream:
+            # Import the streaming utilities from util
+            from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
+            
+            # Parse command into parts for display
+            parts = command.strip().split(' ', 1)
+            cmd_var = parts[0] if parts else ""
+            args_param_val = parts[1] if len(parts) > 1 else ""
+            
+            # For generic Linux commands, standardize the tool_name format
+            if not tool_name:
+                tool_name = f"{cmd_var}_command" if cmd_var else "command"
+            
+            # Create args dictionary with non-empty values only
+            tool_args = {}
+            if cmd_var:
+                tool_args["command"] = cmd_var
+            if args_param_val and args_param_val.strip():
+                tool_args["args"] = args_param_val
+            
+            # Add more context for the command
+            tool_args["workspace"] = os.path.basename(target_dir)
+            tool_args["full_command"] = command
+            
+            # If custom args were provided, merge them with the default args
+            if custom_args is not None:
+                if isinstance(custom_args, dict):
+                    # Merge the dictionaries, with custom args taking precedence
+                    for key, value in custom_args.items():
+                        tool_args[key] = value
+            
+            # For generic commands, ensure we have a unique call_id
+            if not call_id:
+                call_id = f"cmd_{cmd_var}_{str(uuid.uuid4())[:8]}"
+            
+            # Get token info for agent display
+            token_info = _get_agent_token_info()
+            
+            # Initialize/use the call_id for this streaming session
+            call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
+            
+            # Start the async process
+            process = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=target_dir
+            )
+            
+            # Begin collecting output
+            output_buffer = []
+            buffer_size = 0
+            update_interval = 10  # lines - default for most tools
+            
+            # Use a smaller interval for generic_linux_command for better responsiveness
+            if tool_name == "generic_linux_command":
+                update_interval = 3  # Update more frequently for terminal commands
+                
+                # Don't add refresh_rate to tool_args as it affects command deduplication
+                # The refresh behavior is already handled by the streaming update logic
+            
+            # Stream stdout in real-time
+            async for line in process.stdout:
+                line_str = line.decode('utf-8', errors='replace')
+                
+                # Add to output collection
+                output_buffer.append(line_str)
+                buffer_size += 1
+                
+                # Only update periodically to reduce UI refreshes
+                if buffer_size >= update_interval:
+                    current_output = ''.join(output_buffer)
+                    update_tool_streaming(tool_name, tool_args, current_output, call_id, token_info)
+                    buffer_size = 0
+            
+            # Wait for process to complete with timeout
+            try:
+                return_code = await asyncio.wait_for(process.wait(), timeout=timeout)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                raise subprocess.TimeoutExpired(command, timeout)
+            
+            process_execution_time = time.time() - process_start_time
+            
+            # Get any stderr output
+            stderr_data = await process.stderr.read()
+            if stderr_data:
+                stderr_str = stderr_data.decode('utf-8', errors='replace')
+                output_buffer.append("\nERROR OUTPUT:\n" + stderr_str)
+            
+            # Final output update
+            final_output = ''.join(output_buffer)
+            if return_code != 0:
+                final_output += f"\nCommand exited with code {return_code}"
+                
+            # Calculate execution info with environment details
+            execution_info = {
+                "status": "completed" if return_code == 0 else "error",
+                "return_code": return_code,
+                "environment": "Local",
+                "host": os.path.basename(target_dir),
+                "tool_time": process_execution_time
+            }
+            
+            # Complete the streaming session with final output
+            finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info, token_info)
+            
+            return final_output
+        else:
+            # Standard non-streaming async execution
+            process = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=target_dir
+            )
+            
+            try:
+                stdout_data, stderr_data = await asyncio.wait_for(
+                    process.communicate(), 
+                    timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                raise subprocess.TimeoutExpired(command, timeout)
+            
+            # Decode output
+            output = stdout_data.decode('utf-8', errors='replace') if stdout_data else ""
+            if not output and stderr_data:
+                output = stderr_data.decode('utf-8', errors='replace')
+            
+            # Parse command for display
+            parts = command.strip().split(' ', 1)
+            
+            # In non-streaming mode (typically parallel execution), display completed panel
+            # Get token info for agent display
+            token_info = _get_agent_token_info()
+            
+            # Check if we're in parallel mode by checking agent ID
+            is_parallel = False
+            if token_info and token_info.get("agent_id"):
+                agent_id = token_info.get("agent_id")
+                if agent_id and agent_id.startswith('P') and agent_id[1:].isdigit():
+                    # Check CAI_PARALLEL to confirm
+                    if int(os.getenv("CAI_PARALLEL", "1")) > 1:
+                        is_parallel = True
+            
+            # NEVER display panels in non-streaming mode
+            # The SDK will handle ALL display when CAI_STREAM=false
+            streaming_enabled = os.getenv("CAI_STREAM", "false").lower() == "true"
+            
+            # Only display panels if we're in streaming mode or parallel mode
+            # In streaming mode, the Live panels are handled by the streaming system
+            if streaming_enabled and is_parallel:
+                # Display the completed tool output
+                from cai.util import cli_print_tool_output
+                
+                # Calculate execution time
+                execution_time = time.time() - process_start_time
+                
+                # Generate a unique call_id if not provided
+                if not call_id:
+                    cmd_name = parts[0] if parts else "cmd"
+                    call_id = f"{cmd_name}_{str(uuid.uuid4())[:8]}"
+                
+                execution_info = {
+                    "status": "completed" if process.returncode == 0 else "error",
+                    "return_code": process.returncode,
+                    "environment": "Local",
+                    "host": os.path.basename(target_dir),
+                    "tool_time": execution_time
+                }
+                
+                # Display the tool output panel
+                cli_print_tool_output(
+                    tool_name=tool_name or "generic_linux_command",
+                    args={
+                        "command": parts[0] if parts else command,
+                        "args": parts[1] if len(parts) > 1 else "",
+                        "full_command": command,
+                        "workspace": os.path.basename(target_dir)
+                    },
+                    output=output.strip(),
+                    call_id=call_id,
+                    execution_info=execution_info,
+                    token_info=token_info,
+                    streaming=False  # This is non-streaming display
+                )
+            
+            return output.strip()
+            
+    except subprocess.TimeoutExpired as e:
+        error_output = e.stdout if hasattr(e, 'stdout') and e.stdout else str(e)
+        error_msg = f"Command timed out after {timeout} seconds\n{error_output}"
+        
+        # If we're streaming, show the timeout in the tool output panel
+        if stream and call_id:
+            from cai.util import finish_tool_streaming
+            # Parse the command the same way we did for streaming
+            parts = command.strip().split(' ', 1)
+            cmd_var = parts[0] if parts else ""
+            args_var = parts[1] if len(parts) > 1 else ""
+            
+            # Ensure tool_args has complete information
+            tool_args = {
+                "command": cmd_var,
+                "args": args_var if args_var.strip() else "",
+                "full_command": command,
+                "environment": "Local",
+                "workspace": os.path.basename(target_dir)
+            }
+            execution_info = {
+                "status": "timeout", 
+                "error": str(e),
+                "environment": "Local",
+                "host": os.path.basename(target_dir)
+            }
+            
+            # Get token info for agent display  
+            token_info = _get_agent_token_info()
+            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
+            
+        if stdout:
+            print("\033[32m" + error_msg + "\033[0m")
+            
+        return error_msg
+    except Exception as e:  # pylint: disable=broad-except
+        error_msg = f"Error executing local command: {e}"
+        
+        # If we're streaming, show the error in the tool output panel
+        if stream and call_id:
+            from cai.util import finish_tool_streaming
+            # Parse the command the same way we did for streaming
+            parts = command.strip().split(' ', 1)
+            cmd_var = parts[0] if parts else ""
+            args_var = parts[1] if len(parts) > 1 else ""
+            
+            # Ensure tool_args has complete information
+            tool_args = {
+                "command": cmd_var,
+                "args": args_var if args_var.strip() else "",
+                "full_command": command,
+                "environment": "Local",
+                "workspace": os.path.basename(target_dir)
+            }
+            execution_info = {
+                "status": "error", 
+                "error": str(e),
+                "environment": "Local",
+                "host": os.path.basename(target_dir)
+            }
+            
+            # Get token info for agent display  
+            token_info = _get_agent_token_info()
+            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
+            
+        print(color(error_msg, fg="red"))
+        return error_msg
+    finally:
+        # Always switch back to idle mode when function completes
+        stop_active_timer()
+        start_idle_timer()
+
+
+async def _run_docker_async(command, container_id, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None, args=None):
+    """Async version of Docker command execution using asyncio subprocess."""
+    import asyncio
+    
+    # Make sure we're in active time mode for tool execution
+    stop_idle_timer()
+    start_active_timer()
+    
+    try:
+        container_workspace = _get_container_workspace_path()
+        
+        # Parse command for display
+        parts = command.strip().split(' ', 1)
+        cmd_name = parts[0] if parts else ""
+        cmd_args = parts[1] if len(parts) > 1 else ""
+        
+        if not tool_name:
+            tool_name = f"{cmd_name}_command" if cmd_name else "command"
+        
+        # Build docker exec command
+        docker_cmd_list = [
+            "docker", "exec",
+            "-w", container_workspace,
+            container_id,
+            "sh", "-c", command
+        ]
+        
+        if stream:
+            from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
+            
+            # If args were provided (e.g., from execute_code), use them as base
+            # Otherwise create tool args for display
+            if args and isinstance(args, dict):
+                tool_args = args.copy()
+                # Add container-specific info
+                tool_args["container"] = container_id[:12]
+                tool_args["environment"] = "Container"
+                tool_args["workspace"] = container_workspace
+                tool_args["full_command"] = command
+            else:
+                tool_args = {
+                    "command": cmd_name,
+                    "args": cmd_args if cmd_args.strip() else "",
+                    "full_command": command,
+                    "container": container_id[:12],
+                    "environment": "Container",
+                    "workspace": container_workspace
+                }
+            
+            if not call_id:
+                call_id = f"cmd_{cmd_name}_{str(uuid.uuid4())[:8]}"
+            
+            token_info = _get_agent_token_info()
+            call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
+            
+            # Create async subprocess
+            process = await asyncio.create_subprocess_exec(
+                *docker_cmd_list,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            # Stream output
+            output_buffer = []
+            buffer_size = 0
+            update_interval = 3 if tool_name == "generic_linux_command" else 10
+            
+            start_time = time.time()
+            
+            # Read stdout line by line
+            async for line in process.stdout:
+                line_str = line.decode('utf-8', errors='replace')
+                output_buffer.append(line_str)
+                buffer_size += 1
+                
+                # Only update periodically to reduce UI refreshes
+                if buffer_size >= update_interval:
+                    # Show actual output as it's being collected
+                    current_output = ''.join(output_buffer)
+                    update_tool_streaming(tool_name, tool_args, current_output, call_id, token_info)
+                    buffer_size = 0
+            
+            # Wait for process completion
+            try:
+                return_code = await asyncio.wait_for(process.wait(), timeout=timeout)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                raise subprocess.TimeoutExpired(command, timeout)
+            
+            execution_time = time.time() - start_time
+            
+            # Get stderr if any
+            stderr_data = await process.stderr.read()
+            if stderr_data:
+                stderr_str = stderr_data.decode('utf-8', errors='replace')
+                output_buffer.append("\nERROR OUTPUT:\n" + stderr_str)
+            
+            final_output = ''.join(output_buffer)
+            if return_code != 0:
+                final_output += f"\nCommand exited with code {return_code}"
+            
+            execution_info = {
+                "status": "completed" if return_code == 0 else "error",
+                "return_code": return_code,
+                "environment": "Container",
+                "host": container_id[:12],
+                "tool_time": execution_time
+            }
+            
+            finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info, token_info)
+            return final_output
+            
+        else:
+            # Non-streaming async execution
+            start_time = time.time()
+            process = await asyncio.create_subprocess_exec(
+                *docker_cmd_list,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            try:
+                stdout_data, stderr_data = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                raise subprocess.TimeoutExpired(command, timeout)
+            
+            output = stdout_data.decode('utf-8', errors='replace') if stdout_data else ""
+            if not output and stderr_data:
+                output = stderr_data.decode('utf-8', errors='replace')
+            
+            if stdout:
+                context_msg = f"(docker:{container_id[:12]}:{container_workspace})"
+                print(f"\033[32m{context_msg} $ {command}\n{output}\033[0m")
+            
+            # Get token info for display
+            token_info = _get_agent_token_info()
+            
+            # Check if we're in parallel mode
+            is_parallel = False
+            if token_info and token_info.get("agent_id"):
+                agent_id = token_info.get("agent_id")
+                if agent_id and agent_id.startswith('P') and agent_id[1:].isdigit():
+                    if int(os.getenv("CAI_PARALLEL", "1")) > 1:
+                        is_parallel = True
+            
+            # NEVER display panels in non-streaming mode
+            # The SDK will handle ALL display when CAI_STREAM=false
+            streaming_enabled = os.getenv("CAI_STREAM", "false").lower() == "true"
+            
+            # Only display if we're in streaming mode AND parallel mode
+            if streaming_enabled and is_parallel:
+                from cai.util import cli_print_tool_output
+                
+                # Calculate execution time
+                execution_time = time.time() - start_time
+                
+                # Parse command for display
+                parts = command.strip().split(' ', 1)
+                
+                # Generate a unique call_id if not provided
+                if not call_id:
+                    cmd_name = parts[0] if parts else "cmd"
+                    call_id = f"container_{cmd_name}_{str(uuid.uuid4())[:8]}"
+                
+                execution_info = {
+                    "status": "completed" if process.returncode == 0 else "error",
+                    "return_code": process.returncode,
+                    "environment": "Container",
+                    "host": container_id[:12],
+                    "tool_time": execution_time
+                }
+                
+                # Display the tool output panel
+                display_args = args if args is not None else {
+                    "command": parts[0] if parts else command,
+                    "args": parts[1] if len(parts) > 1 else "",
+                    "full_command": command,
+                    "container": container_id[:12],
+                    "workspace": container_workspace
+                }
+                
+                cli_print_tool_output(
+                    tool_name=tool_name or "generic_linux_command",
+                    args=display_args,
+                    output=output.strip(),
+                    call_id=call_id,
+                    execution_info=execution_info,
+                    token_info=token_info,
+                    streaming=False
+                )
+            
+            return output.strip()
+            
+    except Exception as e:
+        error_msg = f"Error executing command in container: {str(e)}"
+        print(color(error_msg, fg="red"))
+        return error_msg
+    finally:
+        stop_active_timer()
+        start_idle_timer()
+
+
 def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, tool_name=None, workspace_dir=None, custom_args=None):
     """Runs command locally in the specified workspace_dir."""
     # Make sure we're in active time mode for tool execution
@@ -543,8 +1113,11 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             if not call_id:
                 call_id = f"cmd_{cmd_var}_{str(uuid.uuid4())[:8]}"
             
+            # Get token info for agent display
+            token_info = _get_agent_token_info()
+            
             # Initialize/use the call_id for this streaming session
-            call_id = start_tool_streaming(tool_name, tool_args, call_id)
+            call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
             
             # Start the process
             process = subprocess.Popen(
@@ -566,9 +1139,8 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             if tool_name == "generic_linux_command":
                 update_interval = 3  # Update more frequently for terminal commands
                 
-                # Add refresh rate info to tool_args for cli_print_tool_output
-                if "refresh_rate" not in tool_args:
-                    tool_args["refresh_rate"] = 2
+                # Don't add refresh_rate to tool_args as it affects command deduplication
+                # The refresh behavior is already handled by the streaming update logic
             
             # Stream stdout in real-time
             for line in iter(process.stdout.readline, ''):
@@ -582,7 +1154,7 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
                 # Only update periodically to reduce UI refreshes
                 if buffer_size >= update_interval:
                     current_output = ''.join(output_buffer)
-                    update_tool_streaming(tool_name, tool_args, current_output, call_id)
+                    update_tool_streaming(tool_name, tool_args, current_output, call_id, token_info)
                     buffer_size = 0
             
             # Finish process
@@ -610,7 +1182,7 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             }
             
             # Complete the streaming session with final output
-            finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info)
+            finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info, token_info)
             
             return final_output
         else:
@@ -626,9 +1198,67 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
             )
             output = result.stdout if result.stdout else result.stderr
             
-            # In non-streaming mode, we should NOT display the output via cli_print_tool_output
-            # to avoid duplication. The output will be handled by the calling function.
-            # Only return the raw output for the calling function to handle.
+            # Parse command for display
+            parts = command.strip().split(' ', 1)
+            
+            # In non-streaming mode (typically parallel execution), we should display 
+            # the tool output as a completed panel immediately
+            # Get token info for agent display
+            token_info = _get_agent_token_info()
+            
+            # Check if we're in parallel mode by checking agent ID
+            is_parallel = False
+            if token_info and token_info.get("agent_id"):
+                agent_id = token_info.get("agent_id")
+                if agent_id and agent_id.startswith('P') and agent_id[1:].isdigit():
+                    # Check CAI_PARALLEL to confirm
+                    if int(os.getenv("CAI_PARALLEL", "1")) > 1:
+                        is_parallel = True
+            
+            # NEVER display panels in non-streaming mode
+            # The SDK will handle ALL display when CAI_STREAM=false
+            streaming_enabled = os.getenv("CAI_STREAM", "false").lower() == "true"
+            
+            # Only display if we're in streaming mode AND parallel mode
+            if streaming_enabled and is_parallel:
+                # Display the completed tool output
+                from cai.util import cli_print_tool_output
+                
+                # Calculate execution time
+                execution_time = time.time() - process_start_time
+                
+                # Generate a unique call_id if not provided
+                if not call_id:
+                    cmd_name = parts[0] if parts else "cmd"
+                    call_id = f"{cmd_name}_{str(uuid.uuid4())[:8]}"
+                
+                execution_info = {
+                    "status": "completed" if result.returncode == 0 else "error",
+                    "return_code": result.returncode,
+                    "environment": "Local",
+                    "host": os.path.basename(target_dir),
+                    "tool_time": execution_time
+                }
+                
+                # Display the tool output panel
+                # Use provided custom_args if available, otherwise create default args
+                display_args = custom_args if custom_args is not None else {
+                    "command": parts[0] if parts else command,
+                    "args": parts[1] if len(parts) > 1 else "",
+                    "full_command": command,
+                    "workspace": os.path.basename(target_dir)
+                }
+                
+                cli_print_tool_output(
+                    tool_name=tool_name or "generic_linux_command",
+                    args=display_args,
+                    output=output.strip(),
+                    call_id=call_id,
+                    execution_info=execution_info,
+                    token_info=token_info,
+                    streaming=False  # This is non-streaming display
+                )
+            
             return output.strip()
     except subprocess.TimeoutExpired as e:
         error_output = e.stdout if hasattr(e, 'stdout') and e.stdout else str(e)
@@ -656,7 +1286,10 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
                 "environment": "Local",
                 "host": os.path.basename(target_dir)
             }
-            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info)
+            
+            # Get token info for agent display  
+            token_info = _get_agent_token_info()
+            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
             
         if stdout:
             print("\033[32m" + error_msg + "\033[0m")
@@ -689,7 +1322,10 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
                 "environment": "Local",
                 "host": os.path.basename(target_dir)
             }
-            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info)
+            
+            # Get token info for agent display  
+            token_info = _get_agent_token_info()
+            finish_tool_streaming(tool_name or f"{cmd_var}_command", tool_args, error_msg, call_id, execution_info, token_info)
             
         print(color(error_msg, fg="red"))
         return error_msg
@@ -697,6 +1333,123 @@ def _run_local(command, stdout=False, timeout=100, stream=False, call_id=None, t
         # Always switch back to idle mode when function completes
         stop_active_timer()
         start_idle_timer()
+
+
+async def run_command_async(command, ctf=None, stdout=False,  # pylint: disable=too-many-arguments # noqa: E501
+                      async_mode=False, session_id=None,
+                      timeout=100, stream=False, call_id=None, tool_name=None, args=None):
+    """
+    Async version of run_command that properly supports parallel execution.
+    
+    Run command in the appropriate environment (Docker, CTF, SSH, Local)
+    and workspace.
+
+    Args:
+        command: The command to execute
+        ctf: CTF environment object (if running in CTF)
+        stdout: Whether to print output to stdout
+        async_mode: Whether to run the command asynchronously
+        session_id: ID of an existing session to send the command to
+        timeout: Command timeout in seconds
+        stream: Whether to stream output in real-time
+        call_id: Unique ID for the command execution (for streaming)
+        tool_name: Name of the tool being executed (for display in streaming output).
+                  If None, the tool name will be derived from the command.
+        args: Additional arguments for the tool (for display and context).
+
+    Returns:
+        str: Command output, status message, or session ID.
+    """
+    # For now, we'll use a hybrid approach - delegate most of the logic to sync version
+    # but use async subprocess for local execution
+    
+    if ctf and not hasattr(ctf, "get_shell"):
+        ctf = None
+    
+    # Parse command into standard parts to ensure consistent naming
+    parts = command.strip().split(' ', 1)
+    cmd_name = parts[0] if parts else ""
+    cmd_args = parts[1] if len(parts) > 1 else ""
+    
+    # Generate a call_id if we're streaming and one wasn't provided
+    if not call_id and stream:
+        call_id = f"cmd_{cmd_name}_{str(uuid.uuid4())[:8]}"
+        
+    # If no tool_name is provided, derive it from the command in a consistent way
+    if not tool_name:
+        tool_name = f"{cmd_name}_command" if cmd_name else "command"
+    
+    # Determine execution environment
+    from cai.cli import ctf_global
+    ctf = ctf_global
+    
+    # Check for session execution
+    if session_id:
+        # Sessions need synchronous handling, delegate to sync version
+        import asyncio
+        import functools
+        
+        loop = asyncio.get_event_loop()
+        func = functools.partial(
+            run_command,
+            command, ctf, stdout, async_mode, session_id,
+            timeout, stream, call_id, tool_name, args
+        )
+        return await loop.run_in_executor(None, func)
+    
+    # Check execution environment priority
+    active_container = os.getenv("CAI_ACTIVE_CONTAINER", "")
+    is_ssh_env = all(os.getenv(var) for var in ['SSH_USER', 'SSH_HOST'])
+    
+    # For container execution, use async subprocess
+    if active_container and not is_ssh_env:
+        return await _run_docker_async(
+            command,
+            container_id=active_container,
+            stdout=stdout,
+            timeout=timeout,
+            stream=stream,
+            call_id=call_id,
+            tool_name=tool_name,
+            args=args
+        )
+    
+    # For CTF execution, still need to use sync version in executor
+    # because ctf.get_shell() is synchronous
+    if ctf and os.getenv('CTF_INSIDE', "True").lower() == "true":
+        import asyncio
+        import functools
+        
+        loop = asyncio.get_event_loop()
+        func = functools.partial(
+            _run_ctf,
+            ctf, command, stdout, timeout, _get_workspace_dir(), stream
+        )
+        return await loop.run_in_executor(None, func)
+    
+    # For SSH, delegate to sync version for now
+    if is_ssh_env:
+        import asyncio
+        import functools
+        
+        loop = asyncio.get_event_loop()
+        func = functools.partial(
+            _run_ssh,
+            command, stdout, timeout, _get_workspace_dir(), stream
+        )
+        return await loop.run_in_executor(None, func)
+    
+    # For local execution, use the async version
+    return await _run_local_async(
+        command,
+        stdout=stdout,
+        timeout=timeout,
+        stream=stream,
+        call_id=call_id,
+        tool_name=tool_name,
+        workspace_dir=_get_workspace_dir(),
+        custom_args=args
+    )
 
 
 def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arguments # noqa: E501
@@ -841,6 +1594,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 args=session_args,
                 output=output,
                 execution_info=execution_info,
+                token_info=_get_agent_token_info(),
                 streaming=False
             )
             
@@ -910,12 +1664,15 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 if initial_output:
                     output_msg += f"\n\n{initial_output}"
                 
+                # Get agent token info
+                token_info = _get_agent_token_info()
                 # Display the session creation command and initial output
                 cli_print_tool_output(
                     tool_name="generic_linux_command",
                     args=session_creation_args,
                     output=output_msg,
                     execution_info=execution_info,
+                    token_info=token_info,
                     streaming=False
                 )
                 
@@ -929,29 +1686,42 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 # Import the streaming utilities from util
                 from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
                 
-                # Create args dictionary with standardized format
-                tool_args = {
-                    "command": cmd_name,
-                    "args": cmd_args if cmd_args.strip() else "",
-                    "full_command": command,
-                    "container": container_id[:12],
-                    "environment": "Container",
-                    "workspace": container_workspace
-                }
+                # If args were provided (e.g., from execute_code), use them
+                # Otherwise create args dictionary with standardized format
+                if args is not None:
+                    tool_args = args.copy() if isinstance(args, dict) else {"args": str(args)}
+                    # Add container-specific info
+                    tool_args["container"] = container_id[:12]
+                    tool_args["environment"] = "Container"
+                    tool_args["workspace"] = container_workspace
+                    tool_args["full_command"] = command
+                else:
+                    tool_args = {
+                        "command": cmd_name,
+                        "args": cmd_args if cmd_args.strip() else "",
+                        "full_command": command,
+                        "container": container_id[:12],
+                        "environment": "Container",
+                        "workspace": container_workspace
+                    }
                 
                 # Add refresh rate info for generic_linux_command
                 if tool_name == "generic_linux_command":
                     tool_args["refresh_rate"] = 2
                 
-                # Initialize the streaming session with a consistent call_id format
-                call_id = start_tool_streaming(tool_name, tool_args, call_id)
+                # Get token info for agent display
+                token_info = _get_agent_token_info()
                 
-                # Update with "executing" status
+                # Initialize the streaming session with a consistent call_id format
+                call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
+                
+                # Start with a message indicating execution is starting
                 update_tool_streaming(
                     tool_name,
                     tool_args,
-                    f"Executing in container {container_id[:12]} at {container_workspace}:\n{command}\n\nPreparing environment...",
-                    call_id
+                    f"Executing: {command}",  # Show the command being executed
+                    call_id,
+                    token_info
                 )
                 
                 # Ensure workspace directory exists inside the container first
@@ -967,13 +1737,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     timeout=10
                 )
                 
-                # Update status once environment is prepared
-                update_tool_streaming(
-                    tool_name,
-                    tool_args,
-                    f"Executing in container {container_id[:12]} at {container_workspace}:\n{command}\n\nRunning command...",
-                    call_id
-                )
+                # Don't update with output during execution - let the streaming handle it
 
                 # Build docker exec command as a single shell string for streaming
                 docker_exec_cmd = (
@@ -1012,8 +1776,11 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                         
                         # Only update periodically to reduce UI refreshes
                         if buffer_size >= update_interval:
+                            # Show actual output as it's being collected
                             current_output = ''.join(output_buffer)
-                            update_tool_streaming(tool_name, tool_args, current_output, call_id)
+                            # Get token info for agent display
+                            token_info = _get_agent_token_info()
+                            update_tool_streaming(tool_name, tool_args, current_output, call_id, token_info)
                             buffer_size = 0
                     
                     # Finish process
@@ -1041,7 +1808,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     }
                     
                     # Complete the streaming session with final output
-                    finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info)
+                    finish_tool_streaming(tool_name, tool_args, final_output, call_id, execution_info, token_info)
                     
                     # Switch back to idle mode after streaming command completes
                     stop_active_timer()
@@ -1061,7 +1828,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     }
                     
                     # Complete with timeout error
-                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info)
+                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info, token_info)
                     
                     # Switch back to idle mode after timeout
                     stop_active_timer()
@@ -1082,7 +1849,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     }
                     
                     # Complete with error
-                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info)
+                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info, token_info)
                     
                     # Switch back to idle mode after error
                     stop_active_timer()
@@ -1092,6 +1859,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     return _run_local(command, stdout, timeout, False, None, tool_name, _get_workspace_dir(), args)
 
             # Handle Synchronous Execution in Container
+            process_start_time = time.time()  # Track execution time
             try:
                 # Ensure container workspace exists (best effort)
                 # Consider moving this to workspace set/container activation
@@ -1130,6 +1898,66 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     # Fallback to local execution, preserving workspace context
                     return _run_local(command, stdout, timeout, stream, call_id, tool_name, _get_workspace_dir(), args) # noqa E501
 
+                # Only display panel if NOT streaming
+                # When streaming=True, the panel is already shown by the streaming system
+                if not stream:
+                    # Get token info for display
+                    token_info = _get_agent_token_info()
+                    
+                    # Check if we're in parallel mode
+                    is_parallel = False
+                    if token_info and token_info.get("agent_id"):
+                        agent_id = token_info.get("agent_id")
+                        if agent_id and agent_id.startswith('P') and agent_id[1:].isdigit():
+                            if int(os.getenv("CAI_PARALLEL", "1")) > 1:
+                                is_parallel = True
+                    
+                    # NEVER display panels in non-streaming mode
+                    # The SDK will handle ALL display when CAI_STREAM=false
+                    streaming_enabled = os.getenv("CAI_STREAM", "false").lower() == "true"
+                    
+                    # Only display if we're in streaming mode AND parallel mode
+                    if streaming_enabled and is_parallel:
+                        from cai.util import cli_print_tool_output
+                        
+                        # Calculate execution time
+                        execution_time = time.time() - process_start_time if 'process_start_time' in locals() else 0
+                        
+                        # Parse command for display
+                        parts = command.strip().split(' ', 1)
+                        
+                        # Generate a unique call_id if not provided
+                        if not call_id:
+                            cmd_name = parts[0] if parts else "cmd"
+                            call_id = f"container_{cmd_name}_{str(uuid.uuid4())[:8]}"
+                        
+                        execution_info = {
+                            "status": "completed" if result.returncode == 0 else "error",
+                            "return_code": result.returncode,
+                            "environment": "Container",
+                            "host": container_id[:12],
+                            "tool_time": execution_time
+                        }
+                        
+                        # Display the tool output panel
+                        display_args = args if args is not None else {
+                            "command": parts[0] if parts else command,
+                            "args": parts[1] if len(parts) > 1 else "",
+                            "full_command": command,
+                            "container": container_id[:12],
+                            "workspace": container_workspace
+                        }
+                        
+                        cli_print_tool_output(
+                            tool_name=tool_name or "generic_linux_command",
+                            args=display_args,
+                            output=output,
+                            call_id=call_id,
+                            execution_info=execution_info,
+                            token_info=token_info,
+                            streaming=False
+                        )
+
                 # Switch back to idle mode after command completes
                 stop_active_timer()
                 start_idle_timer()
@@ -1163,21 +1991,32 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 # Import the streaming utilities from util
                 from cai.util import start_tool_streaming, update_tool_streaming, finish_tool_streaming
                 
-                # Create args dictionary with standardized format
-                tool_args = {
-                    "command": cmd_name,
-                    "args": cmd_args if cmd_args.strip() else "",
-                    "full_command": command,
-                    "environment": "CTF",
-                    "workspace": os.path.basename(_get_workspace_dir())
-                }
+                # If args were provided (e.g., from execute_code), use them
+                # Otherwise create args dictionary with standardized format
+                if args is not None:
+                    tool_args = args.copy() if isinstance(args, dict) else {"args": str(args)}
+                    # Add CTF-specific info
+                    tool_args["environment"] = "CTF"
+                    tool_args["workspace"] = os.path.basename(_get_workspace_dir())
+                    tool_args["full_command"] = command
+                else:
+                    tool_args = {
+                        "command": cmd_name,
+                        "args": cmd_args if cmd_args.strip() else "",
+                        "full_command": command,
+                        "environment": "CTF",
+                        "workspace": os.path.basename(_get_workspace_dir())
+                    }
                 
                 # Add refresh rate info for generic_linux_command
                 if tool_name == "generic_linux_command":
                     tool_args["refresh_rate"] = 2
                 
+                # Get token info for agent display
+                token_info = _get_agent_token_info()
+                
                 # Initialize the streaming session with a consistent call_id format
-                call_id = start_tool_streaming(tool_name, tool_args, call_id)
+                call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
                 
                 target_dir = _get_workspace_dir()
                 #full_command = f"cd '{target_dir}' && {command}"
@@ -1187,7 +2026,8 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     tool_name, 
                     tool_args, 
                     f"Executing in CTF environment: {full_command}\n\nWaiting for response...", 
-                    call_id
+                    call_id,
+                    token_info
                 )
                 
                 try:
@@ -1204,7 +2044,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     }
                     
                     # Complete the streaming with final output
-                    finish_tool_streaming(tool_name, tool_args, output, call_id, execution_info)
+                    finish_tool_streaming(tool_name, tool_args, output, call_id, execution_info, token_info)
                     
                     # Switch back to idle mode after CTF command completes
                     stop_active_timer()
@@ -1221,7 +2061,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                     }
                     
                     # Complete the streaming with error output
-                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info)
+                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info, token_info)
                     
                     # Switch back to idle mode after error
                     stop_active_timer()
@@ -1248,28 +2088,40 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 ssh_host = os.environ.get('SSH_HOST', 'host')
                 ssh_connection = f"{ssh_user}@{ssh_host}"
                 
-                # Create args dictionary with standardized format
-                tool_args = {
-                    "command": cmd_name,
-                    "args": cmd_args if cmd_args.strip() else "",
-                    "full_command": command,
-                    "ssh_host": ssh_connection,
-                    "environment": "SSH"
-                }
+                # If args were provided (e.g., from execute_code), use them
+                # Otherwise create args dictionary with standardized format
+                if args is not None:
+                    tool_args = args.copy() if isinstance(args, dict) else {"args": str(args)}
+                    # Add SSH-specific info
+                    tool_args["ssh_host"] = ssh_connection
+                    tool_args["environment"] = "SSH"
+                    tool_args["full_command"] = command
+                else:
+                    tool_args = {
+                        "command": cmd_name,
+                        "args": cmd_args if cmd_args.strip() else "",
+                        "full_command": command,
+                        "ssh_host": ssh_connection,
+                        "environment": "SSH"
+                    }
                 
                 # Add refresh rate info for generic_linux_command
                 if tool_name == "generic_linux_command":
                     tool_args["refresh_rate"] = 2
                 
+                # Get token info for agent display
+                token_info = _get_agent_token_info()
+                
                 # Initialize streaming session with a consistent call_id format
-                call_id = start_tool_streaming(tool_name, tool_args, call_id)
+                call_id = start_tool_streaming(tool_name, tool_args, call_id, token_info)
                 
                 # Update with "executing" status  
                 update_tool_streaming(
                     tool_name, 
                     tool_args, 
                     f"Executing on {ssh_connection}: {command}\n\nWaiting for response...", 
-                    call_id
+                    call_id,
+                    token_info
                 )
                 
                 try:
@@ -1310,8 +2162,11 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                         "tool_time": execution_time
                     }
                     
+                    # Get agent token info
+                    token_info = _get_agent_token_info()
+                    
                     # Complete the streaming with final output
-                    finish_tool_streaming(tool_name, tool_args, result_with_info, call_id, execution_info)
+                    finish_tool_streaming(tool_name, tool_args, result_with_info, call_id, execution_info, token_info)
                     
                     # Switch back to idle mode after SSH command completes
                     stop_active_timer()
@@ -1330,8 +2185,11 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                         "error": str(e)
                     }
                     
+                    # Get agent token info
+                    token_info = _get_agent_token_info()
+                    
                     # Complete the streaming with timeout error
-                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info)
+                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info, token_info)
                     
                     # Switch back to idle mode after timeout
                     stop_active_timer()
@@ -1349,8 +2207,11 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                         "error": str(e)
                     }
                     
+                    # Get agent token info
+                    token_info = _get_agent_token_info()
+                    
                     # Complete the streaming with error
-                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info)
+                    finish_tool_streaming(tool_name, tool_args, error_msg, call_id, execution_info, token_info)
                     
                     # Switch back to idle mode after error
                     stop_active_timer()
@@ -1418,6 +2279,7 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
                 args=session_creation_args,
                 output=output_msg,
                 execution_info=execution_info,
+                token_info=_get_agent_token_info(),
                 streaming=False
             )
             
@@ -1427,12 +2289,13 @@ def run_command(command, ctf=None, stdout=False,  # pylint: disable=too-many-arg
             return f"Started async session {new_session_id} locally. Use this ID to interact."
 
         # Handle Synchronous Execution Locally
-        # Pass stream=True if we're streaming to use streaming functionality
+        # Pass stream parameter as provided (not always True)
+        # In parallel mode, stream will be False since Runner.run() is non-streaming
         result = _run_local(
             command, 
             stdout, 
             timeout, 
-            stream=True, 
+            stream=stream,  # Use the stream parameter passed to run_command
             call_id=call_id,
             tool_name=tool_name,
             workspace_dir=_get_workspace_dir(),

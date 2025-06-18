@@ -255,8 +255,59 @@ def display_welcome_tips(console: Console):
     ))
 
 
+def display_agent_overview(console: Console):
+    """
+    Display a quick overview of available agents.
+    
+    Args:
+        console: Rich console for output
+    """
+    from rich.table import Table
+    
+    # Create agents table
+    agents_table = Table(
+        title="",
+        box=None,
+        show_header=True,
+        header_style="bold yellow",
+        show_edge=False,
+        padding=(0, 1)
+    )
+    
+    agents_table.add_column("Agent", style="cyan", width=25)
+    agents_table.add_column("Specialization", style="white")
+    agents_table.add_column("Best For", style="green")
+    
+    # Add agent rows
+    agents = [
+        ("one_tool_agent", "Basic CTF solver", "CTF challenges, Linux operations"),
+        ("red_teamer", "Offensive security", "Penetration testing, exploitation"),
+        ("blue_teamer", "Defensive security", "System defense, monitoring"),
+        ("bug_bounter", "Bug bounty hunter", "Web security, API testing"),
+        ("dfir", "Digital forensics", "Incident response, analysis"),
+        ("network_traffic_analyzer", "Network security", "Traffic analysis, monitoring"),
+        ("flag_discriminator", "CTF flag extraction", "Finding and validating flags"),
+        ("codeagent", "Code specialist", "Exploit development, analysis"),
+        ("thought", "Strategic planning", "High-level analysis, planning"),
+    ]
+    
+    for agent, spec, best_for in agents:
+        agents_table.add_row(agent, spec, best_for)
+    
+    # Create the panel
+    agent_panel = Panel(
+        agents_table,
+        title="[bold yellow]🤖 Available Security Agents[/bold yellow]",
+        border_style="yellow",
+        padding=(1, 2),
+        title_align="center"
+    )
+    
+    console.print(agent_panel)
+
+
 def display_quick_guide(console: Console):
-    """Display the quick guide."""
+    """Display the quick guide with comprehensive command reference."""
     # Display help panel instead
     from rich.panel import Panel
     from rich.text import Text
@@ -266,26 +317,33 @@ def display_quick_guide(console: Console):
     help_text = Text.assemble(
         ("CAI Command Reference", "bold cyan underline"), "\n\n",
         ("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "dim"), "\n",
-        ("WORKSPACE", "bold yellow"), "\n",
-        ("  CAI>/ws set [NAME]", "green"), " - Set current workspace directory\n\n",
-        ("AGENT MANAGEMENT", "bold yellow"), "\n",
-        ("  CAI>/agent [NAME]", "green"), " - Switch to specific agent by name\n",
-        ("  CAI>/agent 1 2 3", "green"), " - Switch to agent by position number\n",
-        ("  CAI>/agent", "green"), " - Display list of all available agents\n\n",
-        ("MODEL SELECTION", "bold yellow"), "\n",
-        ("  CAI>/model [NAME]", "green"), " - Change to a different model by name\n",
-        ("  CAI>/model 1", "green"), " - Change model by position number\n",
-        ("  CAI>/model", "green"), " - Show all available models\n\n",
-        ("INPUT & EXECUTION", "bold yellow"), "\n",
-        ("  ESC + ENTER", "green"), " - Enter multi-line input mode\n",
-        ("  CAI>/shell or CAI> $", "green"), " - Run system shell commands\n",
-        ("  CAI>hi, cybersecurity AI", "green"), " - Any text without commands will be sent as a prompt\n",
-        ("  CAI>/help", "green"), " - Display complete command reference\n",
-        ("  CAI>/flush or CAI> /clear", "green"), " - Clear the conversation history\n\n",
-        ("UTILITY COMMANDS", "bold yellow"), "\n",
-        ("  CAI>/mcp", "green"), " - Load additional tools with MCP server to an agent\n",
-        ("  CAI>/virt", "green"), " - Show all available virtualized environments\n",
-        ("  CAI>/flush", "green"), " - Flush context/message list\n",
+        ("AGENT MANAGEMENT", "bold yellow"), " (/a)\n",
+        ("  CAI>/agent list", "green"), " - List all available agents\n",
+        ("  CAI>/agent select [NAME]", "green"), " - Switch to specific agent\n",
+        ("  CAI>/agent info [NAME]", "green"), " - Show agent details\n",
+        ("  CAI>/parallel add [NAME]", "green"), " - Configure parallel agents\n\n",
+        
+        ("MEMORY & HISTORY", "bold yellow"), "\n",
+        ("  CAI>/memory list", "green"), " - List saved memories\n",
+        ("  CAI>/history", "green"), " - View conversation history\n",
+        ("  CAI>/compact", "green"), " - AI-powered conversation summary\n",
+        ("  CAI>/flush", "green"), " - Clear conversation history\n\n",
+        
+        ("ENVIRONMENT", "bold yellow"), "\n",
+        ("  CAI>/workspace set [NAME]", "green"), " - Set workspace directory\n",
+        ("  CAI>/config", "green"), " - Manage environment variables\n",
+        ("  CAI>/virt run [IMAGE]", "green"), " - Run Docker containers\n\n",
+        
+        ("TOOLS & INTEGRATION", "bold yellow"), "\n",
+        ("  CAI>/mcp load [TYPE] [CONFIG]", "green"), " - Load MCP servers\n",
+        ("  CAI>/shell [COMMAND]", "green"), " or $ - Execute shell commands\n",
+        ("  CAI>/model [NAME]", "green"), " - Change AI model\n\n",
+        
+        ("QUICK SHORTCUTS", "bold yellow"), "\n",
+        ("  ESC + ENTER", "green"), " - Multi-line input\n",
+        ("  TAB", "green"), " - Command completion\n",
+        ("  ↑/↓", "green"), " - Command history\n",
+        ("  Ctrl+C", "green"), " - Interrupt/Exit\n",
         ("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "dim"), "\n",
     )
     
@@ -294,28 +352,43 @@ def display_quick_guide(console: Console):
     current_agent_type = os.getenv('CAI_AGENT_TYPE', "one_tool_agent")
     
     config_text = Text.assemble(
-        ("Quick Start Configuration", "bold cyan underline"), "\n\n",
-        ("1. Configure .env file with your settings", "yellow"), "\n",
-        ("2. Select an agent: ", "yellow"), f"by default: CAI_AGENT_TYPE={current_agent_type}\n",
-        ("3. Select a model: ", "yellow"), f"by default: CAI_MODEL={current_model}\n\n",
-
+        ("Quick Start Workflows", "bold cyan underline"), "\n\n",
+        ("🎯 CTF Challenge", "bold yellow"), "\n",
+        ("  1. CAI> /agent select redteam_agent", "green"), "\n",
+        ("  2. CAI> /workspace set ctf_name", "green"), "\n",
+        ("  3. CAI> Describe the challenge...", "green"), "\n\n",
+        
+        ("🐛 Bug Bounty", "bold yellow"), "\n",
+        ("  1. CAI> /agent select bug_bounter_agent", "green"), "\n",
+        ("  2. CAI> /model claude-3-7-sonnet", "green"), "\n",
+        ("  3. CAI> Test https://example.com", "green"), "\n\n",
+        
         ("CAI collects pseudonymized data to improve our research.\n"
          "Your privacy is protected in compliance with GDPR.\n"
          "Continue to start, or press Ctrl-C to exit.", "yellow"), "\n\n",
         
-        ("Basic Usage:", "bold yellow"), "\n",
-        ("  1. CAI> /model", "green"), " - View all available models first\n",
-        ("  2. CAI> /agent", "green"), " - View all available agents first\n",
-        ("  3. CAI> /model deepseek/deepseek-chat", "green"), " - Then select your preferred model\n",
-        ("  4. CAI> /agent 16", "green"), " - Then select your preferred agent\n",
-        ("  5. CAI> Scan 192.168.1.1", "green"), " - Example prompt for target scan\n\n",
-        ("  /help", "green"), " - Display complete command reference\n\n",
-        ("Common Environment Variables:", "bold yellow"), "\n",
-        ("  CAI_MODEL", "green"), f" - Model to use (default: {current_model})\n",
-        ("  CAI_AGENT_TYPE", "green"), f" - Agent type (default: {current_agent_type})\n",
-        ("  CAI_DEBUG", "green"), f" - Debug level (default: {os.getenv('CAI_DEBUG', '1')})\n",
-        ("  CAI_MAX_TURNS", "green"), f" - Max conversation turns (default: {os.getenv('CAI_MAX_TURNS', 'inf')})\n",
-        ("  CAI_TRACING", "green"), f" - Enable tracing (default: {os.getenv('CAI_TRACING', 'true')})\n",
+        ("🔍 Parallel Recon", "bold yellow"), "\n",
+        ("  1. CAI> /parallel add red_teamer", "green"), "\n",
+        ("  2. CAI> /parallel add network_traffic_analyzer", "green"), "\n",
+        ("  3. CAI> Scan 192.168.1.0/24", "green"), "\n\n",
+        
+        ("🛠️ MCP Tools Integration", "bold yellow"), "\n",
+        ("  1. CAI> /mcp load sse http://localhost:3000", "green"), "\n",
+        ("  2. CAI> /mcp add server_name agent_name", "green"), "\n",
+        ("  3. CAI> Use the new tools...", "green"), "\n\n",
+        
+        ("Environment Variables:", "bold yellow"), "\n",
+        ("  CAI_MODEL", "green"), f" = {current_model}\n",
+        ("  CAI_AGENT_TYPE", "green"), f" = {current_agent_type}\n",
+        ("  CAI_PARALLEL", "green"), f" = {os.getenv('CAI_PARALLEL', '1')}\n",
+        ("  CAI_STREAM", "green"), f" = {os.getenv('CAI_STREAM', 'true')}\n",
+        ("  CAI_WORKSPACE", "green"), f" = {os.getenv('CAI_WORKSPACE', 'default')}\n\n",
+        
+        ("💡 Pro Tips:", "bold yellow"), "\n",
+        ("• Use /help for detailed command help\n", "dim"),
+        ("• Use /help quick for this guide\n", "dim"),
+        ("• Use /help commands for all commands\n", "dim"),
+        ("• Use $ prefix for quick shell: $ ls\n", "dim"),
     )
     
     # Create additional tips panels
@@ -329,8 +402,16 @@ def display_quick_guide(console: Console):
         title_align="center"
     )
     
+    # Simplified privacy notice
+    privacy_notice = Text.assemble(
+        ("CAI collects pseudonymized data to improve our research.\n"
+         "Your privacy is protected in compliance with GDPR.\n"
+         "Continue to start, or press Ctrl-C to exit.", "yellow"), "\n\n",
+    )
+    
     context_tip = Panel(
         Text.assemble(
+            ("🔒 Security-Focused AI Framework\n\n", "bold white"),
             "For optimal cybersecurity AI performance, use\n", 
             ("alias0", "bold green"), 
             " - specifically designed for cybersecurity\n"
@@ -346,14 +427,13 @@ def display_quick_guide(console: Console):
             " and its privacy-first approach:\n",
             ("https://news.aliasrobotics.com/alias0-a-privacy-first-cybersecurity-ai/", "blue underline")
         ),
-        title="[bold yellow]Cybersecurity Model Tip[/bold yellow]",
+        title="[bold yellow]🛡️ Alias0 - best model for cybersecurity [/bold yellow]",
         border_style="yellow",
         padding=(1, 2),
         title_align="center"
     )
-    
     # Combine tips into a group
-    # tips_group = Group(ollama_tip, context_tip)
+    # tips_group = Group(ollama_tip, context_tip, privacy_notice)
     tips_group = Group(context_tip)
     
     # Create a three-column panel layout
@@ -364,7 +444,7 @@ def display_quick_guide(console: Console):
             expand=True,
             align="center"
         ),
-        title="[bold]CAI Quick Guide[/bold]",
+        title="[bold]🚀 CAI defacto scaffolding for cybersecurity agents - Type /help for detailed documentation[/bold]",
         border_style="blue",
         padding=(1, 2),
         title_align="center"

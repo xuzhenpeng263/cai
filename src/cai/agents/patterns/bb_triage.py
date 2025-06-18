@@ -10,6 +10,7 @@ complete communication network for comprehensive bug bounty and triage analysis.
 from cai.agents.retester import retester_agent
 from cai.agents.bug_bounter import bug_bounter_agent
 from cai.sdk.agents import handoff
+from cai.util import append_instructions
 
 
 # Clone agents to avoid modifying the original instances
@@ -43,18 +44,18 @@ _bug_bounter_agent_copy.description = (
 )
 
 # Add handoff instructions to Bug Bounter agent
-if _bug_bounter_agent_copy.instructions:
-    _bug_bounter_agent_copy.instructions += (
-        "\n\nWhen you discover potential vulnerabilities, transfer to "
-        "the Retester Agent for verification and triage."
-    )
+append_instructions(
+    _bug_bounter_agent_copy,
+    "\n\nWhen you discover potential vulnerabilities, transfer to "
+    "the Retester Agent for verification and triage."
+)
 
 # Add handoff instructions to Retester agent
-if _retester_agent_copy.instructions:
-    _retester_agent_copy.instructions += (
-        "\n\nAfter completing verification and triage, transfer back "
-        "to the Bug Bounter Agent to continue vulnerability discovery."
-    )
+append_instructions(
+    _retester_agent_copy,
+    "\n\nAfter completing verification and triage, transfer back "
+    "to the Bug Bounter Agent to continue vulnerability discovery."
+)
 
 # Initialize the swarm pattern with the bug bounter agent as the entry point
 bb_triage_swarm_pattern = _bug_bounter_agent_copy

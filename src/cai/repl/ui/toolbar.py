@@ -7,6 +7,8 @@ import socket
 import platform
 import threading
 import time
+import subprocess
+import shutil
 from functools import lru_cache
 import requests  # pylint: disable=import-error
 from prompt_toolkit.formatted_text import HTML  # pylint: disable=import-error
@@ -18,7 +20,8 @@ toolbar_last_refresh = [datetime.datetime.now()]
 toolbar_cache = {
     'html': "",
     'last_update': datetime.datetime.now(),
-    'refresh_interval': 5  # Refresh every 60 seconds
+    'refresh_interval': 5,  # Refresh every 5 seconds
+    'context_warning_shown': False  # Track if we've shown context warning
 }
 
 # Cache for system information that rarely changes
@@ -47,6 +50,14 @@ def get_system_info():
             system_info['os_version'] = "unknown"
     
     return system_info
+
+
+def get_terminal_width():
+    """Get the terminal width."""
+    try:
+        return shutil.get_terminal_size().columns
+    except:
+        return 80  # Default width
 
 
 def update_toolbar_in_background():
@@ -110,17 +121,102 @@ def update_toolbar_in_background():
         timezone_name = datetime.datetime.now().astimezone().tzname()
         current_time_with_tz = f"{current_time} {timezone_name}"
 
-        # Update the cache
-        toolbar_cache['html'] = HTML(
-            f"<{active_env_color}><b>ENV:</b> {active_env_icon} {active_env_name}</{active_env_color}>|"
-            f"<ansired><b>IP:</b></ansired> <ansigreen>{ip_address}</ansigreen> | "
-            f"<ansiyellow><b>OS:</b></ansiyellow> <ansiblue>{os_name} {os_version}</ansiblue> | "
-            f"<ansicyan><b>Ollama:</b></ansicyan> <ansimagenta>{ollama_status}</ansimagenta> | "
-            f"<ansiyellow><b>Model:</b></ansiyellow> <ansigreen>{os.getenv('CAI_MODEL', 'default')}</ansigreen> | "
-            f"<ansicyan><b>Max Turns:</b></ansicyan> <ansiblue>{os.getenv('CAI_MAX_TURNS', 'inf')}</ansiblue> | "
-            f"<ansiyellow><b>Price Limit:</b></ansiyellow> <ansiblue>{os.getenv('CAI_PRICE_LIMIT', 'inf')}</ansiblue> | "
-            f"<ansigray>{current_time_with_tz}</ansigray>"
-        )
+        # Get auto-compact status and context usage
+        auto_compact = os.getenv('CAI_AUTO_COMPACT', 'true').lower() == 'true'
+        
+        # Try to get context usage from environment (set by openai_chatcompletions.py)
+        context_usage = 0.0
+        try:
+            context_usage = float(os.getenv('CAI_CONTEXT_USAGE', '0.0'))
+        except:
+            pass
+            
+        # Determine auto-compact display based on usage
+        if auto_compact:
+            if context_usage >= 0.8:  # Above 80%
+                auto_compact_str = f"⚠️ {int(context_usage * 100)}%"
+                auto_compact_color = "ansired"  # Red for warning
+                # Show warning if not already shown
+                if not toolbar_cache.get('context_warning_shown', False) and context_usage > 0:
+                    toolbar_cache['context_warning_shown'] = True
+            elif context_usage >= 0.6:  # Above 60%
+                auto_compact_str = f"✓ {int(context_usage * 100)}%"
+                auto_compact_color = "ansiyellow"  # Yellow for caution
+            elif context_usage > 0:  # Show percentage if available
+                auto_compact_str = f"✓ {int(context_usage * 100)}%"
+                auto_compact_color = "ansigreen"
+            else:
+                auto_compact_str = "✓"
+                auto_compact_color = "ansigreen"
+        else:
+            if context_usage >= 0.8:  # Warning even when disabled
+                auto_compact_str = f"✗ {int(context_usage * 100)}%!"
+                auto_compact_color = "ansired"
+            else:
+                auto_compact_str = "✗"
+                auto_compact_color = "ansired"
+        
+        # Get memory status
+        memory_enabled = os.getenv('CAI_MEMORY', 'false').lower() == 'true'
+        memory_str = "✓"  if memory_enabled else "✗"
+        memory_color = "ansigreen" if memory_enabled else "ansigray"
+        
+        # Get streaming status
+        streaming_enabled = os.getenv('CAI_STREAM', 'false').lower() == 'true'
+        stream_str = "✓" if streaming_enabled else "✗"
+        stream_color = "ansigreen" if streaming_enabled else "ansigray"
+        
+        # Get parallel agent count
+        parallel_count = os.getenv('CAI_PARALLEL', '1')
+        parallel_color = "ansigreen" if int(parallel_count) > 1 else "ansigray"
+        
+        # Get tracing status
+        tracing_enabled = os.getenv('CAI_TRACING', 'false').lower() == 'true'
+        trace_str = "✓" if tracing_enabled else "✗"
+        trace_color = "ansigreen" if tracing_enabled else "ansigray"
+        
+        # Get terminal width to decide on toolbar format
+        terminal_width = get_terminal_width()
+        
+        # Build toolbar based on terminal width
+        if terminal_width < 120:  # Compact mode
+            # Show only the most critical information
+            # Shorten model name for compact view
+            model_name = os.getenv('CAI_MODEL', 'default')
+            if len(model_name) > 10:
+                model_name = model_name[:9] + "…"
+            
+            toolbar_cache['html'] = HTML(
+                f"<{active_env_color}>{active_env_icon}</{active_env_color}> "
+                f"<ansigreen>{model_name}</ansigreen> | "
+                f"<{auto_compact_color}>AC:{auto_compact_str}</{auto_compact_color}> | "
+                f"<{stream_color}>S:{stream_str}</{stream_color}> | "
+                f"<ansiblue>${os.getenv('CAI_PRICE_LIMIT', 'inf')}</ansiblue> | "
+                f"<ansigray>{current_time}</ansigray>"
+            )
+        elif terminal_width < 160:  # Medium mode
+            toolbar_cache['html'] = HTML(
+                f"<{active_env_color}><b>ENV:</b> {active_env_icon} {active_env_name[:15]}</{active_env_color}> | "
+                f"<ansiyellow><b>Model:</b></ansiyellow> <ansigreen>{os.getenv('CAI_MODEL', 'default')}</ansigreen> | "
+                f"<ansicyan><b>AutoC:</b></ansicyan> <{auto_compact_color}>{auto_compact_str}</{auto_compact_color}> | "
+                f"<ansicyan><b>Mem:</b></ansicyan> <{memory_color}>{memory_str}</{memory_color}> | "
+                f"<ansicyan><b>Stream:</b></ansicyan> <{stream_color}>{stream_str}</{stream_color}> | "
+                f"<ansiyellow><b>$:</b></ansiyellow> <ansiblue>${os.getenv('CAI_PRICE_LIMIT', 'inf')}</ansiblue> | "
+                f"<ansigray>{current_time_with_tz}</ansigray>"
+            )
+        else:  # Full mode
+            toolbar_cache['html'] = HTML(
+                f"<{active_env_color}><b>ENV:</b> {active_env_icon} {active_env_name}</{active_env_color}> | "
+                f"<ansiyellow><b>Model:</b></ansiyellow> <ansigreen>{os.getenv('CAI_MODEL', 'default')}</ansigreen> | "
+                f"<ansicyan><b>AutoCompact:</b></ansicyan> <{auto_compact_color}>{auto_compact_str}</{auto_compact_color}> | "
+                f"<ansicyan><b>Memory:</b></ansicyan> <{memory_color}>{memory_str}</{memory_color}> | "
+                f"<ansicyan><b>Stream:</b></ansicyan> <{stream_color}>{stream_str}</{stream_color}> | "
+                f"<ansicyan><b>Parallel:</b></ansicyan> <{parallel_color}>{parallel_count}</{parallel_color}> | "
+                f"<ansicyan><b>Trace:</b></ansicyan> <{trace_color}>{trace_str}</{trace_color}> | "
+                f"<ansiyellow><b>Turns:</b></ansiyellow> <ansiblue>{os.getenv('CAI_MAX_TURNS', 'inf')}</ansiblue> | "
+                f"<ansiyellow><b>$Limit:</b></ansiyellow> <ansiblue>${os.getenv('CAI_PRICE_LIMIT', 'inf')}</ansiblue> | "
+                f"<ansigray>{current_time_with_tz}</ansigray>"
+            )
         toolbar_cache['last_update'] = datetime.datetime.now()
     except Exception:  # pylint: disable=broad-except
         # If there's an error, set a simple toolbar
@@ -150,7 +246,7 @@ def get_bottom_toolbar():
 
 
 def get_toolbar_with_refresh():
-    """Get toolbar with refresh control (once per minute)."""
+    """Get toolbar with refresh control."""
     now = datetime.datetime.now()
     seconds_elapsed = (now - toolbar_cache['last_update']).total_seconds()
     
@@ -164,6 +260,14 @@ def get_toolbar_with_refresh():
     
     # Always return the cached version immediately
     return get_bottom_toolbar()
+
+
+def set_context_usage(usage_percentage: float):
+    """Set the current context usage percentage (called from openai_chatcompletions.py)."""
+    os.environ['CAI_CONTEXT_USAGE'] = str(usage_percentage)
+    # Reset warning flag if usage drops below threshold
+    if usage_percentage < 0.8:
+        toolbar_cache['context_warning_shown'] = False
 
 
 # Initialize the toolbar on module import

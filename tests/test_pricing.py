@@ -57,7 +57,7 @@ def test_local_models_return_zero_cost():
         "mistral:7b",
         "mistral:latest",
         "codellama:13b",
-        "ollama/llama3.1",
+        "llama3.1",
         "ollama/qwen2.5",
         "deepseek-coder:6.7b",
         "phi3:mini",

@@ -1,6 +1,7 @@
 # macOS Files
 .DS_Store
 cai_env/
+CLAUDE.md
 # Byte-compiled / optimized / DLL files
 __pycache__/
 **/__pycache__/
@@ -162,3 +163,5 @@ pentestperf
 
 # python venvs
 venv*
+
+.claude

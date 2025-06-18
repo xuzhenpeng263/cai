@@ -21,7 +21,7 @@ Objectives:
 import os
 from openai import AsyncOpenAI
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
-from cai.util import load_prompt_template
+from cai.util import load_prompt_template, create_system_prompt_renderer
 from dotenv import load_dotenv
 from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
     run_ssh_command_with_credentials
@@ -64,7 +64,7 @@ if os.getenv('PERPLEXITY_API_KEY'):
 # Create the agent instance
 replay_attack_agent = Agent(
     name="Replay Attack Agent",
-    instructions=replay_attack_agent_prompt,
+    instructions=create_system_prompt_renderer(replay_attack_agent_prompt),
     description="""Agent that specializes in network replay attacks and counteroffensive techniques.
                    Expert in packet manipulation, traffic replay, and protocol exploitation.""",
     model=OpenAIChatCompletionsModel(

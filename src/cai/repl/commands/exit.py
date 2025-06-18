@@ -6,6 +6,8 @@ import sys
 from typing import List, Optional
 
 from cai.repl.commands.base import Command, register_command
+from cai.sdk.agents.global_usage_tracker import GLOBAL_USAGE_TRACKER
+from cai.util import COST_TRACKER
 
 
 class ExitCommand(Command):
@@ -28,6 +30,9 @@ class ExitCommand(Command):
         Returns:
             True if the command was handled successfully, False otherwise
         """
+        # End global usage tracking session before exit
+        GLOBAL_USAGE_TRACKER.end_session(final_cost=COST_TRACKER.session_total_cost)
+        
         sys.exit(0)
 
 

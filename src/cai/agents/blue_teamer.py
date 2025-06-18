@@ -6,7 +6,7 @@ SSH_USER
 import os
 from openai import AsyncOpenAI
 from cai.sdk.agents import Agent, OpenAIChatCompletionsModel  # pylint: disable=import-error
-from cai.util import load_prompt_template
+from cai.util import load_prompt_template, create_system_prompt_renderer
 from dotenv import load_dotenv
 from cai.tools.command_and_control.sshpass import (  # pylint: disable=import-error # noqa: E501
     run_ssh_command_with_credentials
@@ -39,7 +39,7 @@ if os.getenv('PERPLEXITY_API_KEY'):
 
 blueteam_agent = Agent(
     name="Blue Team Agent",
-    instructions=blueteam_agent_system_prompt,
+    instructions=create_system_prompt_renderer(blueteam_agent_system_prompt),
     description="""Agent that specializes in system defense and security monitoring.
                    Expert in cybersecurity protection and incident response.""",
     model=OpenAIChatCompletionsModel(

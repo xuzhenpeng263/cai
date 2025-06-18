@@ -6,7 +6,7 @@ import time
 import uuid
 import subprocess
 import sys
-from cai.tools.common import (run_command,
+from cai.tools.common import (run_command, run_command_async,
                               list_shell_sessions,
                               get_session_output,
                               terminate_session)  # pylint: disable=import-error # noqa E501
@@ -15,7 +15,7 @@ from wasabi import color  # pylint: disable=import-error
 
 
 @function_tool
-def generic_linux_command(command: str = "",
+async def generic_linux_command(command: str = "",
                           interactive: bool = False,
                           session_id: str = None) -> str:
     """
@@ -133,14 +133,36 @@ def generic_linux_command(command: str = "",
     else:
         timeout = 100
         
-    # Command streaming should be independent of LLM streaming
-    stream = True  # Always enable streaming for commands
+    # Tools always stream EXCEPT in parallel mode or when CAI_STREAM=False
+    # In parallel mode, multiple agents run concurrently with Runner.run()
+    # and streaming would create confusing overlapping outputs
+    stream = True  # Default to streaming
+    
+    # Check if CAI_STREAM is explicitly set to False
+    if os.getenv("CAI_STREAM", "true").lower() == "false":
+        stream = False
+    
+    # Simple heuristic: If CAI_PARALLEL > 1 AND we have a P agent ID, disable streaming
+    # This is more reliable than trying to count active agents
+    try:
+        parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
+        if parallel_count > 1:
+            # Check if this is a P agent
+            from cai.sdk.agents.models.openai_chatcompletions import get_current_active_model
+            model = get_current_active_model()
+            if model and hasattr(model, 'agent_id') and model.agent_id:
+                if model.agent_id.startswith('P') and model.agent_id[1:].isdigit():
+                    stream = False
+                    
+    except Exception:
+        # If we can't determine the context, default to streaming
+        pass
     
     # Generate a call_id for streaming
     call_id = str(uuid.uuid4())[:8]
 
     # Run the command with the appropriate parameters
-    result = run_command(command, ctf=None,
+    result = await run_command_async(command, ctf=None,
                        async_mode=interactive, session_id=session_id,
                        timeout=timeout, stream=stream, call_id=call_id,
                        tool_name="generic_linux_command")

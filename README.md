@@ -132,6 +132,7 @@ CAI is built on the following core principles:
 ### Closed-source alternatives
 Cybersecurity AI is a critical field, yet many groups are misguidedly pursuing it through closed-source methods for pure economic return, leveraging similar techniques and building upon existing closed-source (*often third-party owned*) models. This approach not only squanders valuable engineering resources but also represents an economic waste and results in redundant efforts, as they often end up reinventing the wheel. Here are some of the closed-source initiatives we keep track of and attempting to leverage genAI and agentic frameworks in cybersecurity AI:
 
+- [NDAY Security](https://ndaysecurity.com/)
 - [Runsybil](https://www.runsybil.com)
 - [Selfhack](https://www.selfhack.fi)
 - [Sxipher](https://www.sxipher.com/) (seems discontinued)
@@ -375,7 +376,7 @@ At its core, CAI abstracts its cybersecurity behavior via `Agents` and agentic `
 
 
 ```python
-from cai.types import Agent
+from cai.sdk.agents import Agent
 from cai.core import CAI
 ctf_agent = Agent(
     name="CTF Agent",
@@ -398,7 +399,7 @@ response = client.run(agent=ctf_agent,
 `Tools` let cybersecurity agents take actions by providing interfaces to execute system commands, run security scans, analyze vulnerabilities, and interact with target systems and APIs - they are the core capabilities that enable CAI agents to perform security tasks effectively; in CAI, tools include built-in cybersecurity utilities (like LinuxCmd for command execution, WebSearch for OSINT gathering, Code for dynamic script execution, and SSHTunnel for secure remote access), function calling mechanisms that allow integration of any Python function as a security tool, and agent-as-tool functionality that enables specialized security agents (such as reconnaissance or exploit agents) to be used by other agents, creating powerful collaborative security workflows without requiring formal handoffs between agents.
 
 ```python
-from cai.types import Agent
+from cai.sdk.agents import Agent
 from cai.tools.common import run_command
 from cai.core import CAI
 
@@ -449,7 +450,7 @@ You may find different [tools](cai/tools). They are grouped in 6 major categorie
 
 
 ```python
-from cai.types import Agent
+from cai.sdk.agents import Agent
 from cai.core import CAI
 
 ctf_agent = Agent(
@@ -965,6 +966,17 @@ The script [`tools/2_jsonl_to_memory.py`](cai/tools/2_jsonl_to_memory.py) will g
 Currently, CAI supports text based information. You can add any extra information on the target you are facing by copy-pasting it directly into the system or user prompt.
 
 **How?** By adding it to the system ([`system_master_template.md`](cai/repl/templates/system_master_template.md)) or the user prompt ([`user_master_template.md`](cai/repl/templates/user_master_template.md)). You can always directly prompt the path to the model, and it will ```cat``` it.
+</details>
+
+
+<details><summary>How CAI licence works?</summary>
+
+CAI’s current license does not restrict usage for research purposes. You are free to use CAI for security assessments (pentests), to develop additional features, and to integrate it into your research activities, as long as you comply with local laws.
+
+If you or your organization start benefiting commercially from CAI (e.g., offering pentesting services powered by CAI), then a commercial license will be required to help sustain the project.
+
+CAI itself is not a profit-seeking initiative. Our goal is to build a sustainable open-source project. We simply ask that those who profit from CAI contribute back and support our ongoing development.
+
 </details>
 
 

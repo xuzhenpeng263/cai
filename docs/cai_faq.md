@@ -136,3 +136,11 @@
     
     For more details, see the [MkDocs documentation](https://www.mkdocs.org/user-guide/).
 
+??? question "How CAI licence works?"
+
+    CAI’s current license does not restrict usage for research purposes. You are free to use CAI for security assessments (pentests), to develop additional features, and to integrate it into your research activities, as long as you comply with local laws.
+
+    If you or your organization start benefiting commercially from CAI (e.g., offering pentesting services powered by CAI), then a commercial license will be required to help sustain the project.
+
+    CAI itself is not a profit-seeking initiative. Our goal is to build a sustainable open-source project. We simply ask that those who profit from CAI contribute back and support our ongoing development.
+

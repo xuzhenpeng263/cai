@@ -77,6 +77,21 @@ QUEUE_COMPLETE_SENTINEL = QueueCompleteSentinel()
 _NOT_FINAL_OUTPUT = ToolsToFinalOutputResult(is_final_output=False, final_output=None)
 
 
+def truncate_output(output: Any, max_length: int = 10000) -> str:
+    """Truncate tool output if it exceeds max_length characters.
+    
+    Shows first 5000 and last 5000 characters with TRUNCATED in the middle.
+    """
+    output_str = str(output)
+    if len(output_str) <= max_length:
+        return output_str
+    
+    # Show first 5000 and last 5000 characters
+    first_part = output_str[:5000]
+    last_part = output_str[-5000:]
+    return f"{first_part}\n\n... TRUNCATED ...\n\n{last_part}"
+
+
 @dataclass
 class AgentToolUseTracker:
     agent_to_tools: list[tuple[Agent, list[str]]] = field(default_factory=list)
@@ -207,24 +222,88 @@ class RunImpl:
         new_step_items.extend(processed_response.new_items)
 
         # First, lets run the tool calls - function tools and computer actions
-        function_results, computer_results = await asyncio.gather(
+        # Create tasks separately so we can handle partial results
+        function_task = asyncio.create_task(
             cls.execute_function_tool_calls(
                 agent=agent,
                 tool_runs=processed_response.functions,
                 hooks=hooks,
                 context_wrapper=context_wrapper,
                 config=run_config,
-            ),
+            )
+        )
+        computer_task = asyncio.create_task(
             cls.execute_computer_actions(
                 agent=agent,
                 actions=processed_response.computer_actions,
                 hooks=hooks,
                 context_wrapper=context_wrapper,
                 config=run_config,
-            ),
+            )
         )
+        
+        function_results = []
+        computer_results = []
+        interrupt_exception = None
+        
+        try:
+            function_results, computer_results = await asyncio.gather(
+                function_task, computer_task
+            )
+        except (KeyboardInterrupt, asyncio.CancelledError) as e:
+            interrupt_exception = e
+            
+            # Try to get partial results from the tasks
+            if function_task.done() and not function_task.cancelled():
+                try:
+                    function_results = function_task.result()
+                except Exception:
+                    # If the task failed, create synthetic results
+                    function_results = []
+                    for tool_run in processed_response.functions:
+                        result = FunctionToolResult(
+                            tool=tool_run.function_tool,
+                            output="Tool execution interrupted",
+                            run_item=ToolCallOutputItem(
+                                output="Tool execution interrupted",
+                                raw_item=ItemHelpers.tool_call_output_item(
+                                    tool_run.tool_call, "Tool execution interrupted"
+                                ),
+                                agent=agent,
+                            ),
+                        )
+                        function_results.append(result)
+            else:
+                # Task was cancelled or not done, create synthetic results
+                function_results = []
+                for tool_run in processed_response.functions:
+                    result = FunctionToolResult(
+                        tool=tool_run.function_tool,
+                        output="Tool execution interrupted",
+                        run_item=ToolCallOutputItem(
+                            output="Tool execution interrupted",
+                            raw_item=ItemHelpers.tool_call_output_item(
+                                tool_run.tool_call, "Tool execution interrupted"
+                            ),
+                            agent=agent,
+                        ),
+                    )
+                    function_results.append(result)
+                    
+            if computer_task.done() and not computer_task.cancelled():
+                try:
+                    computer_results = computer_task.result()
+                except Exception:
+                    computer_results = []
+            else:
+                computer_results = []
+            
         new_step_items.extend([result.run_item for result in function_results])
         new_step_items.extend(computer_results)
+        
+        # Re-raise the interruption after ensuring results are added
+        if interrupt_exception:
+            raise interrupt_exception
 
         # Second, check if there are any handoffs
         if run_handoffs := processed_response.handoffs:
@@ -472,9 +551,24 @@ class RunImpl:
         tasks = []
         for tool_run in tool_runs:
             function_tool = tool_run.function_tool
-            tasks.append(run_single_tool(function_tool, tool_run.tool_call))
+            tasks.append(asyncio.create_task(run_single_tool(function_tool, tool_run.tool_call)))
 
-        results = await asyncio.gather(*tasks)
+        try:
+            results = await asyncio.gather(*tasks)
+        except (KeyboardInterrupt, asyncio.CancelledError) as e:
+            # When interrupted, return partial results with error messages
+            results = []
+            for i, task in enumerate(tasks):
+                if task.done() and not task.cancelled():
+                    try:
+                        results.append(task.result())
+                    except Exception:
+                        results.append("Tool execution interrupted")
+                else:
+                    results.append("Tool execution interrupted")
+            
+            # Re-raise the exception after collecting results
+            raise e
 
         return [
             FunctionToolResult(
@@ -482,7 +576,7 @@ class RunImpl:
                 output=result,
                 run_item=ToolCallOutputItem(
                     output=result,
-                    raw_item=ItemHelpers.tool_call_output_item(tool_run.tool_call, str(result)),
+                    raw_item=ItemHelpers.tool_call_output_item(tool_run.tool_call, truncate_output(result)),
                     agent=agent,
                 ),
             )

@@ -17,7 +17,7 @@ from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E
 from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
     execute_code
 )
-from cai.util import load_prompt_template
+from cai.util import load_prompt_template, create_system_prompt_renderer
 
 load_dotenv()
 model_name = os.getenv("CAI_MODEL", "alias0")
@@ -39,7 +39,7 @@ redteam_agent = Agent(
     name="Red Team Agent",
     description="""Agent that mimics a red teamer in a security assessment.
                    Expert in cybersecurity, recon, and exploitation.""",
-    instructions=redteam_agent_system_prompt,
+    instructions=create_system_prompt_renderer(redteam_agent_system_prompt),
     tools=tools,
     model=OpenAIChatCompletionsModel(
         model=model_name,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import asyncio
+import warnings
 from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from pathlib import Path
 from typing import Any, Literal
@@ -14,6 +15,7 @@ from typing_extensions import NotRequired, TypedDict
 
 from ..exceptions import UserError
 from ..logger import logger
+import warnings
 
 
 class MCPServer(abc.ABC):
@@ -105,7 +107,16 @@ class _MCPServerWithClientSession(MCPServer, abc.ABC):
             await session.initialize()
             self.session = session
         except Exception as e:
-            logger.error(f"Error initializing MCP server: {e}")
+            # Only log connection errors at debug level
+            error_str = str(e).lower()
+            error_type = type(e).__name__
+            if ("connection" in error_str or 
+                "refused" in error_str or 
+                "taskgroup" in error_str or
+                error_type == "ExceptionGroup"):
+                logger.debug(f"Expected connection error during MCP server init: {e}")
+            else:
+                logger.error(f"Error initializing MCP server: {e}")
             await self.cleanup()
             raise
 
@@ -136,10 +147,16 @@ class _MCPServerWithClientSession(MCPServer, abc.ABC):
         """Cleanup the server."""
         async with self._cleanup_lock:
             try:
-                await self.exit_stack.aclose()
-                self.session = None
+                # Suppress async generator warnings during cleanup
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*asynchronous generator.*")
+                    warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*was never awaited.*")
+                    await self.exit_stack.aclose()
+                    self.session = None
             except Exception as e:
-                logger.error(f"Error cleaning up server: {e}")
+                # Only log errors that aren't expected during cleanup
+                if "ClosedResourceError" not in str(e) and "async generator" not in str(e).lower():
+                    logger.debug(f"Expected cleanup error (can be ignored): {e}")
 
 
 class MCPServerStdioParams(TypedDict):
@@ -299,3 +316,58 @@ class MCPServerSse(_MCPServerWithClientSession):
     def name(self) -> str:
         """A readable name for the server."""
         return self._name
+    
+    async def cleanup(self):
+        """Cleanup the SSE server with special handling for async generators."""
+        import warnings
+        import asyncio
+        
+        async with self._cleanup_lock:
+            try:
+                # For SSE servers, we need to handle cleanup more carefully
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=RuntimeWarning)
+                    warnings.filterwarnings("ignore", message=".*asynchronous generator.*")
+                    warnings.filterwarnings("ignore", message=".*didn't stop after athrow.*")
+                    warnings.filterwarnings("ignore", message=".*cancel scope.*")
+                    
+                    # Try to close gracefully with a short timeout
+                    try:
+                        await asyncio.wait_for(self.exit_stack.aclose(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        # Expected for SSE connections
+                        pass
+                    except Exception:
+                        # Ignore other cleanup errors for SSE
+                        pass
+                    
+                    self.session = None
+            except Exception:
+                # Silently ignore all cleanup errors for SSE
+                pass
+    
+    async def cleanup(self):
+        """Cleanup the SSE server with special handling for async generators."""
+        async with self._cleanup_lock:
+            try:
+                # For SSE connections, we need to handle cleanup differently
+                # to avoid async generator warnings
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=RuntimeWarning)
+                    warnings.filterwarnings("ignore", message=".*asynchronous generator.*")
+                    warnings.filterwarnings("ignore", message=".*was never awaited.*")
+                    
+                    # Try a quick cleanup with a short timeout
+                    try:
+                        await asyncio.wait_for(self.exit_stack.aclose(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        # Expected for SSE connections
+                        pass
+                    except Exception:
+                        # Ignore any other errors during SSE cleanup
+                        pass
+                    finally:
+                        self.session = None
+            except Exception:
+                # Silently ignore all errors for SSE cleanup
+                pass
