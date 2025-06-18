@@ -557,7 +557,15 @@ class CostTracker:
                 self.model_pricing_cache[model_name] = (input_cost_per_token, output_cost_per_token)
                 return input_cost_per_token, output_cost_per_token
         except Exception as e:
-            print(f"  WARNING: Error fetching model pricing: {str(e)}")
+            # Check if it's a network connectivity issue by testing a simple connection
+            try:
+                import requests
+                test_response = requests.get("https://aliasrobotics.com/", timeout=1)
+                # The pricing URL failed
+                print(f"  WARNING: Error fetching model pricing: {str(e)}")
+            except Exception:
+                # No internet connection, silently skip the warning
+                pass
 
         # Default to zero cost if no pricing found (local/free models)
         default_pricing = (0.0, 0.0)
