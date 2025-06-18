@@ -3,6 +3,12 @@ FROM kalilinux/kali-rolling
 # Set environment variable to non-interactive
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Fix Kali Linux repository GPG key issues
+RUN apt-get update --allow-insecure-repositories && \
+    apt-get install -y --no-install-recommends --allow-unauthenticated kali-archive-keyring && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # [Optional] Uncomment this section to install additional OS packages.
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends \
