@@ -51,7 +51,8 @@ from rich.rule import Rule
 from cai.util import (
     cli_print_agent_messages,
     cli_print_tool_output,
-    color
+    color,
+    COST_TRACKER
 )
 from cai.sdk.agents.run_to_jsonl import get_token_stats, load_history_from_jsonl
 from cai.repl.ui.banner import display_banner
@@ -181,6 +182,9 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
         print(color(f"Idle time: {idle_time:.2f}s", fg="cyan"))
 
     print(color(f"Total cost: ${total_cost:.6f}", fg="cyan"))
+    
+    # Initialize COST_TRACKER with the total cost from the JSONL file
+    COST_TRACKER.session_total_cost = total_cost
 
     # First pass: Process all tool outputs
     tool_outputs = {}
@@ -203,6 +207,8 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
 
     # Process all messages, including the last one
     total_messages = len(messages)
+    cumulative_cost = 0.0  # Track cumulative cost for progressive updates
+    
     for i, message in enumerate(messages):
         try:
             # Add delay between actions
@@ -214,6 +220,13 @@ def replay_conversation(messages: List[Dict], replay_delay: float = 0.5, usage: 
             content = str(content).strip() if content is not None else ""
             sender = message.get("sender", role)
             model = message.get("model", file_model)
+            
+            # Update COST_TRACKER with cumulative cost up to this message
+            message_cost = message.get("interaction_cost", 0.0)
+            if message_cost > 0:
+                cumulative_cost += message_cost
+                COST_TRACKER.current_agent_total_cost = cumulative_cost
+                COST_TRACKER.session_total_cost = cumulative_cost
 
             # Skip system messages
             if role == "system":
