@@ -598,42 +598,47 @@ class CompactCommand(Command):
                 original_model = os.environ.get("CAI_MODEL", "alias0")
                 os.environ["CAI_MODEL"] = self.compact_model
                 try:
-                    result = MEMORY_COMMAND_INSTANCE.handle_save([memory_name])
+                    result = MEMORY_COMMAND_INSTANCE.handle_save([memory_name], preserve_history=False)
                 finally:
                     os.environ["CAI_MODEL"] = original_model
             else:
-                result = MEMORY_COMMAND_INSTANCE.handle_save([memory_name])
+                result = MEMORY_COMMAND_INSTANCE.handle_save([memory_name], preserve_history=False)
             
             if result:
                 console.print(f"\n[green]✓ Conversation compacted successfully![/green]")
                 console.print("[dim]The memory has been saved and applied to the agent[/dim]")
                 console.print("[dim]Use '/memory list' to see all saved memories[/dim]")
                 
-                # Clear the agent's message history after successful compaction
+                # IMPORTANT: Explicitly clear the history after compaction
+                # The handle_save with preserve_history=False doesn't always clear properly
                 console.print("\n[cyan]Clearing conversation history...[/cyan]")
                 
-                # Find the matching model instance
-                model_instance = None
-                for (name, inst_id), model_ref in ACTIVE_MODEL_INSTANCES.items():
-                    if name == agent_name:
-                        model = model_ref() if model_ref else None
-                        if model:
-                            model_instance = model
-                            break
-                
-                if model_instance:
-                    # Clear the model's message history
-                    model_instance.message_history.clear()
-                    # Reset context usage since we cleared the history
-                    os.environ['CAI_CONTEXT_USAGE'] = '0.0'
-                    console.print("[green]✓ Conversation history cleared[/green]")
+                # Clear using AGENT_MANAGER (this uses .clear() to maintain reference)
+                AGENT_MANAGER.clear_history(agent_name)
                 
                 # Also clear persistent history
                 if agent_name in PERSISTENT_MESSAGE_HISTORIES:
                     PERSISTENT_MESSAGE_HISTORIES[agent_name].clear()
                 
-                # Clear in AGENT_MANAGER as well using the proper method
-                AGENT_MANAGER.clear_history(agent_name)
+                # Get the current active agent and clear its model history too
+                current_agent = AGENT_MANAGER.get_active_agent()
+                if current_agent and hasattr(current_agent, 'model') and hasattr(current_agent.model, 'message_history'):
+                    current_agent.model.message_history.clear()
+                
+                # Reset context usage since we cleared the history
+                os.environ['CAI_CONTEXT_USAGE'] = '0.0'
+                console.print("[green]✓ Conversation history cleared[/green]")
+                
+                # Debug: Verify histories are actually cleared
+                if os.getenv("CAI_DEBUG", "1") == "2":
+                    # Check AGENT_MANAGER
+                    manager_history = AGENT_MANAGER.get_message_history(agent_name)
+                    console.print(f"[dim]Debug: AGENT_MANAGER history length: {len(manager_history)}[/dim]")
+                    
+                    # Check active agent (re-fetch to ensure we have the current one)
+                    current_active_agent = AGENT_MANAGER.get_active_agent()
+                    if current_active_agent and hasattr(current_active_agent, 'model') and hasattr(current_active_agent.model, 'message_history'):
+                        console.print(f"[dim]Debug: Active agent model history length: {len(current_active_agent.model.message_history)}[/dim]")
                 
             else:
                 console.print(f"[red]Failed to compact conversation[/red]")
