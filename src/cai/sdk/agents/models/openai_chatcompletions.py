@@ -404,8 +404,17 @@ class OpenAIChatCompletionsModel(Model):
             else:
                 self.message_history = []
         else:
-            # Start with empty history - do not inherit from previous agents
-            self.message_history = []
+            # Get or create history from AGENT_MANAGER to ensure we share the same list reference
+            # This is critical for proper history clearing to work
+            existing_history = AGENT_MANAGER.get_message_history(self.agent_name)
+            if existing_history is not None and isinstance(existing_history, list):
+                # Use the existing list reference from AGENT_MANAGER
+                self.message_history = existing_history
+            else:
+                # Create new history and ensure AGENT_MANAGER has it too
+                self.message_history = []
+                if self.agent_name not in AGENT_MANAGER._message_history:
+                    AGENT_MANAGER._message_history[self.agent_name] = self.message_history
         
         # Register with SimpleAgentManager only when explicitly created
         # This prevents phantom instances during module imports
@@ -415,6 +424,11 @@ class OpenAIChatCompletionsModel(Model):
                 AGENT_MANAGER.set_parallel_agent(agent_id, self, self.agent_name)
             else:
                 AGENT_MANAGER.set_active_agent(self, self.agent_name, agent_id)
+                
+            # CRITICAL: Ensure AGENT_MANAGER uses the same list reference as the model
+            # This is necessary for proper history clearing to work
+            if not PARALLEL_ISOLATION.is_parallel_mode():
+                AGENT_MANAGER._message_history[self.agent_name] = self.message_history
 
         # Instance-based converter
         self._converter = _Converter()
@@ -488,8 +502,11 @@ class OpenAIChatCompletionsModel(Model):
         
         if not is_duplicate:
             self.message_history.append(msg)
-            # Also update SimpleAgentManager
-            AGENT_MANAGER.add_to_history(self.agent_name, msg)
+            # Also update SimpleAgentManager ONLY if they're not the same list reference
+            # This avoids double-adding when they share the same list
+            manager_history = AGENT_MANAGER.get_message_history(self.agent_name)
+            if manager_history is not self.message_history:
+                AGENT_MANAGER.add_to_history(self.agent_name, msg)
             # Update isolated history if in parallel mode
             if PARALLEL_ISOLATION.is_parallel_mode() and self.agent_id:
                 PARALLEL_ISOLATION.update_isolated_history(self.agent_id, msg)
