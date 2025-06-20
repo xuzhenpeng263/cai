@@ -75,7 +75,11 @@ class SimpleAgentManager:
         
         # Initialize message history for this agent if needed
         if agent_name not in self._message_history:
-            self._message_history[agent_name] = []
+            # Check if the agent's model already has a history and use that reference
+            if hasattr(agent, 'model') and hasattr(agent.model, 'message_history'):
+                self._message_history[agent_name] = agent.model.message_history
+            else:
+                self._message_history[agent_name] = []
     
     def get_active_agent(self):
         """Get the active agent instance."""
@@ -100,7 +104,16 @@ class SimpleAgentManager:
     def clear_history(self, agent_name: str):
         """Clear history for an agent."""
         if agent_name in self._message_history:
-            self._message_history[agent_name] = []
+            # Clear the list in-place to maintain the same reference
+            # This is critical when the model and manager share the same list
+            self._message_history[agent_name].clear()
+        
+        # Also clear the active agent's model instance history if it matches
+        # This handles cases where they don't share the same reference
+        if self._active_agent and self._active_agent_name == agent_name:
+            agent = self._active_agent()
+            if agent and hasattr(agent, 'model') and hasattr(agent.model, 'message_history'):
+                agent.model.message_history.clear()
     
     def clear_all_histories(self):
         """Clear all message histories."""
@@ -186,7 +199,11 @@ class SimpleAgentManager:
         
         # Initialize message history for this agent if needed
         if agent_name not in self._message_history:
-            self._message_history[agent_name] = []
+            # Check if the agent's model already has a history and use that reference
+            if hasattr(agent, 'model') and hasattr(agent.model, 'message_history'):
+                self._message_history[agent_name] = agent.model.message_history
+            else:
+                self._message_history[agent_name] = []
     
     def clear_parallel_agents(self):
         """Clear all parallel agents (when switching to single agent mode)."""

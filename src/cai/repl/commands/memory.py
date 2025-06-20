@@ -396,7 +396,7 @@ class MemoryCommand(Command):
         
         return True
     
-    def handle_save(self, args: Optional[List[str]] = None) -> bool:
+    def handle_save(self, args: Optional[List[str]] = None, preserve_history: bool = True) -> bool:
         """Save current agent history as memory."""
         if not args:
             # Use current active agent
@@ -471,7 +471,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
             os.environ['CAI_MEMORY'] = 'true' 
             
             # Reload the agent with the new memory
-            self._reload_agent_with_memory(agent_name)
+            self._reload_agent_with_memory(agent_name, preserve_history=preserve_history)
             
             # Show memory panel
             console.print(Panel(
@@ -1085,7 +1085,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 console.print(f"[green]✓ Cleared history for {agent_name}[/green]")
             
             # Reload the agent with the new memory
-            self._reload_agent_with_memory(agent_name)
+            self._reload_agent_with_memory(agent_name, preserve_history=preserve_history)
             
             # Show memory panel
             console.print(Panel(
@@ -1357,8 +1357,14 @@ This session is being continued from a previous conversation that ran out of con
         
         return None
     
-    def _reload_agent_with_memory(self, agent_name: str):
-        """Reload an agent to apply memory changes while preserving message history."""
+    def _reload_agent_with_memory(self, agent_name: str, preserve_history: bool = True):
+        """Reload an agent to apply memory changes.
+        
+        Args:
+            agent_name: Name of the agent to reload
+            preserve_history: Whether to preserve message history (default True).
+                            Set to False when called from compact to avoid restoring cleared history.
+        """
         try:
             # Get the current agent instance and its history
             from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
@@ -1385,12 +1391,15 @@ This session is being continued from a previous conversation that ran out of con
                 return
             
             # Get the current agent's message history before reloading
-            current_history = get_agent_message_history(agent_name)
-            if current_history:
-                # Store a copy of the history
-                history_backup = list(current_history)
+            history_backup = []
+            if preserve_history:
+                current_history = get_agent_message_history(agent_name)
+                if current_history:
+                    # Store a copy of the history
+                    history_backup = list(current_history)
             else:
-                history_backup = []
+                # When not preserving history (e.g., from compact), clear it before creating new agent
+                AGENT_MANAGER.clear_history(agent_name)
             
             # Get the agent ID
             agent_id = AGENT_MANAGER.get_id_by_name(agent_name)
@@ -1412,7 +1421,7 @@ This session is being continued from a previous conversation that ran out of con
                 AGENT_MANAGER.set_parallel_agent(agent_id, new_agent, agent_name)
             
             # Restore the message history to the new agent instance
-            if hasattr(new_agent, 'model') and hasattr(new_agent.model, 'message_history'):
+            if preserve_history and hasattr(new_agent, 'model') and hasattr(new_agent.model, 'message_history'):
                 # The switch_to_single_agent might have already transferred history
                 # Only restore if the new agent's history is empty or different
                 if not new_agent.model.message_history and history_backup:
@@ -1425,7 +1434,8 @@ This session is being continued from a previous conversation that ran out of con
             # Also update PERSISTENT_MESSAGE_HISTORIES if needed
             if agent_name in PERSISTENT_MESSAGE_HISTORIES:
                 PERSISTENT_MESSAGE_HISTORIES[agent_name].clear()
-                PERSISTENT_MESSAGE_HISTORIES[agent_name].extend(history_backup)
+                if preserve_history:
+                    PERSISTENT_MESSAGE_HISTORIES[agent_name].extend(history_backup)
             
             # Update the global active agent in CLI if we're in single agent mode
             if agent_id == "P1":
