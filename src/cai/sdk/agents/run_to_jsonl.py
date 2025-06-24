@@ -350,7 +350,7 @@ class DataRecorder:  # pylint: disable=too-few-public-methods
             f.write('\n')
 
 
-def load_history_from_jsonl(file_path):
+def load_history_from_jsonl(file_path, system_prompt=False):
     """
     Load conversation history from a JSONL file and
     return it as a list of messages.
@@ -359,15 +359,22 @@ def load_history_from_jsonl(file_path):
         file_path (str): The path to the JSONL file.
             NOTE: file_path assumes it's either relative to the
             current directory or absolute.
+        system_prompt (bool): Whether to include the system prompt in the history.
+            When True, system prompts will be included and properly positioned:
+            - The first system prompt appears at the beginning of the conversation
+            - When agents change, new system prompts are inserted before the 
+              first message from each new agent
 
     Returns:
-        list: A list of messages extracted from the JSONL file.
+        list: A list of messages extracted from the JSONL file, with system
+              prompts appropriately positioned if system_prompt=True.
     """
     messages = []
     last_assistant_message = None
     tool_outputs = {}  # Map tool_call_id to output content
     agent_name_by_timestamp = {}  # Map timestamp to agent name
     current_agent_name = None
+    system_prompts_by_agent = {}  # Map agent_name to system prompt content
     
     try:
         with open(file_path, encoding='utf-8') as f:
@@ -405,8 +412,11 @@ def load_history_from_jsonl(file_path):
                     # Store only complete conversation message objects
                     for msg in record["messages"]:
                         if "role" in msg:
-                            # Skip system messages
+                            # Handle system messages - collect them by agent if system_prompt is True
                             if msg.get("role") == "system":
+                                if system_prompt and current_agent_name:
+                                    # Store system prompt for this agent
+                                    system_prompts_by_agent[current_agent_name] = msg.get("content", "")
                                 continue
 
                             # Add this message if we haven't seen it already
@@ -442,10 +452,54 @@ def load_history_from_jsonl(file_path):
                   m.get("tool_calls") == msg.get("tool_calls") for m in unique_messages):
             unique_messages.append(msg)
 
-    # Now add tool result messages for any tool calls that have outputs
+    # Now add tool result messages and handle system prompts for agent changes
     final_messages = []
+    last_agent_name = None
+    
+    # If system_prompt is True, add the first system prompt at the beginning
+    if system_prompt and unique_messages and system_prompts_by_agent:
+        # Find the first assistant message to determine the initial agent
+        first_agent = None
+        for msg in unique_messages:
+            if msg.get("role") == "assistant" and msg.get("agent_name"):
+                first_agent = msg.get("agent_name")
+                break
+        
+        # Add the first system prompt if we found an agent
+        if first_agent and first_agent in system_prompts_by_agent:
+            system_msg = {
+                "role": "system",
+                "content": system_prompts_by_agent[first_agent],
+                "agent_name": first_agent
+            }
+            final_messages.append(system_msg)
+            last_agent_name = first_agent
+    
     for msg in unique_messages:
+        # Check if this is an assistant message with a different agent
+        current_msg_agent = msg.get("agent_name")
+        
+        # If system_prompt is True and we have an agent change, insert system prompt
+        if (system_prompt and 
+            msg.get("role") == "assistant" and 
+            current_msg_agent and 
+            current_msg_agent != last_agent_name and
+            current_msg_agent in system_prompts_by_agent):
+            
+            # Insert system prompt before this assistant message
+            system_msg = {
+                "role": "system",
+                "content": system_prompts_by_agent[current_msg_agent],
+                "agent_name": current_msg_agent
+            }
+            final_messages.append(system_msg)
+            last_agent_name = current_msg_agent
+        
         final_messages.append(msg)
+        
+        # Update last_agent_name if this message has an agent
+        if current_msg_agent:
+            last_agent_name = current_msg_agent
         
         # If this is an assistant message with tool_calls, add corresponding tool results
         if (msg.get("role") == "assistant" and 
@@ -468,6 +522,21 @@ def load_history_from_jsonl(file_path):
         # Check if this message is already in the list
         if not any(m.get("role") == "assistant" and 
                   m.get("content") == last_assistant_message for m in final_messages):
+            
+            # Check if we need to add a system prompt for the current agent
+            if (system_prompt and 
+                current_agent_name and 
+                current_agent_name != last_agent_name and
+                current_agent_name in system_prompts_by_agent):
+                
+                # Insert system prompt before this assistant message
+                system_msg = {
+                    "role": "system", 
+                    "content": system_prompts_by_agent[current_agent_name],
+                    "agent_name": current_agent_name
+                }
+                final_messages.append(system_msg)
+            
             last_msg = {
                 "role": "assistant",
                 "content": last_assistant_message
