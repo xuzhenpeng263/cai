@@ -25,6 +25,11 @@ class SimpleAgentManager:
     
     def set_active_agent(self, agent, agent_name: str, agent_id: str = None):
         """Set the active agent instance."""
+        # CRITICAL: Always use the agent's proper name, not the agent key
+        # This prevents duplicate registrations like "blueteam_agent" and "Blue Team Agent"
+        if hasattr(agent, 'name') and agent.name:
+            agent_name = agent.name
+        
         # In single agent mode, use switch_to_single_agent for proper cleanup
         if not self._parallel_agents and not agent_id:
             # If we're in single agent mode and no explicit ID is provided
@@ -134,22 +139,12 @@ class SimpleAgentManager:
         
         # In single agent mode
         if not self._parallel_agents:
-            # Always show the active agent, even if it has no history
+            # In single agent mode, ONLY show the ONE active agent
             if self._active_agent_name and self._active_agent_name in self._agent_registry:
                 agent_id = self._agent_registry[self._active_agent_name]
                 history = self._message_history.get(self._active_agent_name, [])
                 result[f"{self._active_agent_name} [{agent_id}]"] = history
-            
-            # Show all other registered agents that have history
-            for agent_name, agent_id in sorted(self._agent_registry.items()):
-                # Skip the active agent (already added above)
-                if agent_name == self._active_agent_name:
-                    continue
-                    
-                history = self._message_history.get(agent_name, [])
-                # Only include non-active agents if they have history
-                if history:
-                    result[f"{agent_name} [{agent_id}]"] = history
+            # That's it - no other agents in single agent mode
         else:
             # In parallel mode, show all registered agents
             for agent_name, agent_id in sorted(self._agent_registry.items()):
@@ -187,6 +182,11 @@ class SimpleAgentManager:
     
     def set_parallel_agent(self, agent_id: str, agent, agent_name: str):
         """Register a parallel agent."""
+        # CRITICAL: Always use the agent's proper name, not the agent key
+        # This prevents duplicate registrations like "blueteam_agent" and "Blue Team Agent"
+        if hasattr(agent, 'name') and agent.name:
+            agent_name = agent.name
+        
         # Check if this ID is already registered to a different agent
         existing_agent_name = self.get_agent_by_id(agent_id)
         if existing_agent_name and existing_agent_name != agent_name:
@@ -290,24 +290,22 @@ class SimpleAgentManager:
         if self._parallel_agents:
             return  # Only cleanup in single agent mode
         
-        # Find all agents with P1 ID
-        p1_agents = [(name, aid) for name, aid in list(self._agent_registry.items()) if aid == "P1"]
+        # In single agent mode, there should be ONLY ONE agent
+        if not self._active_agent_name:
+            return
         
-        if len(p1_agents) <= 1:
-            return  # No duplicates
+        # Remove ALL agents except the active one
+        agents_to_remove = []
+        for agent_name in list(self._agent_registry.keys()):
+            if agent_name != self._active_agent_name:
+                agents_to_remove.append(agent_name)
         
-        # Use the tracked active agent name
-        active_agent_name = self._active_agent_name
+        for agent_name in agents_to_remove:
+            del self._agent_registry[agent_name]
+            if agent_name in self._message_history:
+                del self._message_history[agent_name]
         
-        # Keep only the active agent and those with message history
-        for agent_name, agent_id in p1_agents:
-            if agent_name != active_agent_name:
-                # Check if this agent has any message history
-                if not self._message_history.get(agent_name):
-                    # No history, safe to remove
-                    del self._agent_registry[agent_name]
-                    if agent_name in self._message_history:
-                        del self._message_history[agent_name]
+        return
     
     def _cleanup_duplicate_ids(self):
         """Clean up agents with duplicate IDs in parallel mode."""
@@ -369,6 +367,11 @@ class SimpleAgentManager:
     
     def switch_to_single_agent(self, agent, agent_name: str):
         """Switch to a new single agent, properly cleaning up the previous one."""
+        # CRITICAL: Always use the agent's proper name, not the agent key
+        # This prevents duplicate registrations like "blueteam_agent" and "Blue Team Agent"
+        if hasattr(agent, 'name') and agent.name:
+            agent_name = agent.name
+        
         # Check for pending history transfer (from parallel mode)
         # This is ONLY used when switching from parallel to single agent mode
         transfer_history = None
@@ -435,12 +438,15 @@ class SimpleAgentManager:
                 self._message_history[agent_name] = []
         else:
             # Agent already has a history entry
-            # If there's a transfer_history and the current history is empty, use the transfer
-            if transfer_history and not self._message_history[agent_name]:
+            # If there's a transfer_history, always use it (this is an explicit transfer request)
+            if transfer_history:
                 self._message_history[agent_name] = transfer_history
         
         # Reset ID counter for cleanliness
         self._id_counter = 1
+        
+        # Final cleanup to ensure only one agent in single mode
+        self._cleanup_single_agent_duplicates()
     
     def share_swarm_history(self, agent1_name: str, agent2_name: str):
         """Share message history between two swarm agents.

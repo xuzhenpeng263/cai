@@ -416,19 +416,16 @@ class OpenAIChatCompletionsModel(Model):
                 if self.agent_name not in AGENT_MANAGER._message_history:
                     AGENT_MANAGER._message_history[self.agent_name] = self.message_history
         
-        # Register with SimpleAgentManager only when explicitly created
-        # This prevents phantom instances during module imports
-        if agent_id is not None:  # Only register when explicitly given an ID
-            # For parallel agents, register as parallel
-            if agent_id.startswith("P") and int(os.getenv("CAI_PARALLEL", "1")) > 1:
-                AGENT_MANAGER.set_parallel_agent(agent_id, self, self.agent_name)
-            else:
-                AGENT_MANAGER.set_active_agent(self, self.agent_name, agent_id)
-                
-            # CRITICAL: Ensure AGENT_MANAGER uses the same list reference as the model
-            # This is necessary for proper history clearing to work
-            if not PARALLEL_ISOLATION.is_parallel_mode():
-                AGENT_MANAGER._message_history[self.agent_name] = self.message_history
+        # NOTE: Models should NOT register themselves with AGENT_MANAGER
+        # The agent that owns this model will handle registration
+        # This prevents duplicate registrations with agent keys
+        
+        # CRITICAL: Ensure AGENT_MANAGER uses the same list reference as the model
+        # This is necessary for proper history clearing to work
+        if agent_id is not None and not PARALLEL_ISOLATION.is_parallel_mode():
+            if self.agent_name in AGENT_MANAGER._message_history:
+                # Share the same list reference
+                self.message_history = AGENT_MANAGER._message_history[self.agent_name]
 
         # Instance-based converter
         self._converter = _Converter()

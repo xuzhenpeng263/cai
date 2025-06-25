@@ -517,14 +517,13 @@ class AgentCommand(Command):
             # selected_agent_key was already set above in the agent selection logic
             pass
 
-        # Set the agent key in environment variable (not the agent name)
-        # Note: selected_agent_key should be defined by now either from regular agent selection
-        # or from swarm pattern handling
-        # IMPORTANT: Don't set CAI_AGENT_TYPE for parallel patterns as they don't change the current agent
+        # IMPORTANT: Don't set CAI_AGENT_TYPE yet - we need to set up history transfer first
+        # Store the selected agent key for later use
+        agent_type_to_set = None
         if 'selected_agent_key' in locals() and not (hasattr(agent, "_pattern") and 
                                                       hasattr(agent._pattern, "type") and 
                                                       str(getattr(agent._pattern.type, 'value', agent._pattern.type)) == "parallel"):
-            os.environ["CAI_AGENT_TYPE"] = selected_agent_key
+            agent_type_to_set = selected_agent_key
             
             # IMPORTANT: Ensure agent_name is correctly set for the selected agent
             # This fixes the issue where swarm pattern's agent name lingers
@@ -583,6 +582,7 @@ class AgentCommand(Command):
                         break
         else:
             # We're switching from single agent to another single agent (or from swarm pattern)
+            
             # First check if there's a pending history transfer
             if hasattr(AGENT_MANAGER, '_pending_history_transfer') and AGENT_MANAGER._pending_history_transfer:
                 current_history = AGENT_MANAGER._pending_history_transfer
@@ -646,7 +646,20 @@ class AgentCommand(Command):
             new_agent = get_agent_by_name(selected_agent_key, agent_id="P1")
             new_agent_name = getattr(new_agent, "name", selected_agent_key)
             AGENT_MANAGER.switch_to_single_agent(new_agent, new_agent_name)
+            
+            # IMPORTANT: Store a strong reference to prevent garbage collection
+            # The CLI will pick this up and use it
+            AGENT_MANAGER._current_agent_strong_ref = new_agent
+            
+            # Check if history was transferred
+            transferred_history = AGENT_MANAGER.get_message_history(new_agent_name)
 
+        # NOW set the environment variable AFTER history transfer is complete
+        if agent_type_to_set:
+            os.environ["CAI_AGENT_TYPE"] = agent_type_to_set
+            # Set a flag to tell CLI not to switch again
+            os.environ["CAI_AGENT_SWITCH_HANDLED"] = "1"
+        
         # Double-check agent_name is correct before displaying
         # This ensures we show the correct agent name even after switching from patterns
         final_agent_name = agent_name

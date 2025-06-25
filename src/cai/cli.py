@@ -444,6 +444,10 @@ def run_cai_cli(
     # Reset simple agent manager for clean start
     from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
     AGENT_MANAGER.reset_registry()
+    
+    # Register the starting agent with AGENT_MANAGER
+    starting_agent_name = getattr(starting_agent, "name", last_agent_type)
+    AGENT_MANAGER.switch_to_single_agent(starting_agent, starting_agent_name)
 
     # Initialize command completer and key bindings
     command_completer = FuzzyCommandCompleter()
@@ -552,9 +556,46 @@ def run_cai_cli(
             # Update parallel_count to reflect changes from /parallel command
             parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
             
+            
             if current_agent_type != last_agent_type:
+                # Check if the /agent command already handled the switch
+                if os.environ.get("CAI_AGENT_SWITCH_HANDLED") == "1":
+                    os.environ["CAI_AGENT_SWITCH_HANDLED"] = "0"  # Reset flag
+                    
+                    # Just get the existing agent that was already switched
+                    from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+                    
+                    # First try to get the strong reference if available
+                    if hasattr(AGENT_MANAGER, '_current_agent_strong_ref'):
+                        agent = AGENT_MANAGER._current_agent_strong_ref
+                        # Clear the strong reference after using it
+                        delattr(AGENT_MANAGER, '_current_agent_strong_ref')
+                    else:
+                        agent = AGENT_MANAGER.get_active_agent()
+                    
+                    if agent:
+                        last_agent_type = current_agent_type
+                    else:
+                        # If the agent is None (weak reference expired), recreate it
+                        agent = get_agent_by_name(current_agent_type, agent_id="P1")
+                        last_agent_type = current_agent_type
+                        # Re-register with AGENT_MANAGER
+                        agent_name = agent.name if hasattr(agent, "name") else current_agent_type
+                        AGENT_MANAGER.set_active_agent(agent, agent_name, "P1")
+                    continue
+                
                 try:
-                    # Import is already at the top level
+                    # CRITICAL: Set up history transfer BEFORE creating the new agent
+                    from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
+                    
+                    # Get the current agent's history before switching
+                    if hasattr(agent, "name"):
+                        current_agent_name = agent.name
+                        current_history = AGENT_MANAGER.get_message_history(current_agent_name)
+                        if current_history:
+                            AGENT_MANAGER._pending_history_transfer = list(current_history)  # Make a copy
+                    
+                    # Now create the new agent
                     agent = get_agent_by_name(current_agent_type, agent_id="P1")
                     last_agent_type = current_agent_type
                     
@@ -563,11 +604,20 @@ def run_cai_cli(
                     COST_TRACKER.reset_agent_costs()
                     
                     # Use the new switch_to_single_agent method for proper cleanup
-                    from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-                    agent_name = getattr(agent, "name", current_agent_type)
+                    # IMPORTANT: Always use the agent's proper name, not the agent key
+                    agent_name = agent.name if hasattr(agent, "name") else current_agent_type
                     
-                    # Switch to the new agent
-                    AGENT_MANAGER.switch_to_single_agent(agent, agent_name)
+                    # Check if this agent has already been switched to by /agent command
+                    # If so, don't switch again to avoid clearing the history
+                    current_active_agent = AGENT_MANAGER.get_active_agent()
+                    current_active_name = AGENT_MANAGER._active_agent_name
+                    
+                    if current_active_name == agent_name:
+                        # Just update the agent reference
+                        agent = current_active_agent
+                    else:
+                        # Switch to the new agent
+                        AGENT_MANAGER.switch_to_single_agent(agent, agent_name)
                     
                     # Sync the model's history with AGENT_MANAGER's history
                     # This ensures the model has its own history from AGENT_MANAGER
@@ -1702,7 +1752,8 @@ def main():
     
     # Use the switch_to_single_agent method for proper initialization
     from cai.sdk.agents.simple_agent_manager import AGENT_MANAGER
-    agent_name = getattr(agent, "name", agent_type)
+    # IMPORTANT: Always use the agent's proper name, not the agent key
+    agent_name = agent.name if hasattr(agent, "name") else agent_type
     AGENT_MANAGER.switch_to_single_agent(agent, agent_name)
 
     # Configure model flags to work well with CLI
