@@ -592,24 +592,37 @@ def load_history_from_jsonl_v2(file_path, system_prompt=False):
     # Preprocess to collect system prompts and agent transitions
     if system_prompt:
         current_agent_name = None
-        for record in all_records:
-            # Track agent names from completion records
-            if record.get("agent_name"):
-                new_agent_name = record.get("agent_name")
-                timestamp = record.get("timestamp_iso")
+        
+        # First, we need to match request records with their corresponding completion records
+        # to associate system prompts with agent names
+        for i, record in enumerate(all_records):
+            # Check if this is a request record (has "model" and "messages")
+            if "model" in record and "messages" in record and isinstance(record["messages"], list):
+                # Look for system prompt in this request
+                system_prompt_content = None
+                for msg in record["messages"]:
+                    if msg.get("role") == "system":
+                        system_prompt_content = msg.get("content", "")
+                        break
                 
-                # If this is a new agent, record the transition
-                if new_agent_name != current_agent_name and timestamp:
-                    current_agent_name = new_agent_name
-                    
-                    # Look for system prompt in this record's messages
-                    if "messages" in record and isinstance(record["messages"], list):
-                        for msg in record["messages"]:
-                            if msg.get("role") == "system":
-                                system_prompt_content = msg.get("content", "")
-                                system_prompts_by_agent[current_agent_name] = system_prompt_content
-                                agent_transitions.append((timestamp, current_agent_name, system_prompt_content))
-                                break
+                # If we found a system prompt, look for the corresponding completion record
+                if system_prompt_content:
+                    # The completion record is typically the next record
+                    if i + 1 < len(all_records):
+                        next_record = all_records[i + 1]
+                        if (next_record.get("id") and 
+                            next_record.get("agent_name") and
+                            next_record.get("timestamp_iso")):
+                            
+                            agent_name = next_record.get("agent_name")
+                            timestamp = next_record.get("timestamp_iso")
+                            
+                            # Record this agent and its system prompt
+                            # We need to track all occurrences, not just when agents change
+                            # because the same agent might appear multiple times with different contexts
+                            system_prompts_by_agent[agent_name] = system_prompt_content
+                            agent_transitions.append((timestamp, agent_name, system_prompt_content))
+                            current_agent_name = agent_name
 
     # Second pass: collect messages and other data
     messages = []
@@ -638,7 +651,7 @@ def load_history_from_jsonl_v2(file_path, system_prompt=False):
         if record.get("event") == "assistant_message":
             last_assistant_message = record.get("content")
 
-        # Extract messages from model record
+        # Extract messages from model record (request records)
         if "model" in record and "messages" in record and isinstance(record["messages"], list):
             # Store only complete conversation message objects
             for msg in record["messages"]:
@@ -651,22 +664,21 @@ def load_history_from_jsonl_v2(file_path, system_prompt=False):
                     if not any(m.get("role") == msg.get("role") and 
                                m.get("content") == msg.get("content") and
                                m.get("tool_call_id") == msg.get("tool_call_id") for m in messages):
-                        # Add agent name if we have it for this record
-                        if current_agent_name and msg.get("role") == "assistant":
-                            msg["agent_name"] = current_agent_name
                         messages.append(msg)
 
-        # Extract assistant messages and tool responses from model record choices
+        # Extract assistant messages and tool responses from completion records
         elif "choices" in record and isinstance(record["choices"], list) and record["choices"]:
+            # This is a completion record - get the agent name from this record
+            completion_agent_name = record.get("agent_name")
             choice = record["choices"][0]
             if "message" in choice and "role" in choice["message"]:
-                msg = choice["message"]
+                msg = choice["message"].copy()  # Make a copy to avoid modifying original
                 if not any(m.get("role") == msg.get("role") and 
                           m.get("content") == msg.get("content") and
                           m.get("tool_call_id") == msg.get("tool_call_id") for m in messages):
-                    # Add agent name if we have it for this record
-                    if current_agent_name and msg.get("role") == "assistant":
-                        msg["agent_name"] = current_agent_name
+                    # Add agent name from the completion record
+                    if completion_agent_name and msg.get("role") == "assistant":
+                        msg["agent_name"] = completion_agent_name
                     messages.append(msg)
 
     # Clean up duplicates and reorder
@@ -686,39 +698,31 @@ def load_history_from_jsonl_v2(file_path, system_prompt=False):
         # Sort agent transitions by timestamp to ensure proper ordering
         agent_transitions.sort(key=lambda x: x[0])
         
-        # Add the first system prompt at the beginning
-        if agent_transitions:
-            first_transition = agent_transitions[0]
-            system_msg = {
-                "role": "system",
-                "content": first_transition[2],  # system_prompt_content
-                "agent_name": first_transition[1]  # agent_name
-            }
-            final_messages.append(system_msg)
+        # Create a mapping of agent names to their system prompts for easy lookup
+        agent_to_system_prompt = {agent_name: system_prompt_content 
+                                  for _, agent_name, system_prompt_content in agent_transitions}
         
-        # Track which agent transitions we've already processed
-        processed_agents = {agent_transitions[0][1]} if agent_transitions else set()
+        # Track which agents we've seen
+        seen_agents = set()
         
         for msg in unique_messages:
-            # Check if this is an assistant message that might need a system prompt
+            # Check if this is an assistant message that needs a system prompt
             current_msg_agent = msg.get("agent_name")
             
-            # If this is an assistant message from a new agent, insert system prompt
+            # If this is an assistant message from an agent we haven't seen yet, insert system prompt
             if (msg.get("role") == "assistant" and 
                 current_msg_agent and 
-                current_msg_agent not in processed_agents):
+                current_msg_agent not in seen_agents and
+                current_msg_agent in agent_to_system_prompt):
                 
-                # Find the system prompt for this agent
-                for timestamp, agent_name, system_prompt_content in agent_transitions:
-                    if agent_name == current_msg_agent:
-                        system_msg = {
-                            "role": "system",
-                            "content": system_prompt_content,
-                            "agent_name": agent_name
-                        }
-                        final_messages.append(system_msg)
-                        processed_agents.add(agent_name)
-                        break
+                # Insert system prompt before this assistant message
+                system_msg = {
+                    "role": "system",
+                    "content": agent_to_system_prompt[current_msg_agent],
+                    "agent_name": current_msg_agent
+                }
+                final_messages.append(system_msg)
+                seen_agents.add(current_msg_agent)
             
             final_messages.append(msg)
             
