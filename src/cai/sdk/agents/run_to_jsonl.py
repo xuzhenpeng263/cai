@@ -549,6 +549,252 @@ def load_history_from_jsonl(file_path, system_prompt=False):
     return final_messages
 
 
+def load_history_from_jsonl_v2(file_path, system_prompt=False):
+    """
+    Load conversation history from a JSONL file and
+    return it as a list of messages.
+
+    Args:
+        file_path (str): The path to the JSONL file.
+            NOTE: file_path assumes it's either relative to the
+            current directory or absolute.
+        system_prompt (bool): Whether to include the system prompt in the history.
+            When True, system prompts will be included and properly positioned:
+            - The first system prompt appears at the beginning of the conversation
+            - When agents change, new system prompts are inserted before the 
+              first message from each new agent
+
+    Returns:
+        list: A list of messages extracted from the JSONL file, with system
+              prompts appropriately positioned if system_prompt=True.
+    """
+    # First pass: collect all records and preprocess system prompts
+    all_records = []
+    system_prompts_by_agent = {}  # Map agent_name to system prompt content
+    agent_transitions = []  # List of (timestamp, agent_name, system_prompt) tuples
+    
+    try:
+        with open(file_path, encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                    all_records.append(record)
+                except Exception:  # pylint: disable=broad-except
+                    print(f"Error loading line: {line}")
+                    continue
+    except Exception as e:  # pylint: disable=broad-except
+        print(f"Error loading history from {file_path}: {e}")
+        return []
+
+    # Preprocess to collect system prompts and agent transitions
+    if system_prompt:
+        current_agent_name = None
+        for record in all_records:
+            # Track agent names from completion records
+            if record.get("agent_name"):
+                new_agent_name = record.get("agent_name")
+                timestamp = record.get("timestamp_iso")
+                
+                # If this is a new agent, record the transition
+                if new_agent_name != current_agent_name and timestamp:
+                    current_agent_name = new_agent_name
+                    
+                    # Look for system prompt in this record's messages
+                    if "messages" in record and isinstance(record["messages"], list):
+                        for msg in record["messages"]:
+                            if msg.get("role") == "system":
+                                system_prompt_content = msg.get("content", "")
+                                system_prompts_by_agent[current_agent_name] = system_prompt_content
+                                agent_transitions.append((timestamp, current_agent_name, system_prompt_content))
+                                break
+
+    # Second pass: collect messages and other data
+    messages = []
+    last_assistant_message = None
+    tool_outputs = {}  # Map tool_call_id to output content
+    agent_name_by_timestamp = {}  # Map timestamp to agent name
+    current_agent_name = None
+    
+    for record in all_records:
+        # Track agent names from completion records
+        if record.get("agent_name"):
+            current_agent_name = record.get("agent_name")
+            timestamp = record.get("timestamp_iso")
+            if timestamp:
+                agent_name_by_timestamp[timestamp] = current_agent_name
+
+        # Collect tool outputs from tool_message events
+        if record.get("event") == "tool_message":
+            tool_call_id = record.get("tool_call_id", "")
+            content = record.get("content", "")
+            if tool_call_id and content:
+                tool_outputs[tool_call_id] = content
+
+        # process assistant messages and keep the last one
+        # for additing it manually at the end
+        if record.get("event") == "assistant_message":
+            last_assistant_message = record.get("content")
+
+        # Extract messages from model record
+        if "model" in record and "messages" in record and isinstance(record["messages"], list):
+            # Store only complete conversation message objects
+            for msg in record["messages"]:
+                if "role" in msg:
+                    # Skip system messages during this pass (we'll add them later if needed)
+                    if msg.get("role") == "system":
+                        continue
+
+                    # Add this message if we haven't seen it already
+                    if not any(m.get("role") == msg.get("role") and 
+                               m.get("content") == msg.get("content") and
+                               m.get("tool_call_id") == msg.get("tool_call_id") for m in messages):
+                        # Add agent name if we have it for this record
+                        if current_agent_name and msg.get("role") == "assistant":
+                            msg["agent_name"] = current_agent_name
+                        messages.append(msg)
+
+        # Extract assistant messages and tool responses from model record choices
+        elif "choices" in record and isinstance(record["choices"], list) and record["choices"]:
+            choice = record["choices"][0]
+            if "message" in choice and "role" in choice["message"]:
+                msg = choice["message"]
+                if not any(m.get("role") == msg.get("role") and 
+                          m.get("content") == msg.get("content") and
+                          m.get("tool_call_id") == msg.get("tool_call_id") for m in messages):
+                    # Add agent name if we have it for this record
+                    if current_agent_name and msg.get("role") == "assistant":
+                        msg["agent_name"] = current_agent_name
+                    messages.append(msg)
+
+    # Clean up duplicates and reorder
+    unique_messages = []
+    for msg in messages:
+        if not any(m.get("role") == msg.get("role") and 
+                  m.get("content") == msg.get("content") and
+                  m.get("tool_call_id", "") == msg.get("tool_call_id", "") and
+                  m.get("tool_calls") == msg.get("tool_calls") for m in unique_messages):
+            unique_messages.append(msg)
+
+    # Now add tool result messages and handle system prompts for agent changes
+    final_messages = []
+    
+    # If system_prompt is True, we need to properly insert system prompts based on agent transitions
+    if system_prompt and agent_transitions:
+        # Sort agent transitions by timestamp to ensure proper ordering
+        agent_transitions.sort(key=lambda x: x[0])
+        
+        # Add the first system prompt at the beginning
+        if agent_transitions:
+            first_transition = agent_transitions[0]
+            system_msg = {
+                "role": "system",
+                "content": first_transition[2],  # system_prompt_content
+                "agent_name": first_transition[1]  # agent_name
+            }
+            final_messages.append(system_msg)
+        
+        # Track which agent transitions we've already processed
+        processed_agents = {agent_transitions[0][1]} if agent_transitions else set()
+        
+        for msg in unique_messages:
+            # Check if this is an assistant message that might need a system prompt
+            current_msg_agent = msg.get("agent_name")
+            
+            # If this is an assistant message from a new agent, insert system prompt
+            if (msg.get("role") == "assistant" and 
+                current_msg_agent and 
+                current_msg_agent not in processed_agents):
+                
+                # Find the system prompt for this agent
+                for timestamp, agent_name, system_prompt_content in agent_transitions:
+                    if agent_name == current_msg_agent:
+                        system_msg = {
+                            "role": "system",
+                            "content": system_prompt_content,
+                            "agent_name": agent_name
+                        }
+                        final_messages.append(system_msg)
+                        processed_agents.add(agent_name)
+                        break
+            
+            final_messages.append(msg)
+            
+            # If this is an assistant message with tool_calls, add corresponding tool results
+            if (msg.get("role") == "assistant" and 
+                msg.get("tool_calls") and 
+                isinstance(msg.get("tool_calls"), list)):
+                
+                for tool_call in msg.get("tool_calls", []):
+                    tool_call_id = tool_call.get("id")
+                    if tool_call_id and tool_call_id in tool_outputs:
+                        # Add the tool result message immediately after the assistant message
+                        tool_result_msg = {
+                            "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            "content": tool_outputs[tool_call_id]
+                        }
+                        final_messages.append(tool_result_msg)
+    else:
+        # If system_prompt is False, process messages normally without system prompts
+        for msg in unique_messages:
+            final_messages.append(msg)
+            
+            # If this is an assistant message with tool_calls, add corresponding tool results
+            if (msg.get("role") == "assistant" and 
+                msg.get("tool_calls") and 
+                isinstance(msg.get("tool_calls"), list)):
+                
+                for tool_call in msg.get("tool_calls", []):
+                    tool_call_id = tool_call.get("id")
+                    if tool_call_id and tool_call_id in tool_outputs:
+                        # Add the tool result message immediately after the assistant message
+                        tool_result_msg = {
+                            "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            "content": tool_outputs[tool_call_id]
+                        }
+                        final_messages.append(tool_result_msg)
+
+    # Add last message to the end of the list if it exists and isn't already there
+    if last_assistant_message:
+        # Check if this message is already in the list
+        if not any(m.get("role") == "assistant" and 
+                  m.get("content") == last_assistant_message for m in final_messages):
+            
+            # Check if we need to add a system prompt for the current agent
+            if (system_prompt and 
+                current_agent_name and 
+                agent_transitions):
+                
+                # Check if we need a system prompt for this agent
+                agent_already_has_system_prompt = any(
+                    m.get("role") == "system" and m.get("agent_name") == current_agent_name 
+                    for m in final_messages
+                )
+                
+                if not agent_already_has_system_prompt and current_agent_name in system_prompts_by_agent:
+                    # Insert system prompt before this assistant message
+                    system_msg = {
+                        "role": "system", 
+                        "content": system_prompts_by_agent[current_agent_name],
+                        "agent_name": current_agent_name
+                    }
+                    final_messages.append(system_msg)
+            
+            last_msg = {
+                "role": "assistant",
+                "content": last_assistant_message
+            }
+            # Add agent name if we have it
+            if current_agent_name:
+                last_msg["agent_name"] = current_agent_name
+            final_messages.append(last_msg)
+    
+    return final_messages
+
 def get_token_stats(file_path):
     """
     Get token usage statistics from a JSONL file.
