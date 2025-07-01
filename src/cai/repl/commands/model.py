@@ -73,6 +73,12 @@ class ModelCommand(Command):
                     "description": (
                         "Best model for Cybersecurity AI tasks"
                     )
+                },
+                {
+                    "name": "alias0-fast",
+                    "description": (
+                        "Fast version of alias0 for quick tasks"
+                    )
                 }
             ],
             "Anthropic Claude": [
