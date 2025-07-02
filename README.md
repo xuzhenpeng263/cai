@@ -132,6 +132,8 @@ CAI is built on the following core principles:
 ### Closed-source alternatives
 Cybersecurity AI is a critical field, yet many groups are misguidedly pursuing it through closed-source methods for pure economic return, leveraging similar techniques and building upon existing closed-source (*often third-party owned*) models. This approach not only squanders valuable engineering resources but also represents an economic waste and results in redundant efforts, as they often end up reinventing the wheel. Here are some of the closed-source initiatives we keep track of and attempting to leverage genAI and agentic frameworks in cybersecurity AI:
 
+- [Autonomous Cyber](https://www.acyber.co/)
+- [CrackenAGI](https://cracken.ai/)
 - [Horizon3](https://horizon3.ai/)
 - [Mindfort](www.mindfort.ai)
 - [Mindgard](https://mindgard.ai/)
@@ -146,7 +148,7 @@ Cybersecurity AI is a critical field, yet many groups are misguidedly pursuing i
 - [XBOW](https://www.xbow.com)
 - [ZeroPath](https://www.zeropath.com)
 - [Zynap](https://www.zynap.com)
-- [7ai](7ai.com)
+- [7ai](https://7ai.com)
 
 
 ## :nut_and_bolt: Install
