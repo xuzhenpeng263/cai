@@ -108,7 +108,8 @@ Cybersecurity AI is a critical field, yet many groups are misguidedly pursuing i
 [1] Deng, G., Liu, Y., Mayoral-Vilches, V., Liu, P., Li, Y., Xu, Y., ... & Rass, S. (2024). {PentestGPT}: Evaluating and harnessing large language models for automated penetration testing. In 33rd USENIX Security Symposium (USENIX Security 24) (pp. 847-864).
 
 ## Citation
-If you want to cite our work, please use the following format
+If you want to cite our work, please use the following:
+
 ```bibtex
 @misc{mayoralvilches2025caiopenbugbountyready,
       title={CAI: An Open, Bug Bounty-Ready Cybersecurity AI},
@@ -118,6 +119,18 @@ If you want to cite our work, please use the following format
       archivePrefix={arXiv},
       primaryClass={cs.CR},
       url={https://arxiv.org/abs/2504.06017},
+}
+```
+
+```bibtex
+@misc{mayoralvilches2025cybersecurityaidangerousgap,
+      title={Cybersecurity AI: The Dangerous Gap Between Automation and Autonomy}, 
+      author={Víctor Mayoral-Vilches},
+      year={2025},
+      eprint={2506.23592},
+      archivePrefix={arXiv},
+      primaryClass={cs.CR},
+      url={https://arxiv.org/abs/2506.23592}, 
 }
 ```
 

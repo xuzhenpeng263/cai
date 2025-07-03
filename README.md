@@ -68,6 +68,7 @@ A lightweight, ergonomic framework for building bug bounty-ready Cybersecurity A
     - [:bust\_in\_silhouette: Why CAI?](#bust_in_silhouette-why-cai)
     - [Ethical principles behind CAI](#ethical-principles-behind-cai)
     - [Closed-source alternatives](#closed-source-alternatives)
+  - [Learn - `CAI` Fluency](#learn---cai-fluency)
   - [:nut\_and\_bolt: Install](#nut_and_bolt-install)
     - [OS X](#os-x)
     - [Ubuntu 24.04](#ubuntu-2404)
@@ -149,6 +150,23 @@ Cybersecurity AI is a critical field, yet many groups are misguidedly pursuing i
 - [ZeroPath](https://www.zeropath.com)
 - [Zynap](https://www.zynap.com)
 - [7ai](https://7ai.com)
+
+
+## Learn - `CAI` Fluency
+
+|       |   Description  | English | Spanish |
+|-------|----------------|---------|---------|
+| Episode 0: What is CAI? | Cybersecurity AI (`CAI`) explained  |  [![Watch the video](https://img.youtube.com/vi/nBdTxbKM4oo/0.jpg)](https://www.youtube.com/watch?v=nBdTxbKM4oo) | [![Watch the video](https://img.youtube.com/vi/FaUL9HXrQ5k/0.jpg)](https://www.youtube.com/watch?v=FaUL9HXrQ5k) |
+| Episode 1: The `CAI` Framework. Vision & Ethics | Explore the core motivation behind CAI and delve into the crucial ethical principles guiding its development. Understand the motivation behind CAI and how you can actively contribute to the future of cybersecurity and the CAI framework. | <p align="center">🚧</p> | <p align="center">🚧</p> |
+| Episode 2: Foundational Concepts - LLM Agents | Bridge the gap between foundational LLMs and intelligent agents, exploring how to synergize reasoning and acting for truly dynamic interactions. Learn about AI systems that don't just generate text, but actively interact within their environment. | <p align="center">🚧</p> | <p align="center">🚧</p> |
+| Episode 3: Vibe-Hacking Tutorial "My first Hack" | A Vibe-Hacking guide for newbies. We demonstrate a simple web security hack using a default agent and demonstrate how to leverage tools and interpret CIA output. You'll also learn to compare different LLM models to find the best fit for your hacking endeavors. | <p align="center">🚧</p> | <p align="center">🚧</p> |
+|  |  |  |  |
+| Annex 1: `CAI` 0.5.x release  | Introduce version 0.5 of `CAI` including new multi-agent functionality, new commands such as `/history`, `/compact`, `/graph` or `/memory` and a case study showing how `CAI` found a critical security flaw in OT heap pumps spread around the world. |  [![Watch the video](https://img.youtube.com/vi/OPFH0ANUMMw/0.jpg)](https://www.youtube.com/watch?v=OPFH0ANUMMw) | [![Watch the video](https://img.youtube.com/vi/Q8AI4E4gH8k/0.jpg)](https://www.youtube.com/watch?v=Q8AI4E4gH8k) |
+| Annex 2: `CAI` 0.4.x release and `alias0`  | Introducing version 0.4 of `CAI` with *streaming* and improved MCP support. We also introduce `alias0`, the Privacy-First Cybersecurity AI, a Model-of-Models Intelligence that implements a Privacy-by-Design architecture and obtains state-of-the-art results in cybersecurity benchmarks. |  [![Watch the video](https://img.youtube.com/vi/NZjzfnvAZcc/0.jpg)](https://www.youtube.com/watch?v=NZjzfnvAZcc) |  |
+| Annex 3: Cybersecurity AI Community Meeting #1  | First Cybersecurity AI (`CAI`) community meeting, over 40 participants from academia, industry, and defense gathered to discuss the open-source scaffolding behind CAI — a project designed to build agentic AI systems for cybersecurity that are open, modular, and Bug Bounty-ready. |  [![Watch the video](https://img.youtube.com/vi/4JqaTiVlgsw/0.jpg)](https://www.youtube.com/watch?v=4JqaTiVlgsw) |  |
+
+
+
 
 
 ## :nut_and_bolt: Install
@@ -989,7 +1007,8 @@ CAI itself is not a profit-seeking initiative. Our goal is to build a sustainabl
 
 
 ## Citation
-If you want to cite our work, please use the following format
+If you want to cite our work, please use the following:
+
 ```bibtex
 @misc{mayoralvilches2025caiopenbugbountyready,
       title={CAI: An Open, Bug Bounty-Ready Cybersecurity AI},
@@ -999,6 +1018,18 @@ If you want to cite our work, please use the following format
       archivePrefix={arXiv},
       primaryClass={cs.CR},
       url={https://arxiv.org/abs/2504.06017},
+}
+```
+
+```bibtex
+@misc{mayoralvilches2025cybersecurityaidangerousgap,
+      title={Cybersecurity AI: The Dangerous Gap Between Automation and Autonomy}, 
+      author={Víctor Mayoral-Vilches},
+      year={2025},
+      eprint={2506.23592},
+      archivePrefix={arXiv},
+      primaryClass={cs.CR},
+      url={https://arxiv.org/abs/2506.23592}, 
 }
 ```
 
