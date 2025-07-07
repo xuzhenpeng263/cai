@@ -137,6 +137,7 @@ Cybersecurity AI is a critical field, yet many groups are misguidedly pursuing i
 - [CrackenAGI](https://cracken.ai/)
 - [ETHIACK](https://ethiack.com/)
 - [Horizon3](https://horizon3.ai/)
+- [Lakera](https://lakera.ai)
 - [Mindfort](www.mindfort.ai)
 - [Mindgard](https://mindgard.ai/)
 - [NDAY Security](https://ndaysecurity.com/)
