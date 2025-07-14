@@ -788,7 +788,7 @@ pre-commit run --all-files # all files
 
 ### Optional Requirements: caiextensions
 
-Currently, the extensions are not available as they have been (largely) integrated or are in the process of being integrated into the core architecture. We aim to have everything converge in version 0.4.x. Coming soon!
+Currently, the extensions are not publicly available as the engineering endeavour to maintain them is significant. Instead, we're making selected custom caiextensions available for partner companies across collaborations.
 
 ### :information_source: Usage Data Collection
 
