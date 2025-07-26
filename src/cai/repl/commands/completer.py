@@ -52,6 +52,7 @@ class FuzzyCommandCompleter(Completer):
     - Autocompletion menu with descriptions
     - Command shadowing (showing hints for previously used commands)
     - Model completion for the /model command
+    - Agent completion for the /agent command
     """
 
     # Class-level cache for models
@@ -60,14 +61,26 @@ class FuzzyCommandCompleter(Completer):
     _last_model_fetch = datetime.datetime.now() - datetime.timedelta(minutes=10)
     _fetch_lock = threading.Lock()
 
+    # Class-level cache for agents (with proper threading and time-based caching)
+    _cached_agents = []
+    _cached_agent_numbers = {}
+    _last_agent_fetch = datetime.datetime.now() - datetime.timedelta(minutes=10)
+    _agent_fetch_lock = threading.Lock()
+    
     def __init__(self):
-        """Initialize the command completer with cached model information."""
+        """Initialize the command completer with cached model and agent information."""
         super().__init__()
         self.command_history = {}  # Store command usage frequency
         
         # Fetch models in background thread to avoid blocking
         threading.Thread(
             target=self._background_fetch_models,
+            daemon=True
+        ).start()
+
+        # Fetch agents in background thread to avoid blocking
+        threading.Thread(
+            target=self._background_fetch_agents,
             daemon=True
         ).start()
 
@@ -79,6 +92,54 @@ class FuzzyCommandCompleter(Completer):
             'scrollbar.background': 'bg:#2b2b2b',
             'scrollbar.button': 'bg:#004b6b',
         })
+    
+    def _background_fetch_agents(self):
+        """Fetch agents in background to avoid blocking the UI."""
+        try:
+            self.fetch_all_agents()
+        except Exception:  # pylint: disable=broad-except
+            # Silently fail if agent fetching is not available
+            pass
+
+    def fetch_all_agents(self):
+        """Fetch all available agents to match /agent command."""
+        # Only fetch every 60 seconds to avoid excessive calls
+        now = datetime.datetime.now()
+        
+        # Use a lock to prevent multiple threads from fetching simultaneously
+        with self._agent_fetch_lock:
+            if (now - self._last_agent_fetch).total_seconds() < 60:
+                return
+            
+            self._last_agent_fetch = now
+            
+            try:
+                from cai.agents import get_available_agents
+                
+                # Get agents and filter out parallel patterns (like /agent list does)
+                all_agents = get_available_agents()
+                regular_agents = []
+                
+                for agent_key, agent in all_agents.items():
+                    # Skip parallel patterns in completion (matches /agent list behavior)
+                    if hasattr(agent, "_pattern"):
+                        pattern = agent._pattern
+                        if hasattr(pattern, "type"):
+                            pattern_type_value = getattr(pattern.type, 'value', str(pattern.type))
+                            if pattern_type_value == "parallel":
+                                continue
+                    regular_agents.append(agent_key)
+                
+                self._cached_agents = regular_agents
+                
+                # Create number mappings (1-based indexing)
+                self._cached_agent_numbers = {}
+                for i, agent_key in enumerate(self._cached_agents, 1):
+                    self._cached_agent_numbers[str(i)] = agent_key
+                    
+            except Exception:  # pylint: disable=broad-except
+                # Silently fail if agent fetching is not available
+                pass
     
     def _background_fetch_models(self):
         """Fetch models in background to avoid blocking the UI."""
@@ -459,6 +520,55 @@ class FuzzyCommandCompleter(Completer):
 
         return suggestions
 
+    def get_agent_suggestions(self, current_word: str) -> List[Completion]:
+        """Get agent suggestions for the /agent command."""
+        suggestions = []
+
+        # Refresh agents if needed (non-blocking due to time-based caching)
+        self.fetch_all_agents()
+
+        # First try to complete agent numbers
+        for num, agent_name in self._cached_agent_numbers.items():
+            if num.startswith(current_word):
+                # Get agent display name for better UX
+                try:
+                    from cai.agents import get_available_agents
+                    agents = get_available_agents()
+                    agent_obj = agents.get(agent_name)
+                    display_name = getattr(agent_obj, "name", agent_name) if agent_obj else agent_name
+                except (ImportError, AttributeError, KeyError):  # pylint: disable=broad-except
+                    display_name = agent_name
+                    
+                suggestions.append(Completion(
+                    num,
+                    start_position=-len(current_word),
+                    display=HTML(
+                        f"<ansiwhite><b>{num:<3}</b></ansiwhite> "
+                        f"{display_name}"),
+                    style="fg:ansiwhite bold"
+                ))
+
+        # Then try to complete agent names
+        for agent_key in self._cached_agents:
+            if agent_key.startswith(current_word):
+                suggestions.append(Completion(
+                    agent_key,
+                    start_position=-len(current_word),
+                    display=HTML(
+                        f"<ansimagenta><b>{agent_key}</b></ansimagenta>"),
+                    style="fg:ansimagenta bold"
+                ))
+            elif (current_word.lower() in agent_key.lower() and
+                  not agent_key.startswith(current_word)):
+                suggestions.append(Completion(
+                    agent_key,
+                    start_position=-len(current_word),
+                    display=HTML(f"<ansimagenta>{agent_key}</ansimagenta>"),
+                    style="fg:ansimagenta"
+                ))
+
+        return suggestions
+
     # pylint: disable=unused-argument
     def get_completions(self, document, complete_event):
         """Get completions for the current document
@@ -474,8 +584,9 @@ class FuzzyCommandCompleter(Completer):
         text = document.text_before_cursor.strip()
         words = text.split()
 
-        # Refresh Ollama models periodically
+        # Refresh Ollama models and agents periodically
         self.fetch_all_models()
+        self.fetch_all_agents()
 
         if not text:
             # Show all main commands with descriptions
@@ -514,7 +625,18 @@ class FuzzyCommandCompleter(Completer):
                 # Special handling for model command
                 if cmd in ["/model", "/mod"]:
                     yield from self.get_model_suggestions(current_word)
+                # Add special handling for agent command
+                elif cmd in ["/agent", "/a"]:
+                    yield from self.get_agent_suggestions(current_word)
                 else:
                     # Get subcommand suggestions
-                    yield from self.get_subcommand_suggestions(
-                        cmd, current_word)
+                    yield from self.get_subcommand_suggestions(cmd, current_word)
+
+            # Agent select completion
+            elif len(words) == 3:
+                cmd = words[0]
+                subcommand = words[1]
+                
+                # Agent select completion
+                if cmd in ["/agent", "/a"] and subcommand in ["select", "info"]:
+                    yield from self.get_agent_suggestions(current_word)
