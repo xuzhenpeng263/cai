@@ -167,6 +167,7 @@ Cybersecurity AI is a critical field, yet many groups are misguidedly pursuing i
       >
     </a>
   </p>
+</div>
 
 
 |       |   Description  | English | Spanish |
