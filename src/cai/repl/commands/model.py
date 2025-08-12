@@ -95,6 +95,20 @@ def get_predefined_model_categories() -> Dict[str, List[Dict[str, str]]]:
                 "name": "deepseek-r1",
                 "description": "DeepSeek's specialized reasoning model"
             }
+        ],
+        "ZhipuAI": [
+            {
+                "name": "glm-4.5",
+                "description": "ZhipuAI's latest GLM model with advanced reasoning capabilities"
+            },
+            {
+                "name": "glm-4.5-air",
+                "description": "Lightweight version of glm-4.5"
+            },
+            {
+                "name": "glm-4.5-flash",
+                "description": "Fast version of glm-4.5"
+            }
         ]
     }
 
@@ -113,7 +127,8 @@ def get_all_predefined_models() -> List[Dict[str, Any]]:
         "Alias": "OpenAI",  # Alias models use OpenAI as base
         "Anthropic Claude": "Anthropic",
         "OpenAI": "OpenAI", 
-        "DeepSeek": "DeepSeek"
+        "DeepSeek": "DeepSeek",
+        "ZhipuAI": "ZhipuAI"
     }
     
     for category, models in model_categories.items():

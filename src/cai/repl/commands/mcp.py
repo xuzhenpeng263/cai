@@ -230,10 +230,12 @@ class GlobalMCPUtil(MCPUtil):
                     error_str = str(e).lower()
                     
                     # Improved error messages for common issues
-                    if (error_type in ("ClosedResourceError", "ExceptionGroup") or 
+                    if (error_type in ("ClosedResourceError", "ExceptionGroup", "TaskGroup") or 
                         "closedresourceerror" in error_str or
                         "closed" in error_str or
-                        "connection" in error_str):
+                        "connection" in error_str or
+                        "taskgroup" in error_str or
+                        "unhandled errors" in error_str):
                         raise AgentsException(
                             f"Connection lost to MCP server for tool {config['tool_name']}. "
                             f"This is normal for SSE servers. The tool will reconnect automatically "
@@ -651,6 +653,8 @@ Example: `/mcp add burp 13`
                     warnings.filterwarnings("ignore", message=".*asynchronous generator.*")
                     warnings.filterwarnings("ignore", message=".*cancel scope.*")
                     warnings.filterwarnings("ignore", message=".*didn't stop after athrow.*")
+                    warnings.filterwarnings("ignore", message=".*TaskGroup.*")
+                    warnings.filterwarnings("ignore", message=".*unhandled errors.*")
 
                     server, tools = self._run_async(connect_and_test())
             finally:
@@ -673,7 +677,21 @@ Example: `/mcp add burp 13`
             return True
 
         except Exception as e:
-            console.print(f"[red]Error connecting to server: {e}[/red]")
+            # Handle specific TaskGroup and ExceptionGroup errors
+            error_type = type(e).__name__
+            error_str = str(e).lower()
+            
+            if (error_type in ("ExceptionGroup", "TaskGroup") or 
+                "taskgroup" in error_str or 
+                "unhandled errors" in error_str):
+                console.print(f"[red]Error connecting to server: Connection failed to {url}[/red]")
+                console.print(f"[yellow]This usually means the MCP server is not running or not accessible.[/yellow]")
+                console.print(f"[dim]Please check that the server is running at {url}[/dim]")
+                console.print(f"[cyan]Tip: You need to start the MCP server first before connecting to it.[/cyan]")
+                console.print(f"[cyan]For Burp Suite MCP: Install the MCP extension and ensure it's running on port 9876[/cyan]")
+            else:
+                console.print(f"[red]Error connecting to server: {e}[/red]")
+            
             # Clean up if connection failed
             if name in _GLOBAL_MCP_SERVERS:
                 del _GLOBAL_MCP_SERVERS[name]

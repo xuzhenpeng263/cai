@@ -427,7 +427,44 @@ class RunImpl:
         function_map = {tool.name: tool for tool in all_tools if isinstance(tool, FunctionTool)}
         computer_tool = next((tool for tool in all_tools if isinstance(tool, ComputerTool)), None)
 
+        # Log the raw response for debugging
+        logger.debug(f"Processing model response with {len(response.output)} output items")
+        
         for output in response.output:
+            # Log each output item for debugging
+            logger.debug(f"Processing output item, type: {type(output)}, value: {output}")
+
+            # Special handling for ZhipuAI GLM-4.5's 'output_text' dict format
+            # This occurs when the 'thinking' parameter is enabled.
+            if isinstance(output, dict) and output.get("type") == "output_text" and "text" in output:
+                # For GLM-4.5 responses, we need to handle them differently
+                # Instead of creating a ResponseOutputMessage, let's create a simple message item
+                from openai.types.responses import ResponseOutputMessage, ResponseOutputText
+                
+                # Extract the text content
+                content = output["text"]
+                
+                # Create a proper ResponseOutputText object
+                text_obj = ResponseOutputText(
+                    type="output_text",
+                    text=content,
+                    annotations=[]  # Required field
+                )
+                
+                # Create a ResponseOutputMessage object with the correct structure
+                message_obj = ResponseOutputMessage(
+                    id=f"msg-{hash(content)}",  # Generate a simple ID
+                    content=[text_obj],  # This should be a list of ResponseOutputText
+                    role="assistant",
+                    status="completed",
+                    type="message"  # Required field
+                )
+                items.append(MessageOutputItem(raw_item=message_obj, agent=agent))
+                tools_used.append("output_text")  # Track that we used this special format
+
+                continue
+
+            # Standard processing for known item types
             if isinstance(output, ResponseOutputMessage):
                 items.append(MessageOutputItem(raw_item=output, agent=agent))
             elif isinstance(output, ResponseFileSearchToolCall):
@@ -438,58 +475,10 @@ class RunImpl:
                 tools_used.append("web_search")
             elif isinstance(output, ResponseReasoningItem):
                 items.append(ReasoningItem(raw_item=output, agent=agent))
-            elif isinstance(output, ResponseComputerToolCall):
-                items.append(ToolCallItem(raw_item=output, agent=agent))
-                tools_used.append("computer_use")
-                if not computer_tool:
-                    _error_tracing.attach_error_to_current_span(
-                        SpanError(
-                            message="Computer tool not found",
-                            data={},
-                        )
-                    )
-                    raise ModelBehaviorError(
-                        "Model produced computer action without a computer tool."
-                    )
-                computer_actions.append(
-                    ToolRunComputerAction(tool_call=output, computer_tool=computer_tool)
-                )
-            elif not isinstance(output, ResponseFunctionToolCall):
-                logger.warning(f"Unexpected output type, ignoring: {type(output)}")
-                continue
 
-            # At this point we know it's a function tool call
-            if not isinstance(output, ResponseFunctionToolCall):
-                continue
-
-            tools_used.append(output.name)
-
-            # Handoffs
-            if output.name in handoff_map:
-                items.append(HandoffCallItem(raw_item=output, agent=agent))
-                handoff = ToolRunHandoff(
-                    tool_call=output,
-                    handoff=handoff_map[output.name],
-                )
-                run_handoffs.append(handoff)
-            # Regular function tool call
-            else:
-                if output.name not in function_map:
-                    _error_tracing.attach_error_to_current_span(
-                        SpanError(
-                            message="Tool not found",
-                            data={"tool_name": output.name},
-                        )
-                    )
-                    raise ModelBehaviorError(f"Tool {output.name} not found in agent {agent.name}")
-                items.append(ToolCallItem(raw_item=output, agent=agent))
-                functions.append(
-                    ToolRunFunction(
-                        tool_call=output,
-                        function_tool=function_map[output.name],
-                    )
-                )
-
+        # Log the processed items
+        logger.debug(f"Processed response into {len(items)} items, tools used: {tools_used}")
+        
         return ProcessedResponse(
             new_items=items,
             handoffs=run_handoffs,

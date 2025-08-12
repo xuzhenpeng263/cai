@@ -123,10 +123,11 @@ class MCPUtil:
             error_type = type(e).__name__
             error_str = str(e).lower()
             
-            # Also check for ExceptionGroup which wraps SSE errors
-            if (error_type in ("ClosedResourceError", "ExceptionGroup") or 
+            # Also check for ExceptionGroup and TaskGroup which wrap SSE errors
+            if (error_type in ("ClosedResourceError", "ExceptionGroup", "TaskGroup") or 
                 "closedresourceerror" in error_str or
-                "taskgroup" in error_str):
+                "taskgroup" in error_str or
+                "unhandled errors" in error_str):
                 # Connection was closed, attempt to reconnect
                 logger.debug(f"MCP connection issue for tool {tool.name}, attempting to reconnect...")
                 try:

@@ -113,7 +113,9 @@ class _MCPServerWithClientSession(MCPServer, abc.ABC):
             if ("connection" in error_str or 
                 "refused" in error_str or 
                 "taskgroup" in error_str or
-                error_type == "ExceptionGroup"):
+                "unhandled errors" in error_str or
+                error_type == "ExceptionGroup" or
+                error_type == "TaskGroup"):
                 logger.debug(f"Expected connection error during MCP server init: {e}")
             else:
                 logger.error(f"Error initializing MCP server: {e}")

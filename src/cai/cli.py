@@ -139,6 +139,15 @@ import asyncio
 import logging
 import time
 
+# Set up basic logging configuration - default to WARNING level to reduce noise
+cai_debug_level = os.getenv("CAI_DEBUG", "0")
+if cai_debug_level == "2":
+    logging.basicConfig(level=logging.INFO)
+elif cai_debug_level == "1":
+    logging.basicConfig(level=logging.DEBUG)
+else:
+    logging.basicConfig(level=logging.WARNING)
+
 # Configure comprehensive error filtering
 class ComprehensiveErrorFilter(logging.Filter):
     """Filter to suppress various expected errors and warnings."""
@@ -217,14 +226,22 @@ loggers_to_configure = [
     "aiohttp",  # Add aiohttp logger to suppress session warnings
 ]
 
+# Check if debug mode is enabled - default to 0 (production mode)
+cai_debug_level = os.getenv("CAI_DEBUG", "0")
+
 for logger_name in loggers_to_configure:
     logger = logging.getLogger(logger_name)
     logger.addFilter(comprehensive_filter)
-    # Set appropriate level - ERROR for most, WARNING for critical ones
-    if logger_name in ["asyncio", "anyio", "anyio._backends._asyncio"]:
-        logger.setLevel(logging.ERROR)  # Only show critical errors
+    # Set appropriate level based on debug mode
+    if cai_debug_level == "2":
+        # CLI debug mode - show INFO and above
+        logger.setLevel(logging.INFO)
+    elif cai_debug_level == "1":
+        # Verbose debug mode - show DEBUG and above
+        logger.setLevel(logging.DEBUG)
     else:
-        logger.setLevel(logging.WARNING)
+        # Production mode - show only ERROR and above
+        logger.setLevel(logging.ERROR)
 
 # Suppress various warnings globally with more comprehensive patterns
 warnings.filterwarnings("ignore", category=RuntimeWarning)  # Ignore ALL RuntimeWarnings
@@ -300,7 +317,7 @@ from cai.repl.ui.prompt import get_user_input
 from cai.repl.ui.toolbar import get_toolbar_with_refresh
 
 # CAI SDK imports
-from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, Runner, set_tracing_disabled
+from cai.sdk.agents import Agent, OpenAIChatCompletionsModel, Runner, RunConfig, set_tracing_disabled
 from cai.sdk.agents.items import ToolCallOutputItem
 from cai.sdk.agents.models.openai_chatcompletions import (
     get_agent_message_history,
@@ -346,71 +363,8 @@ START_TIME = time.time()
 set_tracing_disabled(True)
 
 
-def update_agent_models_recursively(agent, new_model, visited=None):
-    """
-    Recursively update the model for an agent and all agents in its handoffs.
-
-    Args:
-        agent: The agent to update
-        new_model: The new model string to set
-        visited: Set of agent names already visited to prevent infinite loops
-    """
-    if visited is None:
-        visited = set()
-
-    # Avoid infinite loops by tracking visited agents
-    if agent.name in visited:
-        return
-    visited.add(agent.name)
-
-    # Update the main agent's model
-    if hasattr(agent, "model") and hasattr(agent.model, "model"):
-        agent.model.model = new_model
-        # Also ensure the agent name is set correctly in the model
-        if hasattr(agent.model, "agent_name"):
-            agent.model.agent_name = agent.name
-        
-        # IMPORTANT: Clear any cached state in the model that might be model-specific
-        # This ensures the model doesn't have stale state from the previous model
-        if hasattr(agent.model, "_client"):
-            # Force recreation of the client on next use
-            agent.model._client = None
-        if hasattr(agent.model, "_converter"):
-            # Reset the converter's state
-            if hasattr(agent.model._converter, "recent_tool_calls"):
-                agent.model._converter.recent_tool_calls.clear()
-            if hasattr(agent.model._converter, "tool_outputs"):
-                agent.model._converter.tool_outputs.clear()
-
-    # Update models for all handoff agents
-    if hasattr(agent, "handoffs"):
-        for handoff_item in agent.handoffs:
-            # Handle both direct Agent references and Handoff objects
-            if hasattr(handoff_item, "on_invoke_handoff"):
-                # This is a Handoff object
-                # For handoffs created with the handoff() function, the agent is stored
-                # in the closure of the on_invoke_handoff function
-                # We can try to extract it from the function's closure
-                try:
-                    # Get the closure variables of the handoff function
-                    if (
-                        hasattr(handoff_item.on_invoke_handoff, "__closure__")
-                        and handoff_item.on_invoke_handoff.__closure__
-                    ):
-                        for cell in handoff_item.on_invoke_handoff.__closure__:
-                            if hasattr(cell.cell_contents, "model") and hasattr(
-                                cell.cell_contents, "name"
-                            ):
-                                # This looks like an agent
-                                handoff_agent = cell.cell_contents
-                                update_agent_models_recursively(handoff_agent, new_model, visited)
-                                break
-                except Exception:
-                    # If we can't extract the agent from closure, skip it
-                    pass
-            elif hasattr(handoff_item, "model"):
-                # This is a direct Agent reference
-                update_agent_models_recursively(handoff_item, new_model, visited)
+# Import the model provider utility functions
+from .cli_model_utils import get_model_provider_for_model, update_agent_models_recursively
 
 
 def run_cai_cli(
@@ -1123,7 +1077,18 @@ def run_cai_cli(
                             instance_input = input_text
                         
                         # Run the agent with its own isolated context
-                        result = await Runner.run(instance_agent, instance_input)
+                        # Get the appropriate model provider for the current model
+                        from .cli_model_utils import get_model_provider_for_model
+                        current_model = os.getenv("CAI_MODEL", "alias0")
+                        model_provider = get_model_provider_for_model(current_model)
+                        
+                        # Run the agent with its own isolated context and the correct model provider
+                        from cai.sdk.agents import RunConfig
+                        result = await Runner.run(
+                            instance_agent, 
+                            instance_input,
+                            run_config=RunConfig(model_provider=model_provider, model=current_model)
+                        )
                         
                         # Clean up any streaming resources created by this agent's tools
                         try:
@@ -1401,7 +1366,18 @@ def run_cai_cli(
                         instance_input = conversation_context
 
                         # Run the agent with its own isolated context
-                        result = await Runner.run(instance_agent, instance_input)
+                        # Get the appropriate model provider for the current model
+                        from .cli_model_utils import get_model_provider_for_model
+                        current_model = os.getenv("CAI_MODEL", "alias0")
+                        model_provider = get_model_provider_for_model(current_model)
+                        
+                        # Run the agent with its own isolated context and the correct model provider
+                        from cai.sdk.agents import RunConfig
+                        result = await Runner.run(
+                            instance_agent, 
+                            instance_input,
+                            run_config=RunConfig(model_provider=model_provider, model=current_model)
+                        )
 
                         return (instance_number, result)
                     except Exception as e:
@@ -1466,7 +1442,18 @@ def run_cai_cli(
                         stream_iterator = None
                         
                         try:
-                            result = Runner.run_streamed(agent, conversation_input)
+                            # Get the appropriate model provider for the current model
+                            from .cli_model_utils import get_model_provider_for_model
+                            current_model = os.getenv("CAI_MODEL", "alias0")
+                            model_provider = get_model_provider_for_model(current_model)
+                            
+                            # Run the agent with the correct model provider
+                            from cai.sdk.agents import RunConfig
+                            result = Runner.run_streamed(
+                                agent, 
+                                conversation_input,
+                                run_config=RunConfig(model_provider=model_provider, model=current_model)
+                            )
                             stream_iterator = result.stream_events()
 
                             # Consume events so the async generator is executed.
@@ -1580,7 +1567,27 @@ def run_cai_cli(
                             raise
                 else:
                     # Use non-streamed response
-                    response = asyncio.run(Runner.run(agent, conversation_input))
+                    # Get the appropriate model provider for the current model
+                    from .cli_model_utils import get_model_provider_for_model
+                    current_model = os.getenv("CAI_MODEL", "alias0")
+                    model_provider = get_model_provider_for_model(current_model)
+                    
+                    # Run the agent with the correct model provider
+                    from cai.sdk.agents import RunConfig
+                    response = asyncio.run(Runner.run(
+                        agent, 
+                        conversation_input,
+                        run_config=RunConfig(model_provider=model_provider, model=current_model)
+                    ))
+
+                    # Handle the final output if it exists
+                    if hasattr(response, "final_output") and response.final_output:
+                        # Add the final output to message history for context
+                        agent.model.add_to_message_history(
+                            {"role": "assistant", "content": str(response.final_output)}
+                        )
+                        # Print the final output to the console
+                        console.print(f"[bold green]{response.final_output}[/bold green]")
 
                     # En modo no-streaming, procesamos SOLO los tool outputs de response.new_items
                     # Los tool calls (assistant messages) ya se añaden correctamente en openai_chatcompletions.py
