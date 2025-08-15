@@ -4,7 +4,7 @@ import os
 from typing import Any
 
 from cai.sdk.agents import Agent
-from cai.sdk.agents.models import ModelProvider, OpenAIProvider, ZhipuAIProvider, DeepSeekProvider
+from cai.sdk.agents.models import ModelProvider, OpenAIProvider, ZhipuAIProvider, DeepSeekProvider, GeminiProvider
 
 
 def get_model_provider_for_model(model_name: str) -> ModelProvider:
@@ -35,6 +35,16 @@ def get_model_provider_for_model(model_name: str) -> ModelProvider:
                 "ZHIPUAI_API_KEY environment variable is required for ZhipuAI models"
             )
         return ZhipuAIProvider(api_key=zhipuai_api_key)
+    
+    # Check if this is a Gemini model
+    if model_name.startswith("gemini-"):
+        # For Gemini models, create a GeminiProvider
+        google_api_key = os.getenv("GOOGLE_API_KEY")
+        if not google_api_key:
+            raise ValueError(
+                "GOOGLE_API_KEY environment variable is required for Gemini models"
+            )
+        return GeminiProvider(api_key=google_api_key)
     
     # For all other models, use OpenAIProvider as default
     # This includes alias models, OpenAI models, Anthropic models, OpenRouter models, etc.

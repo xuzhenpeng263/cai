@@ -37,6 +37,8 @@ dependencies = [
     "PyPDF2",
     # ZhipuAI SDK
     "zai-sdk>=0.0.2",
+    # Google Gemini SDK
+    "google-genai>=0.6.0",
 ]
 classifiers = [
     "Typing :: Typed",
