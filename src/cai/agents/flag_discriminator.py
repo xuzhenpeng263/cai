@@ -15,11 +15,11 @@ api_key = os.getenv('OPENAI_API_KEY', 'sk-placeholder-key-for-local-models')
 flag_discriminator = Agent(
     name="Flag discriminator",
     description="Agent focused on extracting the flag from the output",
-    instructions="""INSTRUCTIONS:
-                1. You are an agent tailored to extract the flag from a given output.
-                2. ONLY return the flag, nothing else.
-                3. Flags can be in any format (not always CTF{...}).
-                4. If you do not find a flag, call `ctf_agent` to continue investigating.
+    instructions="""指令：
+                1. 您是一个专门从给定输出中提取标志的代理。
+                2. 仅返回标志，不要返回其他内容。
+                3. 标志可以是任何格式（不一定是CTF{...}）。
+                4. 如果您没有找到标志，请调用`ctf_agent`继续调查。
                 """,
     model=OpenAIChatCompletionsModel(
         model="alias0" if os.getenv('CAI_MODEL') == "o3-mini" else model,
@@ -29,7 +29,7 @@ flag_discriminator = Agent(
         handoff(
             agent=one_tool_agent,
             tool_name_override="ctf_agent",
-            tool_description_override="Call the CTF agent to continue investigating if no flag is found"
+            tool_description_override="如果没有找到标志，调用CTF代理继续调查"
         )
     ]
 )

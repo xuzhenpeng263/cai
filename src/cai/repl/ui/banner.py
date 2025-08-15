@@ -349,7 +349,7 @@ def display_quick_guide(console: Console):
     
     # Get current environment variable values
     current_model = os.getenv('CAI_MODEL', "alias0")
-    current_agent_type = os.getenv('CAI_AGENT_TYPE', "one_tool_agent")
+    current_agent_type = os.getenv('CAI_AGENT_TYPE', "ctf_strong_agent")
     
     config_text = Text.assemble(
         ("Quick Start Workflows", "bold cyan underline"), "\n\n",

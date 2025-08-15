@@ -7,17 +7,19 @@ analysis, parameter inspection, and security vulnerability detection.
 """
 
 from urllib.parse import urlparse
+from typing import Optional
 import requests  # pylint: disable=E0401
+from cai.sdk.agents import function_tool
 
 
+@function_tool
 def web_request_framework(  # noqa: E501 # pylint: disable=too-many-arguments,too-many-locals,too-many-branches
                             url: str = "",
                             method: str = "GET",
-                            headers: dict = None,
-                            data: dict = None,
-                            cookies: dict = None,
-                            params: dict = None,
-                            ctf=None) -> str:  # pylint: disable=unused-argument  # noqa: E501
+                            headers: Optional[str] = None,
+                            data: Optional[str] = None,
+                            cookies: Optional[str] = None,
+                            params: Optional[str] = None) -> str:
     """
     Analyze HTTP requests and responses in detail for security testing.
 
@@ -38,6 +40,31 @@ def web_request_framework(  # noqa: E501 # pylint: disable=too-many-arguments,to
             - Suggested attack vectors
     """
     try:
+        import json
+        
+        # Parse string parameters to dictionaries
+        def parse_param(param_str):
+            if not param_str:
+                return None
+            try:
+                return json.loads(param_str)
+            except (json.JSONDecodeError, TypeError):
+                # If not valid JSON, try to parse as key=value pairs
+                if '=' in str(param_str):
+                    result = {}
+                    for pair in str(param_str).split('&'):
+                        if '=' in pair:
+                            key, value = pair.split('=', 1)
+                            result[key.strip()] = value.strip()
+                    return result
+                return None
+        
+        # Convert string parameters to dictionaries
+        headers_dict = parse_param(headers)
+        cookies_dict = parse_param(cookies) 
+        params_dict = parse_param(params)
+        data_dict = parse_param(data)
+        
         # Initialize analysis results
         analysis = []
         analysis.append("\n=== HTTP Request Analysis ===\n")
@@ -54,34 +81,34 @@ def web_request_framework(  # noqa: E501 # pylint: disable=too-many-arguments,to
         analysis.append("\nRequest Details:")
         analysis.append(f"- Method: {method}")
 
-        if headers:
+        if headers_dict:
             analysis.append("\nHeaders Analysis:")
-            for header, value in headers.items():
+            for header, value in headers_dict.items():
                 analysis.append(f"- {header}: {value}")
 
-        if cookies:
+        if cookies_dict:
             analysis.append("\nCookies Analysis:")
-            for cookie, value in cookies.items():
+            for cookie, value in cookies_dict.items():
                 analysis.append(f"- {cookie}: {value}")
 
-        if params:
+        if params_dict:
             analysis.append("\nParameters Analysis:")
-            for param, value in params.items():
+            for param, value in params_dict.items():
                 analysis.append(f"- {param}: {value}")
 
-        if data:
+        if data_dict:
             analysis.append("\nBody Data Analysis:")
-            for key, value in data.items():
+            for key, value in data_dict.items():
                 analysis.append(f"- {key}: {value}")
 
         # Make the request and analyze response
         response = requests.request(
             method=method,
             url=url,
-            headers=headers,
-            data=data,
-            cookies=cookies,
-            params=params,
+            headers=headers_dict,
+            data=data_dict,
+            cookies=cookies_dict,
+            params=params_dict,
             verify=False,
             allow_redirects=True
         )

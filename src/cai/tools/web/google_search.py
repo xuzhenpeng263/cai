@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from cai.sdk.agents import function_tool
 
 
+@function_tool
 def google_search(query: str, num_results: int = 10) -> str:
     """
     Perform a regular Google search and return a formatted string with results.
@@ -35,6 +36,7 @@ def google_search(query: str, num_results: int = 10) -> str:
     return formatted_results
 
 
+@function_tool
 def google_dork_search(dork_query: str, num_results: int = 100) -> str:
     """
     Perform a Google dork search and return a formatted string with URLs.

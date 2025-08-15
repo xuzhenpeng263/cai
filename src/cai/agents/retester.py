@@ -7,8 +7,8 @@ from cai.util import load_prompt_template, create_system_prompt_renderer
 from cai.tools.reconnaissance.generic_linux_command import (  # pylint: disable=import-error # noqa: E501
     generic_linux_command
 )
-from cai.tools.web.search_web import (  # pylint: disable=import-error # noqa: E501
-    make_google_search
+from cai.tools.web.google_search import (  # pylint: disable=import-error # noqa: E501
+    google_search, google_dork_search
 )
 from cai.tools.reconnaissance.exec_code import (  # pylint: disable=import-error # noqa: E501
     execute_code
@@ -26,7 +26,8 @@ tools = [
 ]
 
 if os.getenv('GOOGLE_SEARCH_API_KEY') and os.getenv('GOOGLE_SEARCH_CX'):
-    tools.append(make_google_search)
+    tools.append(google_search)
+    tools.append(google_dork_search)
 
 retester_agent = Agent(
     name="Retester Agent",

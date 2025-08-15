@@ -4,18 +4,18 @@ Module for executing Python code and capturing its output.
 
 import io
 import sys
-from typing import Dict
+from typing import Dict, Optional
 from cai.sdk.agents import function_tool
 
 
 @function_tool
-def execute_python_code(code: str, context: Dict = None) -> str:
+def execute_python_code(code: str, context: Optional[str] = None) -> str:
     """
     Execute Python code and return the output.
 
     Args:
         code (str): Python code to execute
-        context (Dict, optional): Additional context for execution
+        context (str, optional): Additional context for execution
 
     Returns:
         str: Output from code execution
@@ -23,7 +23,14 @@ def execute_python_code(code: str, context: Dict = None) -> str:
     try:
         local_vars = {}
         if context:
-            local_vars.update(context)
+            # If context is provided as a string, try to evaluate it as a dict
+            try:
+                import json
+                context_dict = json.loads(context)
+                local_vars.update(context_dict)
+            except (json.JSONDecodeError, TypeError):
+                # If it's not valid JSON, just ignore context
+                pass
 
         # Capture output using StringIO
         stdout = io.StringIO()

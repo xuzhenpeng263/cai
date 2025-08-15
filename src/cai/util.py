@@ -2521,7 +2521,7 @@ def cli_print_tool_output(
             # For tools that have a 'command' field (like generic_linux_command)
             effective_command_args_str = args.get("command", "")
         elif "query" in args:
-            # For search tools (like shodan_search, make_google_search)
+            # For search tools (like shodan_search, google_search, google_dork_search)
             effective_command_args_str = args.get("query", "")
         else:
             # For other tools, create a JSON representation of all args

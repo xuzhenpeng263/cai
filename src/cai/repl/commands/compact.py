@@ -285,7 +285,7 @@ class CompactCommand(Command):
         
         # If still no agent, try to get from environment
         if not agent_name:
-            agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
+            agent_type = os.getenv("CAI_AGENT_TYPE", "ctf_strong_agent")
             from cai.agents import get_available_agents
             agents = get_available_agents()
             if agent_type in agents:
@@ -472,7 +472,7 @@ class CompactCommand(Command):
             
             # If still no agent, try to get from environment
             if not agent_name:
-                agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
+                agent_type = os.getenv("CAI_AGENT_TYPE", "ctf_strong_agent")
                 from cai.agents import get_available_agents
                 agents = get_available_agents()
                 if agent_type in agents:

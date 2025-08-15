@@ -143,6 +143,36 @@ def get_available_agents() -> Dict[str, Agent]:  # pylint: disable=R0912  # noqa
         pseudo_agent = PatternAgent(pattern_obj)
         agents_to_display[pattern_name] = pseudo_agent
 
+    # Explicitly add ctf-strong agent if not already present
+    if "ctf_strong_agent" not in agents_to_display and "ctf-strong" not in agents_to_display:
+        try:
+            from cai.agents.ctf_strong import ctf_strong_agent
+            agents_to_display["ctf-strong"] = ctf_strong_agent
+        except ImportError:
+            # Create a placeholder if import fails
+            try:
+                from cai.sdk.agents import Agent as AgentClass
+                from cai.sdk.agents.models import DeepSeekProvider
+                provider = DeepSeekProvider()
+                model = provider.get_model("deepseek-reasoner")
+                placeholder_agent = AgentClass(
+                    name="CTF Strong Agent",
+                    instructions="专业的CTF强化专家，擅长渗透测试、漏洞挖掘、密码学分析等网络安全领域",
+                    model=model,
+                    tools=[]
+                )
+                agents_to_display["ctf-strong"] = placeholder_agent
+            except Exception:
+                # Final fallback - create a dummy placeholder
+                class DummyAgent:
+                    def __init__(self):
+                        self.name = "CTF Strong Agent"
+                        self.instructions = "专业的CTF强化专家，擅长渗透测试、漏洞挖掘、密码学分析等网络安全领域"
+                        self.model = None
+                        self.tools = []
+                
+                agents_to_display["ctf-strong"] = DummyAgent()
+
     return agents_to_display
 
 

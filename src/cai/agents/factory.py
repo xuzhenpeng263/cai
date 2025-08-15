@@ -43,7 +43,7 @@ def create_generic_agent_factory(
         
         if not model_name:
             # Third priority: global CAI_MODEL
-            model_name = os.environ.get("CAI_MODEL", "alias0")
+            model_name = os.environ.get("CAI_MODEL", "deepseek-reasoner")
             
             
         api_key = os.getenv("OPENAI_API_KEY", "sk-placeholder-key-for-local-models")
@@ -162,7 +162,44 @@ def discover_agent_factories() -> Dict[str, Callable[[], Agent]]:
             except Exception:
                 continue
 
+    # Explicitly add ctf-strong agent if not already present
+    if "ctf-strong" not in agent_factories:
+        agent_factories["ctf-strong"] = create_ctf_strong_factory()
+
     return agent_factories
+
+
+def create_ctf_strong_factory():
+    """Create a factory function for the CTF Strong agent."""
+    def ctf_strong_factory(model_override: str | None = None, custom_name: str | None = None, agent_id: str | None = None):
+        import asyncio
+        from cai.agents.ctf_strong import create_ctf_strong_agent
+        
+        model_name = model_override or os.environ.get("CAI_MODEL", "deepseek-reasoner")
+        
+        # Create the agent synchronously by running the async function
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're already in an async context, we need to handle this differently
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, create_ctf_strong_agent(model_name))
+                    agent = future.result()
+            else:
+                agent = asyncio.run(create_ctf_strong_agent(model_name))
+        except RuntimeError:
+            # Fallback: create a basic version without MCP servers
+            from cai.agents.ctf_strong import CTFStrongAgent
+            ctf_agent = CTFStrongAgent(model_name)
+            agent = ctf_agent.create_agent()
+        
+        if custom_name:
+            agent.name = custom_name
+            
+        return agent
+    
+    return ctf_strong_factory
 
 
 # Global registry of agent factories
@@ -196,3 +233,13 @@ def get_agent_factory(agent_name: str) -> Callable[[], Agent]:
         )
 
     return AGENT_FACTORIES[agent_name_lower]
+
+
+def get_default_agent_name() -> str:
+    """
+    Get the default agent name.
+    
+    Returns:
+        The default agent name
+    """
+    return "ctf_strong_agent"

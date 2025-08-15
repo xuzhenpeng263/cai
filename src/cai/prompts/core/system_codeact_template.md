@@ -50,8 +50,8 @@ ${system_prompt}
 
 % if ctf_inside is not None:
     % if ctf_inside.lower() == 'true':
-You are INSIDE the target machine in a docker container. Try not to use network commands unless necessary.
+您在Docker容器内的目标机器上。除非必要，尽量不要使用网络命令。
     % elif ctf_inside.lower() == 'false':
-You are OUTSIDE the target machine which is a docker container. You may use network commands like nmap for initial reconnaissance.
+您在作为Docker容器的目标机器外部。您可以使用nmap等网络命令进行初始侦察。
     % endif
 % endif

@@ -439,7 +439,7 @@ class RunImpl:
             if isinstance(output, dict) and output.get("type") == "output_text" and "text" in output:
                 # For GLM-4.5 responses, we need to handle them differently
                 # Instead of creating a ResponseOutputMessage, let's create a simple message item
-                from openai.types.responses import ResponseOutputMessage, ResponseOutputText
+                from openai.types.responses import ResponseOutputText
                 
                 # Extract the text content
                 content = output["text"]
@@ -464,12 +464,65 @@ class RunImpl:
 
                 continue
 
+            # Special handling for function_call dict format (common with some models)
+            if isinstance(output, dict) and output.get("type") == "function_call":
+                # Convert dict to ResponseFunctionToolCall object
+                try:
+                    tool_call = ResponseFunctionToolCall(
+                        call_id=output.get("call_id") or "unknown",
+                        name=output.get("name") or "unknown",
+                        arguments=output.get("arguments") or "{}",
+                        type="function_call"
+                    )
+                    
+                    # Check if this is a handoff
+                    if tool_call.name in handoff_map:
+                        handoff = handoff_map[tool_call.name]
+                        run_handoffs.append(ToolRunHandoff(handoff=handoff, tool_call=tool_call))
+                        items.append(HandoffCallItem(raw_item=tool_call, agent=agent))
+                        tools_used.append(tool_call.name)
+                    # Check if this is a function tool
+                    elif tool_call.name in function_map:
+                        function_tool = function_map[tool_call.name]
+                        functions.append(ToolRunFunction(tool_call=tool_call, function_tool=function_tool))
+                        items.append(ToolCallItem(raw_item=tool_call, agent=agent))
+                        tools_used.append(tool_call.name)
+                    else:
+                        # Unknown tool, still create a ToolCallItem for consistency
+                        items.append(ToolCallItem(raw_item=tool_call, agent=agent))
+                        tools_used.append(tool_call.name)
+                        logger.warning(f"Unknown tool called: {tool_call.name}")
+                        
+                except Exception as e:
+                    logger.error(f"Failed to process function_call dict: {e}")
+                    # Continue processing other outputs
+                
+                continue
+
             # Standard processing for known item types
             if isinstance(output, ResponseOutputMessage):
                 items.append(MessageOutputItem(raw_item=output, agent=agent))
             elif isinstance(output, ResponseFileSearchToolCall):
                 items.append(ToolCallItem(raw_item=output, agent=agent))
                 tools_used.append("file_search")
+            elif isinstance(output, ResponseFunctionToolCall):
+                # Check if this is a handoff
+                if output.name in handoff_map:
+                    handoff = handoff_map[output.name]
+                    run_handoffs.append(ToolRunHandoff(handoff=handoff, tool_call=output))
+                    items.append(HandoffCallItem(raw_item=output, agent=agent))
+                    tools_used.append(output.name)
+                # Check if this is a function tool
+                elif output.name in function_map:
+                    function_tool = function_map[output.name]
+                    functions.append(ToolRunFunction(tool_call=output, function_tool=function_tool))
+                    items.append(ToolCallItem(raw_item=output, agent=agent))
+                    tools_used.append(output.name)
+                else:
+                    # Unknown tool, still create a ToolCallItem for consistency
+                    items.append(ToolCallItem(raw_item=output, agent=agent))
+                    tools_used.append(output.name)
+                    logger.warning(f"Unknown tool called: {output.name}")
             elif isinstance(output, ResponseFunctionWebSearch):
                 items.append(ToolCallItem(raw_item=output, agent=agent))
                 tools_used.append("web_search")

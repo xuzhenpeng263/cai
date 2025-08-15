@@ -882,7 +882,7 @@ class AgentCommand(Command):
 
         else:
             # Show single agent configuration
-            current_agent_key = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
+            current_agent_key = os.getenv("CAI_AGENT_TYPE", "ctf_strong_agent")
 
             if current_agent_key not in agents_to_display:
                 console.print(f"[red]Error: Current agent '{current_agent_key}' not found[/red]")

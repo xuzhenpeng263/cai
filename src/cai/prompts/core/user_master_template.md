@@ -1,42 +1,42 @@
 <%
-    # A template for the user prompt
-    # Args:
-    #   ctf: CTF object
-    #   challenge: Challenge flag name
-    #   ip: Target IP address
+    # 用户提示的模板
+    # 参数：
+    #   ctf: CTF对象
+    #   challenge: 挑战标志名称
+    #   ip: 目标IP地址
 
     import os
 
-    # Get CTF_NAME environment variable
+    # 获取CTF_NAME环境变量
     ctf_name = os.getenv('CTF_NAME', '').lower()
 
-    # Get instructions from CTF
-    # NOTE: consider case of no CTF
+    # 从CTF获取指令
+    # 注意：考虑没有CTF的情况
     #
     ctf_instructions = ctf.get_instructions() if ctf else None
 
-    # Challenge
-    # NOTE: consider case of no CTF
+    # 挑战
+    # 注意：考虑没有CTF的情况
     #
     challenge_tip = ctf.get_challenges()[challenge] if challenge else None
 
-    # Get CTF_INSIDE environment variable
+    # 获取CTF_INSIDE环境变量
     ctf_inside = os.getenv('CTF_INSIDE', 'true').lower()
 %>
 %if ctf_instructions:
-Instructions: ${ctf_instructions}
+指令: ${ctf_instructions}
 %endif
 
 %if challenge:
-Challenge: ${challenge_tip}
+挑战: ${challenge_tip}
 %endif
 
 %if ip:
-Target IP: ${ip}
+目标IP: ${ip}
 %endif
 
 % if ctf_inside == 'true':
-You are INSIDE the target machine in a docker container. Try not to use network commands unless necessary.
+您在Docker容器内的目标机器上。除非必要，尽量不要使用网络命令。
 % else:
-You are OUTSIDE the target machine which is a docker container. You may use network commands like nmap for initial reconnaissance.
+您在作为Docker容器的目标机器外部。您可以使用nmap等网络命令进行初始侦察。
 %endif

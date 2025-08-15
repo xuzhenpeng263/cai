@@ -71,7 +71,7 @@ ENV_VARS = {
     11: {
         "name": "CAI_AGENT_TYPE",
         "description": "Specify the agents to use (boot2root, one_tool...)",  # noqa: E501 # pylint: disable=line-too-long
-        "default": "one_tool"
+        "default": "ctf_strong_agent"
     },
     12: {
         "name": "CAI_STATE",

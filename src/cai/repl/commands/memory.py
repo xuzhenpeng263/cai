@@ -997,7 +997,7 @@ Model: {get_compact_model() or os.environ.get("CAI_MODEL", "gpt-4")}
                 if not agent_name:
                     # Try to get from environment
                     import os
-                    agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
+                    agent_type = os.getenv("CAI_AGENT_TYPE", "ctf_strong_agent")
                     from cai.agents import get_available_agents
                     agents = get_available_agents()
                     if agent_type in agents:
@@ -1308,7 +1308,7 @@ This session is being continued from a previous conversation that ran out of con
             if not agent_name:
                 # If agent doesn't have a name attribute, try to get from environment
                 import os
-                agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
+                agent_type = os.getenv("CAI_AGENT_TYPE", "ctf_strong_agent")
                 from cai.agents import get_available_agents
                 agents = get_available_agents()
                 if agent_type in agents:
@@ -1333,7 +1333,7 @@ This session is being continued from a previous conversation that ran out of con
         
         # Try to get from environment and available agents
         import os
-        agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
+        agent_type = os.getenv("CAI_AGENT_TYPE", "ctf_strong_agent")
         from cai.agents import get_available_agents
         agents = get_available_agents()
         if agent_type in agents:

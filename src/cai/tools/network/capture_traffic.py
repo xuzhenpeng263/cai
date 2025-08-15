@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from cai.sdk.agents import function_tool
 
 @function_tool
-def capture_remote_traffic(ip, username, password, interface, capture_filter="", port=22, timeout=10):
+def capture_remote_traffic(ip: str, username: str, password: str, interface: str, capture_filter: str = "", port: int = 22, timeout: int = 10) -> str:
     """
     Captures network traffic from a remote VM and returns a pipe that can be read by tshark.
     
@@ -106,9 +106,8 @@ def capture_remote_traffic(ip, username, password, interface, capture_filter="",
         raise RuntimeError(f"Unexpected error: {str(e)}")
 
 
-@function_tool # TODO: not ideal to decorete this context manager.
 @contextmanager
-def remote_capture_session(ip, username, password, interface, capture_filter="", port=22):
+def remote_capture_session(ip: str, username: str, password: str, interface: str, capture_filter: str = "", port: int = 22):
     """
     Context manager for remote traffic capture that automatically cleans up resources.
     

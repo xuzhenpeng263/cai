@@ -21,7 +21,7 @@ Environment Variables
 
         CAI_MODEL: Model to use for agents
             (default: "alias0")
-        CAI_DEBUG: Set debug output level (default: "1")
+        CAI_DEBUG: Set debug output level (default: "0")
             - 0: Only tool outputs
             - 1: Verbose debug output
             - 2: CLI debug output
@@ -32,7 +32,7 @@ Environment Variables
             (default: "true"). When enabled, traces execution
             flow and agent interactions for debugging and analysis.
         CAI_AGENT_TYPE: Specify the agents to use it could take
-            the value of (default: "one_tool_agent"). Use "/agent"
+            the value of (default: "ctf_strong_agent"). Use "/agent"
             command in CLI to list all available agents.
         CAI_STATE: Enable/disable stateful mode (default: "false").
             When enabled, the agent will use a state agent to keep
@@ -75,7 +75,7 @@ Usage Examples:
 
     # Run against a CTF
     CTF_NAME="kiddoctf" CTF_CHALLENGE="02 linux ii" \
-        CAI_AGENT_TYPE="one_tool_agent" CAI_MODEL="alias0" \
+        CAI_AGENT_TYPE="ctf_strong_agent" CAI_MODEL="deepseek-reasoner" \
         CAI_TRACING="false" cai
 
     # Run a harder CTF
@@ -121,7 +121,7 @@ import sys
 # Custom warning handler to suppress specific warnings
 def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
     # Show warnings in debug mode (CAI_DEBUG=1 or 2)
-    if os.getenv("CAI_DEBUG", "1") in ["1", "2"]:
+    if os.getenv("CAI_DEBUG", "0") in ["1", "2"]:
         # Format and print the warning
         warnings.showwarning(message, category, filename, lineno, file, line)
     # Otherwise, silently ignore
@@ -130,7 +130,7 @@ def custom_warning_handler(message, category, filename, lineno, file=None, line=
 warnings.showwarning = custom_warning_handler
 
 # Suppress ALL warnings in production mode (unless CAI_DEBUG=1 or 2)
-if os.getenv("CAI_DEBUG", "1") == "0":
+if os.getenv("CAI_DEBUG", "0") == "0":
     warnings.filterwarnings("ignore")
     # Also set environment variable to prevent warnings from subprocesses
     os.environ["PYTHONWARNINGS"] = "ignore"
@@ -139,8 +139,8 @@ import asyncio
 import logging
 import time
 
-# Set up basic logging configuration - default to DEBUG level for better troubleshooting
-cai_debug_level = os.getenv("CAI_DEBUG", "1")  # Changed default from "0" to "1"
+# Set up basic logging configuration - default to WARNING level for clean output
+cai_debug_level = os.getenv("CAI_DEBUG", "0")  # Default to "0" for clean output
 if cai_debug_level == "2":
     logging.basicConfig(level=logging.INFO)
 elif cai_debug_level == "1":
@@ -226,8 +226,8 @@ loggers_to_configure = [
     "aiohttp",  # Add aiohttp logger to suppress session warnings
 ]
 
-# Check if debug mode is enabled - default to 1 (debug mode)
-cai_debug_level = os.getenv("CAI_DEBUG", "1")
+# Check if debug mode is enabled - default to 0 (clean mode)
+cai_debug_level = os.getenv("CAI_DEBUG", "0")
 
 for logger_name in loggers_to_configure:
     logger = logging.getLogger(logger_name)
@@ -387,8 +387,8 @@ def run_cai_cli(
     turn_count = 0
     idle_time = 0
     console = Console()
-    last_model = os.getenv("CAI_MODEL", "alias0")
-    last_agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
+    last_model = os.getenv("CAI_MODEL", "deepseek-reasoner")
+    last_agent_type = os.getenv("CAI_AGENT_TYPE", "ctf_strong_agent")
     parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
     
     # Reset cost tracking at the start
@@ -506,7 +506,7 @@ def run_cai_cli(
                 last_model = current_model
 
             # Check if agent type has changed and recreate agent if needed
-            current_agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
+            current_agent_type = os.getenv("CAI_AGENT_TYPE", "ctf_strong_agent")
             # Update parallel_count to reflect changes from /parallel command
             parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
             
@@ -625,7 +625,7 @@ def run_cai_cli(
                     # Log the error but don't display it unless in debug mode
                     logger = logging.getLogger(__name__)
                     logger.debug(f"Error switching agent: {str(e)}")
-                    if os.getenv("CAI_DEBUG", "1") in ["1", "2"]:
+                    if os.getenv("CAI_DEBUG", "0") in ["1", "2"]:
                         console.print(f"[red]Error switching agent: {str(e)}[/red]")
 
             if not force_until_flag and ctf_init != 0:
@@ -1532,7 +1532,7 @@ def run_cai_cli(
                             logger.error(f"Error occurred during streaming: {str(e)}", exc_info=True)
                             
                             # Only show error details in debug mode
-                            if os.getenv("CAI_DEBUG", "1") in ["1", "2"]:
+                            if os.getenv("CAI_DEBUG", "0") in ["1", "2"]:
                                 import traceback
                                 tb = traceback.format_exc()
                                 print(f"\n[Error occurred during streaming: {str(e)}]\nLocation: {tb}")
@@ -1752,7 +1752,7 @@ def main():
         )
 
     # Get agent type from environment variables or use default
-    agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
+    agent_type = os.getenv("CAI_AGENT_TYPE", "ctf_strong_agent")
 
     # Get the agent instance by name with default ID P1
     agent = get_agent_by_name(agent_type, agent_id="P1")

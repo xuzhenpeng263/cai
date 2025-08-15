@@ -147,7 +147,7 @@ class HistoryCommand(Command):
                     all_histories[full_display_name] = isolated_history
         
         # Get the current agent from environment
-        current_agent_type = os.getenv("CAI_AGENT_TYPE", "one_tool_agent")
+        current_agent_type = os.getenv("CAI_AGENT_TYPE", "ctf_strong_agent")
         parallel_count = int(os.getenv("CAI_PARALLEL", "1"))
         
         # Create a unified view of all agents that should be shown

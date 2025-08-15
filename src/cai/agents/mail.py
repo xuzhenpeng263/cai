@@ -107,11 +107,11 @@ dns_smtp_agent = Agent(
     name="DNS_SMTP_Agent",
     description="Agent focused on assessing spoofing DMARC.",
     instructions=(
-        "You are an expert in assessing email configuration security. "
-        "Inspect domains for mail spoofing vulnerabilities by checking SPF, "
-        "DMARC, and DKIM. Use check_mail_spoofing_vulnerability for "
-        "detailed reports. Use execute_cli_command for basic scans. "
-        "USE ONLY TOOL CALLS, DONT RETURN REASON."
+        "您是评估电子邮件配置安全性的专家。"
+        "通过检查SPF、DMARC和DKIM来检查域名的邮件欺骗漏洞。"
+        "使用check_mail_spoofing_vulnerability生成详细报告。"
+        "使用execute_cli_command进行基本扫描。"
+        "仅使用工具调用，不要返回理由。"
     ),
     tools=[check_mail_spoofing_vulnerability, execute_cli_command],
     model=OpenAIChatCompletionsModel(

@@ -125,38 +125,54 @@ class ZhipuAIModel(Model):
         return self._process_streaming_response(response)
 
     def _prepare_messages(self, system_instructions: str | None, input: str | list[TResponseInputItem]) -> list[dict]:
-        """Prepare messages for the API call."""
-        messages = []
+        """Prepare messages for the API call using the proven OpenAI converter."""
+        # Import the converter from OpenAI model
+        from .openai_chatcompletions import _Converter
+        
+        # Create a converter instance
+        converter = _Converter()
+        
+        # Use the proven items_to_messages method
+        messages = converter.items_to_messages(input)
         
         # Add system message if provided
         if system_instructions:
-            messages.append({
-                "role": "system",
-                "content": system_instructions
-            })
+            # Check if we already have a system message
+            has_system = any(msg.get("role") == "system" for msg in messages)
+            if not has_system:
+                messages.insert(0, {
+                    "role": "system",
+                    "content": system_instructions
+                })
         
-        # Add user input
-        if isinstance(input, str):
-            messages.append({
-                "role": "user",
-                "content": input
-            })
-        else:
-            # Convert list of input items to messages
-            for item in input:
-                if isinstance(item, dict):
-                    if item.get("role") == "user":
-                        messages.append({
-                            "role": "user",
-                            "content": item.get("content", "")
-                        })
-                    elif item.get("role") == "assistant":
-                        messages.append({
-                            "role": "assistant",
-                            "content": item.get("content", "")
-                        })
+        # Convert from OpenAI format to simple dict format for ZhipuAI
+        simple_messages = []
+        for msg in messages:
+            simple_msg = {
+                "role": msg["role"],
+                "content": msg.get("content")
+            }
+            
+            # Handle tool calls
+            if "tool_calls" in msg and msg["tool_calls"]:
+                simple_msg["tool_calls"] = []
+                for tool_call in msg["tool_calls"]:
+                    simple_msg["tool_calls"].append({
+                        "id": tool_call["id"],
+                        "type": tool_call["type"],
+                        "function": {
+                            "name": tool_call["function"]["name"],
+                            "arguments": tool_call["function"]["arguments"]
+                        }
+                    })
+            
+            # Handle tool call ID for tool messages
+            if "tool_call_id" in msg:
+                simple_msg["tool_call_id"] = msg["tool_call_id"]
+            
+            simple_messages.append(simple_msg)
         
-        return messages
+        return simple_messages
 
     def _prepare_tools(self, tools: list[Tool], handoffs: list[Handoff]) -> list[dict]:
         """Prepare tools for the API call."""

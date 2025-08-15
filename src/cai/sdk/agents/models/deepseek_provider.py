@@ -65,4 +65,11 @@ class DeepSeekProvider(ModelProvider):
             http_client=httpx.AsyncClient(),
         )
         
-        return OpenAIChatCompletionsModel(model=model_name, openai_client=client)
+        # Create the model with proper agent name for CTF scenarios
+        model = OpenAIChatCompletionsModel(
+            model=model_name, 
+            openai_client=client,
+            agent_name="CTF agent"  # Default to CTF agent for DeepSeek models
+        )
+        
+        return model

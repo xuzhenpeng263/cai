@@ -2702,6 +2702,9 @@ class OpenAIChatCompletionsModel(Model):
                 else:
                     # Default to "low" reasoning effort if model supports it
                     kwargs["reasoning_effort"] = "low"
+                
+                # Ensure proper provider identification for LiteLLM
+                kwargs["custom_llm_provider"] = "deepseek"
             elif provider == "claude" or "claude" in model_str:
                 litellm.drop_params = True
                 kwargs.pop("store", None)
@@ -3010,6 +3013,9 @@ class OpenAIChatCompletionsModel(Model):
                             else:
                                 # Default to "low" reasoning effort
                                 provider_kwargs["reasoning_effort"] = "low"
+                            
+                            # Ensure proper provider identification
+                            provider_kwargs["custom_llm_provider"] = "deepseek"
                         elif provider == "claude" or "claude" in model_str:
                             provider_kwargs["custom_llm_provider"] = "anthropic"
                             provider_kwargs.pop("store", None)  # Claude doesn't support store parameter
