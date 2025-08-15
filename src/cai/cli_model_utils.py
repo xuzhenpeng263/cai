@@ -4,7 +4,7 @@ import os
 from typing import Any
 
 from cai.sdk.agents import Agent
-from cai.sdk.agents.models import ModelProvider, OpenAIProvider, ZhipuAIProvider
+from cai.sdk.agents.models import ModelProvider, OpenAIProvider, ZhipuAIProvider, DeepSeekProvider
 
 
 def get_model_provider_for_model(model_name: str) -> ModelProvider:
@@ -16,6 +16,16 @@ def get_model_provider_for_model(model_name: str) -> ModelProvider:
     Returns:
         The appropriate ModelProvider instance
     """
+    # Check if this is a DeepSeek model
+    if model_name.startswith("deepseek-"):
+        # For DeepSeek models, create a DeepSeekProvider
+        deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not deepseek_api_key:
+            raise ValueError(
+                "DEEPSEEK_API_KEY environment variable is required for DeepSeek models"
+            )
+        return DeepSeekProvider(api_key=deepseek_api_key)
+    
     # Check if this is a ZhipuAI model
     if model_name.startswith("glm-"):
         # For ZhipuAI models, create a ZhipuAIProvider

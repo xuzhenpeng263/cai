@@ -48,5 +48,53 @@
         "supports_response_schema": true,
         "deprecation_date": "2026-02-01",
         "supports_tool_choice": true
+    },
+    "deepseek-chat": {
+        "max_tokens": 64000,
+        "max_input_tokens": 64000,
+        "max_output_tokens": 8000,
+        "input_cost_per_token": 0.000002,
+        "output_cost_per_token": 0.000008,
+        "cache_creation_input_token_cost": 0.000002,
+        "cache_read_input_token_cost": 0.0000005,
+        "search_context_cost_per_query": {
+            "search_context_size_low": 1e-2,
+            "search_context_size_medium": 1e-2,
+            "search_context_size_high": 1e-2
+        },
+        "litellm_provider": "deepseek",
+        "mode": "chat",
+        "supports_function_calling": true,
+        "supports_vision": false,
+        "tool_use_system_prompt_tokens": 159,
+        "supports_assistant_prefill": true,
+        "supports_pdf_input": false,
+        "supports_prompt_caching": true,
+        "supports_response_schema": true,
+        "supports_tool_choice": true
+    },
+    "deepseek-reasoner": {
+        "max_tokens": 64000,
+        "max_input_tokens": 64000,
+        "max_output_tokens": 64000,
+        "input_cost_per_token": 0.000004,
+        "output_cost_per_token": 0.000016,
+        "cache_creation_input_token_cost": 0.000004,
+        "cache_read_input_token_cost": 0.000001,
+        "search_context_cost_per_query": {
+            "search_context_size_low": 1e-2,
+            "search_context_size_medium": 1e-2,
+            "search_context_size_high": 1e-2
+        },
+        "litellm_provider": "deepseek",
+        "mode": "chat",
+        "supports_function_calling": true,
+        "supports_vision": false,
+        "tool_use_system_prompt_tokens": 159,
+        "supports_assistant_prefill": true,
+        "supports_pdf_input": false,
+        "supports_prompt_caching": true,
+        "supports_response_schema": true,
+        "supports_tool_choice": true
     }
 }

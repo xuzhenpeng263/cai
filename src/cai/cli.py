@@ -120,8 +120,8 @@ import sys
 
 # Custom warning handler to suppress specific warnings
 def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
-    # Only show warnings in debug mode
-    if os.getenv("CAI_DEBUG", "1") == "2":
+    # Show warnings in debug mode (CAI_DEBUG=1 or 2)
+    if os.getenv("CAI_DEBUG", "1") in ["1", "2"]:
         # Format and print the warning
         warnings.showwarning(message, category, filename, lineno, file, line)
     # Otherwise, silently ignore
@@ -129,8 +129,8 @@ def custom_warning_handler(message, category, filename, lineno, file=None, line=
 # Set custom warning handler
 warnings.showwarning = custom_warning_handler
 
-# Suppress ALL warnings in production mode (unless CAI_DEBUG=2)
-if os.getenv("CAI_DEBUG", "1") != "2":
+# Suppress ALL warnings in production mode (unless CAI_DEBUG=1 or 2)
+if os.getenv("CAI_DEBUG", "1") == "0":
     warnings.filterwarnings("ignore")
     # Also set environment variable to prevent warnings from subprocesses
     os.environ["PYTHONWARNINGS"] = "ignore"
@@ -139,8 +139,8 @@ import asyncio
 import logging
 import time
 
-# Set up basic logging configuration - default to WARNING level to reduce noise
-cai_debug_level = os.getenv("CAI_DEBUG", "0")
+# Set up basic logging configuration - default to DEBUG level for better troubleshooting
+cai_debug_level = os.getenv("CAI_DEBUG", "1")  # Changed default from "0" to "1"
 if cai_debug_level == "2":
     logging.basicConfig(level=logging.INFO)
 elif cai_debug_level == "1":
@@ -226,8 +226,8 @@ loggers_to_configure = [
     "aiohttp",  # Add aiohttp logger to suppress session warnings
 ]
 
-# Check if debug mode is enabled - default to 0 (production mode)
-cai_debug_level = os.getenv("CAI_DEBUG", "0")
+# Check if debug mode is enabled - default to 1 (debug mode)
+cai_debug_level = os.getenv("CAI_DEBUG", "1")
 
 for logger_name in loggers_to_configure:
     logger = logging.getLogger(logger_name)
@@ -625,7 +625,7 @@ def run_cai_cli(
                     # Log the error but don't display it unless in debug mode
                     logger = logging.getLogger(__name__)
                     logger.debug(f"Error switching agent: {str(e)}")
-                    if os.getenv("CAI_DEBUG", "1") == "2":
+                    if os.getenv("CAI_DEBUG", "1") in ["1", "2"]:
                         console.print(f"[red]Error switching agent: {str(e)}[/red]")
 
             if not force_until_flag and ctf_init != 0:
@@ -1172,7 +1172,7 @@ def run_cai_cli(
                         logger.error(error_details, exc_info=True)
                         
                         # Only show error in debug mode
-                        if os.getenv("CAI_DEBUG", "1") == "2":
+                        if os.getenv("CAI_DEBUG", "1") in ["1", "2"]:
                             console.print(f"[bold red]{error_details}[/bold red]")
                         return (config, None)
 
@@ -1386,7 +1386,7 @@ def run_cai_cli(
                         logger.error(f"Error in instance {instance_number}: {str(e)}", exc_info=True)
                         
                         # Only show error in debug mode
-                        if os.getenv("CAI_DEBUG", "1") == "2":
+                        if os.getenv("CAI_DEBUG", "1") in ["1", "2"]:
                             console.print(
                                 f"[bold red]Error in instance {instance_number}: {str(e)}[/bold red]"
                             )
@@ -1532,7 +1532,7 @@ def run_cai_cli(
                             logger.error(f"Error occurred during streaming: {str(e)}", exc_info=True)
                             
                             # Only show error details in debug mode
-                            if os.getenv("CAI_DEBUG", "1") == "2":
+                            if os.getenv("CAI_DEBUG", "1") in ["1", "2"]:
                                 import traceback
                                 tb = traceback.format_exc()
                                 print(f"\n[Error occurred during streaming: {str(e)}]\nLocation: {tb}")
@@ -1692,7 +1692,7 @@ def run_cai_cli(
             import traceback
 
             # Only show detailed errors in debug mode
-            if os.getenv("CAI_DEBUG", "1") == "2":
+            if os.getenv("CAI_DEBUG", "1") in ["1", "2"]:
                 exc_type, exc_value, exc_traceback = sys.exc_info()
                 tb_info = traceback.extract_tb(exc_traceback)
                 filename, line, func, text = tb_info[-1]

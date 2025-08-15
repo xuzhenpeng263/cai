@@ -2827,7 +2827,14 @@ class OpenAIChatCompletionsModel(Model):
         
         while retry_count < max_retries:
             try:
-                if self.is_ollama:
+                # Check if this is a DeepSeek model and use direct OpenAI client
+                model_str = str(kwargs["model"]).lower()
+                if "deepseek" in model_str and hasattr(self, '_client') and self._client:
+                    # Use direct OpenAI client for DeepSeek models
+                    return await self._fetch_response_direct_openai(
+                        kwargs, model_settings, tool_choice, stream, parallel_tool_calls
+                    )
+                elif self.is_ollama:
                     return await self._fetch_response_litellm_ollama(
                         kwargs, model_settings, tool_choice, stream, parallel_tool_calls
                     )
@@ -3382,6 +3389,65 @@ class OpenAIChatCompletionsModel(Model):
                 **ollama_kwargs,
                 api_base=api_base,
                 custom_llm_provider="openai",
+            )
+
+    async def _fetch_response_direct_openai(
+        self,
+        kwargs: dict,
+        model_settings: ModelSettings,
+        tool_choice: ChatCompletionToolChoiceOptionParam | NotGiven,
+        stream: bool,
+        parallel_tool_calls: bool,
+    ) -> ChatCompletion | tuple[Response, AsyncStream[ChatCompletionChunk]]:
+        """
+        Use direct OpenAI client for DeepSeek models (bypassing LiteLLM).
+        """
+        try:
+            # Prepare kwargs for direct OpenAI client call
+            openai_kwargs = {
+                "model": kwargs.get("model"),
+                "messages": kwargs.get("messages", []),
+                "stream": stream,
+            }
+            
+            # Add optional parameters if they exist and are not NOT_GIVEN
+            for param in ["temperature", "top_p", "max_tokens", "tools", "tool_choice"]:
+                if param in kwargs and kwargs[param] is not NOT_GIVEN:
+                    openai_kwargs[param] = kwargs[param]
+            
+            # Remove any LiteLLM-specific parameters
+            openai_kwargs.pop("extra_headers", None)
+            
+            if stream:
+                # Streaming response
+                stream_obj = await self._client.chat.completions.create(**openai_kwargs)
+                
+                response = Response(
+                    id=FAKE_RESPONSES_ID,
+                    created_at=time.time(),
+                    model=self.model,
+                    object="response",
+                    output=[],
+                    tool_choice="auto"
+                    if tool_choice is None or tool_choice == NOT_GIVEN
+                    else cast(Literal["auto", "required", "none"], tool_choice),
+                    top_p=model_settings.top_p,
+                    temperature=model_settings.temperature,
+                    tools=[],
+                    parallel_tool_calls=parallel_tool_calls or False,
+                )
+                return response, stream_obj
+            else:
+                # Non-streaming response
+                response = await self._client.chat.completions.create(**openai_kwargs)
+                return response
+                
+        except Exception as e:
+            # Log the error and fall back to LiteLLM
+            logger.debug(f"Direct OpenAI client failed for DeepSeek: {e}")
+            # Fall back to LiteLLM
+            return await self._fetch_response_litellm_openai(
+                kwargs, model_settings, tool_choice, stream, parallel_tool_calls
             )
 
     def _get_model_max_tokens(self, model_name: str) -> int:
