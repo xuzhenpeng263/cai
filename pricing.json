@@ -96,5 +96,53 @@
         "supports_prompt_caching": true,
         "supports_response_schema": true,
         "supports_tool_choice": true
+    },
+    "kimi-k2-0711-preview": {
+        "max_tokens": 131072,
+        "max_input_tokens": 131072,
+        "max_output_tokens": 131072,
+        "input_cost_per_token": 0.000001,
+        "output_cost_per_token": 0.000016,
+        "cache_creation_input_token_cost": 0.000004,
+        "cache_read_input_token_cost": 0.000001,
+        "search_context_cost_per_query": {
+            "search_context_size_low": 1e-2,
+            "search_context_size_medium": 1e-2,
+            "search_context_size_high": 1e-2
+        },
+        "litellm_provider": "moonshot",
+        "mode": "chat",
+        "supports_function_calling": true,
+        "supports_vision": false,
+        "tool_use_system_prompt_tokens": 159,
+        "supports_assistant_prefill": false,
+        "supports_pdf_input": false,
+        "supports_prompt_caching": true,
+        "supports_response_schema": false,
+        "supports_tool_choice": true
+    },
+    "kimi-k2-turbo-preview": {
+        "max_tokens": 131072,
+        "max_input_tokens": 131072,
+        "max_output_tokens": 131072,
+        "input_cost_per_token": 0.000004,
+        "output_cost_per_token": 0.000064,
+        "cache_creation_input_token_cost": 0.000016,
+        "cache_read_input_token_cost": 0.000004,
+        "search_context_cost_per_query": {
+            "search_context_size_low": 1e-2,
+            "search_context_size_medium": 1e-2,
+            "search_context_size_high": 1e-2
+        },
+        "litellm_provider": "moonshot",
+        "mode": "chat",
+        "supports_function_calling": true,
+        "supports_vision": false,
+        "tool_use_system_prompt_tokens": 159,
+        "supports_assistant_prefill": false,
+        "supports_pdf_input": false,
+        "supports_prompt_caching": true,
+        "supports_response_schema": false,
+        "supports_tool_choice": true
     }
 }

@@ -4,7 +4,7 @@ import os
 from typing import Any
 
 from cai.sdk.agents import Agent
-from cai.sdk.agents.models import ModelProvider, OpenAIProvider, ZhipuAIProvider, DeepSeekProvider, GeminiProvider
+from cai.sdk.agents.models import ModelProvider, OpenAIProvider, ZhipuAIProvider, DeepSeekProvider, GeminiProvider, MoonshotProvider
 
 
 def get_model_provider_for_model(model_name: str) -> ModelProvider:
@@ -45,6 +45,16 @@ def get_model_provider_for_model(model_name: str) -> ModelProvider:
                 "GOOGLE_API_KEY environment variable is required for Gemini models"
             )
         return GeminiProvider(api_key=google_api_key)
+    
+    # Check if this is a Moonshot model
+    if model_name.startswith("kimi-"):
+        # For Moonshot models, create a MoonshotProvider
+        moonshot_api_key = os.getenv("MOONSHOT_API_KEY")
+        if not moonshot_api_key:
+            raise ValueError(
+                "MOONSHOT_API_KEY environment variable is required for Moonshot models"
+            )
+        return MoonshotProvider(api_key=moonshot_api_key)
     
     # For all other models, use OpenAIProvider as default
     # This includes alias models, OpenAI models, Anthropic models, OpenRouter models, etc.

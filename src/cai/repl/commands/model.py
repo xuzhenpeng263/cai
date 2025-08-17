@@ -109,6 +109,16 @@ def get_predefined_model_categories() -> Dict[str, List[Dict[str, str]]]:
                 "name": "glm-4.5-flash",
                 "description": "Fast version of glm-4.5"
             }
+        ],
+        "Moonshot": [
+            {
+                "name": "kimi-k2-0711-preview",
+                "description": "Moonshot's cost-effective model with 131K context"
+            },
+            {
+                "name": "kimi-k2-turbo-preview",
+                "description": "Moonshot's high-performance model with 131K context"
+            }
         ]
     }
 
@@ -128,7 +138,8 @@ def get_all_predefined_models() -> List[Dict[str, Any]]:
         "Anthropic Claude": "Anthropic",
         "OpenAI": "OpenAI", 
         "DeepSeek": "DeepSeek",
-        "ZhipuAI": "ZhipuAI"
+        "ZhipuAI": "ZhipuAI",
+        "Moonshot": "Moonshot"
     }
     
     for category, models in model_categories.items():
